@@ -176,6 +176,37 @@ def list_packages(ip: str) -> list[str]:
     return packages
 
 
+def _escape_shell_single_quotes(value: str) -> str:
+    """Escape a string for safe usage inside single quotes in shell command."""
+    return value.replace("'", "'\"'\"'")
+
+
+def _resolve_media_content_uri(ip: str, normalized_path: str) -> str:
+    """Resolve MediaStore content URI for a file path if indexed, else empty string."""
+    escaped_path = _escape_shell_single_quotes(normalized_path)
+    query_cmd = (
+        "content query --uri content://media/external/video/media "
+        "--projection _id:_data "
+        f"--where \"_data='{escaped_path}'\""
+    )
+    out = exec_command(ip, query_cmd)
+    match = re.search(r"_id=(\d+)", out)
+    if not match:
+        return ""
+    return f"content://media/external/video/media/{match.group(1)}"
+
+
+def _looks_like_intent_error(output: str) -> bool:
+    lowered = output.lower()
+    return any(marker in lowered for marker in [
+        "error",
+        "exception",
+        "unable to",
+        "securityexception",
+        "activity not started",
+    ])
+
+
 def launch_video(ip: str, video_path: str) -> tuple[bool, str]:
     """Launch video player with the given file. Returns (success, message)."""
     normalized_path = video_path.strip()
@@ -183,31 +214,63 @@ def launch_video(ip: str, video_path: str) -> tuple[bool, str]:
         normalized_path = f"/{normalized_path.lstrip('/')}"
 
     # Ensure MediaStore can index newly copied files so they are visible on-device.
-    exec_shell_args(ip, [
+    scan_out = exec_shell_args(ip, [
         "am", "broadcast",
         "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
         "-d", f"file://{normalized_path}",
     ])
 
-    uri = f"file://{normalized_path}"
-    out = exec_shell_args(ip, [
+    file_uri = f"file://{normalized_path}"
+    content_uri = _resolve_media_content_uri(ip, normalized_path)
+
+    attempts: list[tuple[str, list[str]]] = []
+    if content_uri:
+        attempts.append(("content+horizon", [
+            "am", "start",
+            "-a", "android.intent.action.VIEW",
+            "-d", content_uri,
+            "-t", "video/*",
+            "--grant-read-uri-permission",
+            "-p", "com.oculus.horizonmediaplayer",
+        ]))
+    attempts.append(("file+horizon", [
         "am", "start",
         "-a", "android.intent.action.VIEW",
-        "-d", uri,
+        "-d", file_uri,
         "-t", "video/*",
         "--grant-read-uri-permission",
         "-p", "com.oculus.horizonmediaplayer",
-    ])
+    ]))
+    if content_uri:
+        attempts.append(("content+implicit", [
+            "am", "start",
+            "-a", "android.intent.action.VIEW",
+            "-d", content_uri,
+            "-t", "video/*",
+            "--grant-read-uri-permission",
+        ]))
+    attempts.append(("file+implicit", [
+        "am", "start",
+        "-a", "android.intent.action.VIEW",
+        "-d", file_uri,
+        "-t", "video/*",
+        "--grant-read-uri-permission",
+    ]))
 
-    if "Error" not in out and "Exception" not in out:
-        return True, out
+    logs = [f"scan: {scan_out}"]
+    for name, cmd in attempts:
+        out = exec_shell_args(ip, cmd)
+        logs.append(f"{name}: {out}")
+        if not _looks_like_intent_error(out):
+            return True, "\n".join(logs)
 
-    # Fallback: launch the player app even if direct open failed.
+    # Final fallback: launch the player app even if direct file open failed.
     fallback = exec_command(
         ip,
         "monkey -p com.oculus.horizonmediaplayer -c android.intent.category.LAUNCHER 1",
     )
-    return False, f"{out}\nFallback launch: {fallback}"
+    logs.append(f"fallback: {fallback}")
+    return False, "\n".join(logs)
 
 
 def _run_with_progress(args: list[str], progress_callback=None,
