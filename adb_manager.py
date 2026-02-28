@@ -96,7 +96,7 @@ def push(ip: str, local_path: str, remote_path: str,
     """Push file to device. progress_callback(percent: int). Returns (success, message)."""
     if not os.path.exists(local_path):
         return False, f"Local file not found: {local_path}"
-    args = ["adb", "-s", _target(ip), "push", local_path, remote_path]
+    args = ["adb", "-s", _target(ip), "push", "-p", local_path, remote_path]
     ok, msg = _run_with_progress(args, progress_callback, cancel_event)
     if not ok:
         return ok, msg
@@ -111,7 +111,7 @@ def push(ip: str, local_path: str, remote_path: str,
 def pull(ip: str, remote_path: str, local_path: str,
          progress_callback=None, cancel_event: threading.Event = None) -> tuple[bool, str]:
     """Pull file from device. progress_callback(percent: int). Returns (success, message)."""
-    args = ["adb", "-s", _target(ip), "pull", remote_path, local_path]
+    args = ["adb", "-s", _target(ip), "pull", "-p", remote_path, local_path]
     return _run_with_progress(args, progress_callback, cancel_event)
 
 
@@ -217,16 +217,33 @@ def _to_file_uri(path: str) -> str:
 
 def _scan_media_file(ip: str, normalized_path: str) -> str:
     """Ask Android media scanner to index a file and return diagnostic output."""
+    escaped_path = _escape_shell_single_quotes(normalized_path)
     file_uri = _to_file_uri(normalized_path)
-    outputs = [
-        exec_command(
-            ip,
-            "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE "
-            f"-d '{_escape_shell_single_quotes(file_uri)}'",
-        )
+
+    scan_targets = [
+        file_uri,
+        _to_file_uri(os.path.dirname(normalized_path) or "/"),
     ]
 
-    cmd_scan_out = exec_command(ip, f"cmd media.scan '{_escape_shell_single_quotes(normalized_path)}'")
+    outputs = []
+    for target in scan_targets:
+        out = exec_command(
+            ip,
+            "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE "
+            f"-d '{_escape_shell_single_quotes(target)}'",
+        )
+        if out:
+            outputs.append(out)
+
+    content_call_out = exec_command(
+        ip,
+        "content call --uri content://media --method scan_file "
+        f"--arg '{escaped_path}'",
+    )
+    if content_call_out and "unknown" not in content_call_out.lower() and "error" not in content_call_out.lower():
+        outputs.append(content_call_out)
+
+    cmd_scan_out = exec_command(ip, f"cmd media.scan '{escaped_path}'")
     if cmd_scan_out and "can't find service: media.scan" not in cmd_scan_out.lower():
         outputs.append(cmd_scan_out)
 
