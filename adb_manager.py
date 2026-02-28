@@ -104,7 +104,7 @@ def push(ip: str, local_path: str, remote_path: str,
     normalized_path = remote_path.strip()
     if not normalized_path.startswith("/"):
         normalized_path = f"/{normalized_path.lstrip('/')}"
-    scan_out = _scan_media_file(ip, normalized_path)
+    scan_out, _ = _scan_media_file(ip, normalized_path)
     return True, f"{msg}\nscan: {scan_out}" if scan_out else msg
 
 
@@ -215,8 +215,8 @@ def _to_file_uri(path: str) -> str:
     return f"file://{quote(path, safe='/._-~')}"
 
 
-def _scan_media_file(ip: str, normalized_path: str) -> str:
-    """Ask Android media scanner to index a file and return diagnostic output."""
+def _scan_media_file(ip: str, normalized_path: str) -> tuple[str, str]:
+    """Ask Android media scanner to index a file and return (diagnostic output, discovered content URI)."""
     escaped_path = _escape_shell_single_quotes(normalized_path)
     file_uri = _to_file_uri(normalized_path)
 
@@ -247,7 +247,10 @@ def _scan_media_file(ip: str, normalized_path: str) -> str:
     if cmd_scan_out and "can't find service: media.scan" not in cmd_scan_out.lower():
         outputs.append(cmd_scan_out)
 
-    return " | ".join(chunk for chunk in outputs if chunk)
+    combined = " | ".join(chunk for chunk in outputs if chunk)
+    uri_match = re.search(r"(content://[^\s}\]]+)", combined)
+    discovered_uri = uri_match.group(1) if uri_match else ""
+    return combined, discovered_uri
 
 
 def _looks_like_intent_error(output: str) -> bool:
@@ -273,10 +276,10 @@ def launch_video(ip: str, video_path: str) -> tuple[bool, str]:
     escaped_path = _escape_shell_single_quotes(normalized_path)
     file_check = exec_command(ip, f"ls -l '{escaped_path}'")
     mime_check = os.path.splitext(normalized_path)[1].lower() or "(unknown)"
-    scan_out = _scan_media_file(ip, normalized_path)
+    scan_out, scanned_content_uri = _scan_media_file(ip, normalized_path)
 
     file_uri = _to_file_uri(normalized_path)
-    content_uri = _resolve_media_content_uri(ip, normalized_path)
+    content_uri = _resolve_media_content_uri(ip, normalized_path) or scanned_content_uri
 
     attempts: list[tuple[str, list[str]]] = []
     if content_uri:
