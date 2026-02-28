@@ -12,7 +12,7 @@ import adb_manager
 
 
 SCAN_PORT = 5555
-SCAN_TIMEOUT = 0.3  # seconds per host
+SCAN_TIMEOUT = 0.5  # seconds per host
 MAX_SCAN_WORKERS = 64
 
 
@@ -73,8 +73,7 @@ def scan_subnet(subnet: str, progress_callback=None) -> list[FoundDevice]:
         adb_manager.connect(ip)
         mac = adb_manager.get_mac(ip)
         name = adb_manager.get_device_name(ip)
-        if mac:
-            devices.append(FoundDevice(ip=ip, mac=mac, name=name))
+        devices.append(FoundDevice(ip=ip, mac=mac, name=name))
 
     return devices
 
