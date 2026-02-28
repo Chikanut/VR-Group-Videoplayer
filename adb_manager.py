@@ -4,6 +4,7 @@ import subprocess
 import re
 import os
 import threading
+from urllib.parse import quote
 
 
 ADB_PORT = 5555
@@ -209,28 +210,40 @@ def _resolve_media_content_uri(ip: str, normalized_path: str) -> str:
     return ""
 
 
+def _to_file_uri(path: str) -> str:
+    """Build a file:// URI and encode spaces/special chars safely."""
+    return f"file://{quote(path, safe='/._-~')}"
+
+
 def _scan_media_file(ip: str, normalized_path: str) -> str:
     """Ask Android media scanner to index a file and return diagnostic output."""
-    file_uri = f"file://{normalized_path}"
+    file_uri = _to_file_uri(normalized_path)
     outputs = [
-        exec_shell_args(ip, [
-            "am", "broadcast",
-            "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
-            "-d", file_uri,
-        ]),
-        exec_shell_args(ip, ["cmd", "media.scan", normalized_path]),
+        exec_command(
+            ip,
+            "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE "
+            f"-d '{_escape_shell_single_quotes(file_uri)}'",
+        )
     ]
+
+    cmd_scan_out = exec_command(ip, f"cmd media.scan '{_escape_shell_single_quotes(normalized_path)}'")
+    if cmd_scan_out and "can't find service: media.scan" not in cmd_scan_out.lower():
+        outputs.append(cmd_scan_out)
+
     return " | ".join(chunk for chunk in outputs if chunk)
 
 
 def _looks_like_intent_error(output: str) -> bool:
     lowered = output.lower()
+    if "status: ok" in lowered:
+        return False
+    if "activity not started, its current task has been brought to the front" in lowered:
+        return False
     return any(marker in lowered for marker in [
-        "error",
+        "error:",
         "exception",
         "unable to",
         "securityexception",
-        "activity not started",
     ])
 
 
@@ -240,11 +253,12 @@ def launch_video(ip: str, video_path: str) -> tuple[bool, str]:
     if not normalized_path.startswith("/"):
         normalized_path = f"/{normalized_path.lstrip('/')}"
 
-    file_check = exec_shell_args(ip, ["ls", "-l", normalized_path])
-    mime_check = exec_shell_args(ip, ["file", "-b", "--mime-type", normalized_path])
+    escaped_path = _escape_shell_single_quotes(normalized_path)
+    file_check = exec_command(ip, f"ls -l '{escaped_path}'")
+    mime_check = os.path.splitext(normalized_path)[1].lower() or "(unknown)"
     scan_out = _scan_media_file(ip, normalized_path)
 
-    file_uri = f"file://{normalized_path}"
+    file_uri = _to_file_uri(normalized_path)
     content_uri = _resolve_media_content_uri(ip, normalized_path)
 
     attempts: list[tuple[str, list[str]]] = []
