@@ -4,6 +4,7 @@ import subprocess
 import re
 import os
 import threading
+from urllib.parse import quote
 
 
 ADB_PORT = 5555
@@ -95,14 +96,22 @@ def push(ip: str, local_path: str, remote_path: str,
     """Push file to device. progress_callback(percent: int). Returns (success, message)."""
     if not os.path.exists(local_path):
         return False, f"Local file not found: {local_path}"
-    args = ["adb", "-s", _target(ip), "push", local_path, remote_path]
-    return _run_with_progress(args, progress_callback, cancel_event)
+    args = ["adb", "-s", _target(ip), "push", "-p", local_path, remote_path]
+    ok, msg = _run_with_progress(args, progress_callback, cancel_event)
+    if not ok:
+        return ok, msg
+
+    normalized_path = remote_path.strip()
+    if not normalized_path.startswith("/"):
+        normalized_path = f"/{normalized_path.lstrip('/')}"
+    scan_out = _scan_media_file(ip, normalized_path)
+    return True, f"{msg}\nscan: {scan_out}" if scan_out else msg
 
 
 def pull(ip: str, remote_path: str, local_path: str,
          progress_callback=None, cancel_event: threading.Event = None) -> tuple[bool, str]:
     """Pull file from device. progress_callback(percent: int). Returns (success, message)."""
-    args = ["adb", "-s", _target(ip), "pull", remote_path, local_path]
+    args = ["adb", "-s", _target(ip), "pull", "-p", remote_path, local_path]
     return _run_with_progress(args, progress_callback, cancel_event)
 
 
@@ -184,26 +193,74 @@ def _escape_shell_single_quotes(value: str) -> str:
 def _resolve_media_content_uri(ip: str, normalized_path: str) -> str:
     """Resolve MediaStore content URI for a file path if indexed, else empty string."""
     escaped_path = _escape_shell_single_quotes(normalized_path)
-    query_cmd = (
-        "content query --uri content://media/external/video/media "
-        "--projection _id:_data "
-        f"--where \"_data='{escaped_path}'\""
+    query_targets = [
+        "content://media/external/video/media",
+        "content://media/external/file",
+    ]
+    for target in query_targets:
+        query_cmd = (
+            f"content query --uri {target} "
+            "--projection _id:_data "
+            f"--where \"_data='{escaped_path}'\""
+        )
+        out = exec_command(ip, query_cmd)
+        match = re.search(r"_id=(\d+)", out)
+        if match:
+            return f"{target}/{match.group(1)}"
+    return ""
+
+
+def _to_file_uri(path: str) -> str:
+    """Build a file:// URI and encode spaces/special chars safely."""
+    return f"file://{quote(path, safe='/._-~')}"
+
+
+def _scan_media_file(ip: str, normalized_path: str) -> str:
+    """Ask Android media scanner to index a file and return diagnostic output."""
+    escaped_path = _escape_shell_single_quotes(normalized_path)
+    file_uri = _to_file_uri(normalized_path)
+
+    scan_targets = [
+        file_uri,
+        _to_file_uri(os.path.dirname(normalized_path) or "/"),
+    ]
+
+    outputs = []
+    for target in scan_targets:
+        out = exec_command(
+            ip,
+            "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE "
+            f"-d '{_escape_shell_single_quotes(target)}'",
+        )
+        if out:
+            outputs.append(out)
+
+    content_call_out = exec_command(
+        ip,
+        "content call --uri content://media --method scan_file "
+        f"--arg '{escaped_path}'",
     )
-    out = exec_command(ip, query_cmd)
-    match = re.search(r"_id=(\d+)", out)
-    if not match:
-        return ""
-    return f"content://media/external/video/media/{match.group(1)}"
+    if content_call_out and "unknown" not in content_call_out.lower() and "error" not in content_call_out.lower():
+        outputs.append(content_call_out)
+
+    cmd_scan_out = exec_command(ip, f"cmd media.scan '{escaped_path}'")
+    if cmd_scan_out and "can't find service: media.scan" not in cmd_scan_out.lower():
+        outputs.append(cmd_scan_out)
+
+    return " | ".join(chunk for chunk in outputs if chunk)
 
 
 def _looks_like_intent_error(output: str) -> bool:
     lowered = output.lower()
+    if "status: ok" in lowered:
+        return False
+    if "activity not started, its current task has been brought to the front" in lowered:
+        return False
     return any(marker in lowered for marker in [
-        "error",
+        "error:",
         "exception",
         "unable to",
         "securityexception",
-        "activity not started",
     ])
 
 
@@ -213,20 +270,18 @@ def launch_video(ip: str, video_path: str) -> tuple[bool, str]:
     if not normalized_path.startswith("/"):
         normalized_path = f"/{normalized_path.lstrip('/')}"
 
-    # Ensure MediaStore can index newly copied files so they are visible on-device.
-    scan_out = exec_shell_args(ip, [
-        "am", "broadcast",
-        "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
-        "-d", f"file://{normalized_path}",
-    ])
+    escaped_path = _escape_shell_single_quotes(normalized_path)
+    file_check = exec_command(ip, f"ls -l '{escaped_path}'")
+    mime_check = os.path.splitext(normalized_path)[1].lower() or "(unknown)"
+    scan_out = _scan_media_file(ip, normalized_path)
 
-    file_uri = f"file://{normalized_path}"
+    file_uri = _to_file_uri(normalized_path)
     content_uri = _resolve_media_content_uri(ip, normalized_path)
 
     attempts: list[tuple[str, list[str]]] = []
     if content_uri:
         attempts.append(("content+horizon", [
-            "am", "start",
+            "am", "start", "-W",
             "-a", "android.intent.action.VIEW",
             "-d", content_uri,
             "-t", "video/*",
@@ -234,7 +289,7 @@ def launch_video(ip: str, video_path: str) -> tuple[bool, str]:
             "-p", "com.oculus.horizonmediaplayer",
         ]))
     attempts.append(("file+horizon", [
-        "am", "start",
+        "am", "start", "-W",
         "-a", "android.intent.action.VIEW",
         "-d", file_uri,
         "-t", "video/*",
@@ -243,21 +298,26 @@ def launch_video(ip: str, video_path: str) -> tuple[bool, str]:
     ]))
     if content_uri:
         attempts.append(("content+implicit", [
-            "am", "start",
+            "am", "start", "-W",
             "-a", "android.intent.action.VIEW",
             "-d", content_uri,
             "-t", "video/*",
             "--grant-read-uri-permission",
         ]))
     attempts.append(("file+implicit", [
-        "am", "start",
+        "am", "start", "-W",
         "-a", "android.intent.action.VIEW",
         "-d", file_uri,
         "-t", "video/*",
         "--grant-read-uri-permission",
     ]))
 
-    logs = [f"scan: {scan_out}"]
+    logs = [
+        f"file_check: {file_check}",
+        f"mime: {mime_check}",
+        f"scan: {scan_out}",
+        f"content_uri: {content_uri or '(not indexed)'}",
+    ]
     for name, cmd in attempts:
         out = exec_shell_args(ip, cmd)
         logs.append(f"{name}: {out}")
