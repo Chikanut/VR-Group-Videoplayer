@@ -2,6 +2,8 @@
 
 import subprocess
 import re
+import os
+import threading
 
 
 ADB_PORT = 5555
@@ -76,3 +78,144 @@ def is_online(ip: str) -> bool:
     """Check if device is reachable via adb."""
     rc, out, _ = _run(["adb", "-s", _target(ip), "get-state"], timeout=3)
     return rc == 0 and "device" in out.lower()
+
+
+# ---------------------------------------------------------------------------
+# Transfer commands with progress support
+# ---------------------------------------------------------------------------
+
+def push(ip: str, local_path: str, remote_path: str,
+         progress_callback=None, cancel_event: threading.Event = None) -> tuple[bool, str]:
+    """Push file to device. progress_callback(percent: int). Returns (success, message)."""
+    if not os.path.exists(local_path):
+        return False, f"Local file not found: {local_path}"
+    args = ["adb", "-s", _target(ip), "push", local_path, remote_path]
+    return _run_with_progress(args, progress_callback, cancel_event)
+
+
+def pull(ip: str, remote_path: str, local_path: str,
+         progress_callback=None, cancel_event: threading.Event = None) -> tuple[bool, str]:
+    """Pull file from device. progress_callback(percent: int). Returns (success, message)."""
+    args = ["adb", "-s", _target(ip), "pull", remote_path, local_path]
+    return _run_with_progress(args, progress_callback, cancel_event)
+
+
+def install(ip: str, apk_path: str,
+            progress_callback=None, cancel_event: threading.Event = None) -> tuple[bool, str]:
+    """Install APK on device. Returns (success, message)."""
+    if not os.path.exists(apk_path):
+        return False, f"APK not found: {apk_path}"
+    args = ["adb", "-s", _target(ip), "install", "-r", apk_path]
+    return _run_with_progress(args, progress_callback, cancel_event)
+
+
+def uninstall(ip: str, package: str) -> tuple[bool, str]:
+    """Uninstall package from device. Returns (success, message)."""
+    rc, out, err = _run(["adb", "-s", _target(ip), "uninstall", package], timeout=30)
+    msg = out if out else err
+    return rc == 0 and "success" in msg.lower(), msg
+
+
+def forward(ip: str, local_port: str, remote_port: str) -> tuple[bool, str]:
+    """Set up port forwarding. Returns (success, message)."""
+    rc, out, err = _run(["adb", "-s", _target(ip), "forward", local_port, remote_port])
+    return rc == 0, out if out else err
+
+
+def reverse(ip: str, remote_port: str, local_port: str) -> tuple[bool, str]:
+    """Set up reverse port forwarding. Returns (success, message)."""
+    rc, out, err = _run(["adb", "-s", _target(ip), "reverse", remote_port, local_port])
+    return rc == 0, out if out else err
+
+
+def list_files(ip: str, remote_path: str) -> list[dict]:
+    """List files/dirs at remote_path. Returns list of {name, type, size}."""
+    out = exec_command(ip, f"ls -la {remote_path}")
+    items = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line or line.startswith("total"):
+            continue
+        parts = line.split(None, 7)
+        if len(parts) < 7:
+            continue
+        perms = parts[0]
+        name = parts[-1] if len(parts) >= 8 else parts[-1]
+        if name in (".", ".."):
+            continue
+        entry_type = "dir" if perms.startswith("d") else "file"
+        try:
+            size = int(parts[4])
+        except (ValueError, IndexError):
+            size = 0
+        items.append({"name": name, "type": entry_type, "size": size})
+    return items
+
+
+def mkdir(ip: str, remote_path: str) -> tuple[bool, str]:
+    """Create directory on device. Returns (success, message)."""
+    out = exec_command(ip, f"mkdir -p {remote_path}")
+    return "No such" not in out and "error" not in out.lower(), out
+
+
+def list_packages(ip: str) -> list[str]:
+    """List installed packages on device."""
+    out = exec_command(ip, "pm list packages")
+    packages = []
+    for line in out.splitlines():
+        line = line.strip()
+        if line.startswith("package:"):
+            packages.append(line[8:])
+    packages.sort()
+    return packages
+
+
+def launch_video(ip: str, video_path: str) -> tuple[bool, str]:
+    """Launch video player with the given file. Returns (success, message)."""
+    cmd = (
+        f"am start -a android.intent.action.VIEW "
+        f"-d file://{video_path} "
+        f"-t video/mp4 "
+        f"-p com.oculus.horizonmediaplayer"
+    )
+    out = exec_command(ip, cmd)
+    success = "Error" not in out
+    return success, out
+
+
+def _run_with_progress(args: list[str], progress_callback=None,
+                       cancel_event: threading.Event = None) -> tuple[bool, str]:
+    """Run adb command that outputs progress (push/pull/install).
+    Parses percentage from adb output lines. Returns (success, message)."""
+    try:
+        proc = subprocess.Popen(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+    except FileNotFoundError:
+        return False, "adb not found"
+
+    output_lines = []
+    while True:
+        if cancel_event and cancel_event.is_set():
+            proc.kill()
+            return False, "Cancelled"
+
+        line = proc.stdout.readline()
+        if not line and proc.poll() is not None:
+            break
+        if line:
+            line = line.strip()
+            output_lines.append(line)
+            if progress_callback:
+                match = re.search(r"(\d+)%", line)
+                if match:
+                    progress_callback(int(match.group(1)))
+
+    rc = proc.returncode
+    result_text = "\n".join(output_lines)
+    if progress_callback:
+        progress_callback(100)
+    return rc == 0, result_text

@@ -69,11 +69,11 @@ def scan_subnet(subnet: str, progress_callback=None) -> list[FoundDevice]:
                 pass
 
     devices: list[FoundDevice] = []
-    for ip in open_ips:
+    for ip in sorted(open_ips):
         adb_manager.connect(ip)
-        mac = adb_manager.get_mac(ip)
         name = adb_manager.get_device_name(ip)
-        devices.append(FoundDevice(ip=ip, mac=mac, name=name))
+        # Use IP as identifier since MAC is not always accessible
+        devices.append(FoundDevice(ip=ip, mac=ip, name=name))
 
     return devices
 

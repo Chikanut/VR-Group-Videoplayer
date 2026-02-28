@@ -2,6 +2,8 @@
 """Meta Quest Group Manager — PyQt5 desktop app for managing groups of Quest devices via ADB over WiFi."""
 
 import sys
+import os
+import threading
 from functools import partial
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -12,7 +14,8 @@ from PyQt5.QtWidgets import (
     QListWidget, QListWidgetItem, QPushButton, QScrollArea, QGridLayout,
     QFrame, QLabel, QLineEdit, QTextEdit, QProgressBar, QDialog,
     QDialogButtonBox, QCheckBox, QMenu, QAction, QInputDialog,
-    QMessageBox, QSizePolicy, QSplitter,
+    QMessageBox, QSizePolicy, QSplitter, QFileDialog, QComboBox,
+    QToolBar, QTreeWidget, QTreeWidgetItem, QHeaderView,
 )
 
 import adb_manager
@@ -179,7 +182,6 @@ class DeviceTile(QFrame):
         )
         if reply == QMessageBox.Yes:
             storage.remove_device_from_group(self.group_name, self.device.mac)
-            # Signal parent to refresh
             parent = self.parent()
             while parent and not isinstance(parent, MainWindow):
                 parent = parent.parent()
@@ -191,7 +193,7 @@ class DeviceTile(QFrame):
 # Create group dialog with scanning
 # ---------------------------------------------------------------------------
 class CreateGroupDialog(QDialog):
-    """Dialog: enter group name → scan network → pick devices → save."""
+    """Dialog: enter group name -> scan network -> pick devices -> save."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -250,7 +252,6 @@ class CreateGroupDialog(QDialog):
         self.progress.setVisible(True)
         self.progress.setValue(0)
 
-        # Clear previous results
         for cb, _ in self._checkboxes:
             cb.setParent(None)
         self._checkboxes.clear()
@@ -277,7 +278,7 @@ class CreateGroupDialog(QDialog):
 
         self.buttons.button(QDialogButtonBox.Ok).setEnabled(True)
         for dev in devices:
-            cb = QCheckBox(f"{dev.name}  |  {dev.ip}  |  {dev.mac}")
+            cb = QCheckBox(f"{dev.name}  |  {dev.ip}")
             cb.setChecked(True)
             self.device_area.addWidget(cb)
             self._checkboxes.append((cb, dev))
@@ -288,7 +289,6 @@ class CreateGroupDialog(QDialog):
             QMessageBox.warning(self, "Error", "Please enter a group name.")
             return
 
-        # Check duplicates
         if storage.get_group(name):
             QMessageBox.warning(self, "Error", f"Group '{name}' already exists.")
             return
@@ -345,6 +345,89 @@ class GlobalCommandWorker(QThread):
 
 
 # ---------------------------------------------------------------------------
+# Transfer worker — handles push/pull/install with progress
+# ---------------------------------------------------------------------------
+class TransferWorker(QThread):
+    """Runs a file transfer (push/pull/install) on one device with progress."""
+    progress_update = pyqtSignal(str, int)    # ip, percent
+    transfer_done = pyqtSignal(str, bool, str)  # ip, success, message
+
+    def __init__(self, ip: str, operation: str, **kwargs):
+        super().__init__()
+        self.ip = ip
+        self.operation = operation
+        self.kwargs = kwargs
+        self._cancel = threading.Event()
+
+    def cancel(self):
+        self._cancel.set()
+
+    def run(self):
+        cb = lambda pct: self.progress_update.emit(self.ip, pct)
+        try:
+            if self.operation == "push":
+                ok, msg = adb_manager.push(
+                    self.ip, self.kwargs["local_path"], self.kwargs["remote_path"],
+                    progress_callback=cb, cancel_event=self._cancel)
+            elif self.operation == "pull":
+                ok, msg = adb_manager.pull(
+                    self.ip, self.kwargs["remote_path"], self.kwargs["local_path"],
+                    progress_callback=cb, cancel_event=self._cancel)
+            elif self.operation == "install":
+                ok, msg = adb_manager.install(
+                    self.ip, self.kwargs["apk_path"],
+                    progress_callback=cb, cancel_event=self._cancel)
+            else:
+                ok, msg = False, f"Unknown operation: {self.operation}"
+        except Exception as e:
+            ok, msg = False, str(e)
+        self.transfer_done.emit(self.ip, ok, msg)
+
+
+class MultiTransferWorker(QThread):
+    """Runs transfer on multiple devices sequentially, reporting per-device progress."""
+    device_progress = pyqtSignal(str, int)       # ip, percent
+    device_done = pyqtSignal(str, bool, str)     # ip, success, message
+    all_done = pyqtSignal()
+
+    def __init__(self, devices: list[storage.Device], operation: str, **kwargs):
+        super().__init__()
+        self.devices = devices
+        self.operation = operation
+        self.kwargs = kwargs
+        self._cancel = threading.Event()
+
+    def cancel(self):
+        self._cancel.set()
+
+    def run(self):
+        for dev in self.devices:
+            if self._cancel.is_set():
+                break
+            ip = dev.last_known_ip
+            cb = lambda pct, _ip=ip: self.device_progress.emit(_ip, pct)
+            try:
+                if self.operation == "push":
+                    ok, msg = adb_manager.push(
+                        ip, self.kwargs["local_path"], self.kwargs["remote_path"],
+                        progress_callback=cb, cancel_event=self._cancel)
+                elif self.operation == "pull":
+                    ok, msg = adb_manager.pull(
+                        ip, self.kwargs["remote_path"], self.kwargs["local_path"],
+                        progress_callback=cb, cancel_event=self._cancel)
+                elif self.operation == "install":
+                    ok, msg = adb_manager.install(
+                        ip, self.kwargs["apk_path"],
+                        progress_callback=cb, cancel_event=self._cancel)
+                else:
+                    ok, msg = False, f"Unknown operation: {self.operation}"
+            except Exception as e:
+                ok, msg = False, str(e)
+            self.device_done.emit(ip, ok, msg)
+        self.all_done.emit()
+
+
+# ---------------------------------------------------------------------------
 # Polling worker
 # ---------------------------------------------------------------------------
 class PollWorker(QThread):
@@ -371,7 +454,6 @@ class PollWorker(QThread):
             online = adb_manager.is_online(ip)
 
             if not online:
-                # Try to resolve new IP by MAC
                 new_ip = scanner.resolve_ip_by_mac(dev.mac)
                 if new_ip and new_ip != ip:
                     adb_manager.connect(new_ip)
@@ -404,6 +486,493 @@ class CommandResultsDialog(QDialog):
 
     def append_result(self, ip: str, result: str):
         self.text.append(f"--- {ip} ---\n{result}\n")
+
+
+# ---------------------------------------------------------------------------
+# Transfer progress dialog
+# ---------------------------------------------------------------------------
+class TransferProgressDialog(QDialog):
+    """Shows progress for file transfers across one or multiple devices."""
+
+    def __init__(self, title: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumSize(500, 300)
+        self.setModal(False)
+
+        layout = QVBoxLayout(self)
+
+        self.log = QTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setStyleSheet("background: #1e1e1e; color: #ddd; font-family: monospace; font-size: 11px;")
+        layout.addWidget(self.log, 1)
+
+        self._progress_bars: dict[str, QProgressBar] = {}
+        self._progress_layout = QVBoxLayout()
+        layout.addLayout(self._progress_layout)
+
+        btn_row = QHBoxLayout()
+        self.cancel_btn = QPushButton("Cancel")
+        self.close_btn = QPushButton("Close")
+        self.close_btn.setEnabled(False)
+        btn_row.addStretch()
+        btn_row.addWidget(self.cancel_btn)
+        btn_row.addWidget(self.close_btn)
+        layout.addLayout(btn_row)
+
+        self.close_btn.clicked.connect(self.accept)
+        self._worker = None
+
+    def set_worker(self, worker):
+        self._worker = worker
+        self.cancel_btn.clicked.connect(worker.cancel)
+
+    def add_device_bar(self, ip: str):
+        bar = QProgressBar()
+        bar.setFormat(f"{ip}: %p%")
+        bar.setValue(0)
+        self._progress_layout.addWidget(bar)
+        self._progress_bars[ip] = bar
+
+    def update_progress(self, ip: str, percent: int):
+        bar = self._progress_bars.get(ip)
+        if bar:
+            bar.setValue(percent)
+
+    def on_device_done(self, ip: str, success: bool, message: str):
+        status = "OK" if success else "FAIL"
+        self.log.append(f"[{ip}] {status}: {message}")
+        bar = self._progress_bars.get(ip)
+        if bar:
+            bar.setValue(100)
+
+    def on_all_done(self):
+        self.log.append("\n=== All transfers complete ===")
+        self.cancel_btn.setEnabled(False)
+        self.close_btn.setEnabled(True)
+
+
+# ---------------------------------------------------------------------------
+# File browser dialog
+# ---------------------------------------------------------------------------
+class FileBrowserDialog(QDialog):
+    """Browse files and folders on a device."""
+
+    def __init__(self, ip: str, device_name: str, parent=None):
+        super().__init__(parent)
+        self.ip = ip
+        self.setWindowTitle(f"File Browser — {device_name} ({ip})")
+        self.setMinimumSize(700, 500)
+        self.current_path = "/sdcard"
+
+        layout = QVBoxLayout(self)
+
+        # Navigation bar
+        nav = QHBoxLayout()
+        self.path_input = QLineEdit(self.current_path)
+        self.path_input.returnPressed.connect(self._navigate)
+        nav.addWidget(self.path_input, 1)
+
+        go_btn = QPushButton("Go")
+        go_btn.clicked.connect(self._navigate)
+        nav.addWidget(go_btn)
+
+        up_btn = QPushButton("Up")
+        up_btn.clicked.connect(self._go_up)
+        nav.addWidget(up_btn)
+
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.clicked.connect(self._refresh)
+        nav.addWidget(refresh_btn)
+        layout.addLayout(nav)
+
+        # File tree
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["Name", "Type", "Size"])
+        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.tree.setColumnWidth(1, 80)
+        self.tree.setColumnWidth(2, 100)
+        self.tree.itemDoubleClicked.connect(self._on_item_double_click)
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._context_menu)
+        layout.addWidget(self.tree, 1)
+
+        # Action buttons
+        actions = QHBoxLayout()
+
+        mkdir_btn = QPushButton("New Folder")
+        mkdir_btn.clicked.connect(self._mkdir)
+        actions.addWidget(mkdir_btn)
+
+        push_btn = QPushButton("Upload File")
+        push_btn.clicked.connect(self._push_file)
+        actions.addWidget(push_btn)
+
+        pull_btn = QPushButton("Download File")
+        pull_btn.clicked.connect(self._pull_file)
+        actions.addWidget(pull_btn)
+
+        actions.addStretch()
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        actions.addWidget(close_btn)
+        layout.addLayout(actions)
+
+        self._refresh()
+
+    def _navigate(self):
+        path = self.path_input.text().strip()
+        if path:
+            self.current_path = path
+            self._refresh()
+
+    def _go_up(self):
+        parent = os.path.dirname(self.current_path.rstrip("/"))
+        if parent:
+            self.current_path = parent
+            self.path_input.setText(self.current_path)
+            self._refresh()
+
+    def _refresh(self):
+        self.tree.clear()
+        self.path_input.setText(self.current_path)
+
+        worker = SingleCommandWorker(self.ip, f"ls -la {self.current_path}", parent=self)
+        worker.result_ready.connect(self._on_ls_result)
+        worker.start()
+        self._ls_worker = worker
+
+    def _on_ls_result(self, ip: str, result: str):
+        self.tree.clear()
+        for line in result.splitlines():
+            line = line.strip()
+            if not line or line.startswith("total"):
+                continue
+            parts = line.split(None, 7)
+            if len(parts) < 7:
+                continue
+            perms = parts[0]
+            name = parts[-1] if len(parts) >= 8 else parts[-1]
+            if name in (".", ".."):
+                continue
+            entry_type = "dir" if perms.startswith("d") else "file"
+            try:
+                size = parts[4]
+            except (IndexError):
+                size = ""
+            item = QTreeWidgetItem([name, entry_type, size if entry_type == "file" else ""])
+            if entry_type == "dir":
+                item.setFont(0, QFont("Segoe UI", 10, QFont.Bold))
+            self.tree.addTopLevelItem(item)
+
+    def _on_item_double_click(self, item: QTreeWidgetItem, column: int):
+        if item.text(1) == "dir":
+            name = item.text(0)
+            self.current_path = f"{self.current_path.rstrip('/')}/{name}"
+            self.path_input.setText(self.current_path)
+            self._refresh()
+
+    def _context_menu(self, pos):
+        item = self.tree.itemAt(pos)
+        if not item:
+            return
+        menu = QMenu(self)
+        if item.text(1) == "file":
+            dl_action = menu.addAction("Download")
+            del_action = menu.addAction("Delete")
+            action = menu.exec_(self.tree.viewport().mapToGlobal(pos))
+            if action == dl_action:
+                self._pull_selected(item)
+            elif action == del_action:
+                self._delete_item(item)
+        else:
+            enter_action = menu.addAction("Open")
+            del_action = menu.addAction("Delete")
+            action = menu.exec_(self.tree.viewport().mapToGlobal(pos))
+            if action == enter_action:
+                self._on_item_double_click(item, 0)
+            elif action == del_action:
+                self._delete_item(item)
+
+    def _mkdir(self):
+        name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
+        if ok and name.strip():
+            remote = f"{self.current_path.rstrip('/')}/{name.strip()}"
+            adb_manager.mkdir(self.ip, remote)
+            self._refresh()
+
+    def _push_file(self):
+        paths, _ = QFileDialog.getOpenFileNames(self, "Select files to upload")
+        if not paths:
+            return
+        self._do_push(paths)
+
+    def _do_push(self, local_paths: list[str]):
+        main_win = self._find_main_window()
+        if not main_win:
+            return
+        for local_path in local_paths:
+            remote = f"{self.current_path.rstrip('/')}/{os.path.basename(local_path)}"
+            main_win.start_transfer("push", [self.ip],
+                                    local_path=local_path, remote_path=remote)
+        QTimer.singleShot(1000, self._refresh)
+
+    def _pull_file(self):
+        item = self.tree.currentItem()
+        if not item or item.text(1) != "file":
+            QMessageBox.information(self, "Info", "Select a file to download.")
+            return
+        self._pull_selected(item)
+
+    def _pull_selected(self, item: QTreeWidgetItem):
+        name = item.text(0)
+        remote = f"{self.current_path.rstrip('/')}/{name}"
+        local_dir = QFileDialog.getExistingDirectory(self, "Save to folder")
+        if not local_dir:
+            return
+        local_path = os.path.join(local_dir, name)
+        main_win = self._find_main_window()
+        if main_win:
+            main_win.start_transfer("pull", [self.ip],
+                                    remote_path=remote, local_path=local_path)
+
+    def _delete_item(self, item: QTreeWidgetItem):
+        name = item.text(0)
+        reply = QMessageBox.question(
+            self, "Delete", f"Delete '{name}'?",
+            QMessageBox.Yes | QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            remote = f"{self.current_path.rstrip('/')}/{name}"
+            flag = "-rf" if item.text(1) == "dir" else ""
+            adb_manager.exec_command(self.ip, f"rm {flag} {remote}")
+            self._refresh()
+
+    def _find_main_window(self):
+        parent = self.parent()
+        while parent and not isinstance(parent, MainWindow):
+            parent = parent.parent()
+        return parent
+
+
+# ---------------------------------------------------------------------------
+# Package list dialog
+# ---------------------------------------------------------------------------
+class PackageListDialog(QDialog):
+    """View/uninstall packages on a device."""
+
+    def __init__(self, ip: str, device_name: str, parent=None):
+        super().__init__(parent)
+        self.ip = ip
+        self.setWindowTitle(f"Installed Apps — {device_name} ({ip})")
+        self.setMinimumSize(500, 400)
+
+        layout = QVBoxLayout(self)
+
+        # Filter
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Filter:"))
+        self.filter_input = QLineEdit()
+        self.filter_input.setPlaceholderText("Type to filter packages...")
+        self.filter_input.textChanged.connect(self._apply_filter)
+        filter_row.addWidget(self.filter_input)
+        layout.addLayout(filter_row)
+
+        self.pkg_list = QListWidget()
+        layout.addWidget(self.pkg_list, 1)
+
+        btn_row = QHBoxLayout()
+        uninstall_btn = QPushButton("Uninstall Selected")
+        uninstall_btn.clicked.connect(self._uninstall)
+        btn_row.addWidget(uninstall_btn)
+
+        refresh_btn = QPushButton("Refresh")
+        refresh_btn.clicked.connect(self._load_packages)
+        btn_row.addWidget(refresh_btn)
+
+        btn_row.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        self._all_packages: list[str] = []
+        self._load_packages()
+
+    def _load_packages(self):
+        self.pkg_list.clear()
+        self.pkg_list.addItem("Loading...")
+
+        worker = SingleCommandWorker(self.ip, "pm list packages", parent=self)
+        worker.result_ready.connect(self._on_packages_loaded)
+        worker.start()
+        self._worker = worker
+
+    def _on_packages_loaded(self, ip: str, result: str):
+        self.pkg_list.clear()
+        self._all_packages = []
+        for line in result.splitlines():
+            line = line.strip()
+            if line.startswith("package:"):
+                self._all_packages.append(line[8:])
+        self._all_packages.sort()
+        for pkg in self._all_packages:
+            self.pkg_list.addItem(pkg)
+
+    def _apply_filter(self, text: str):
+        text = text.lower()
+        self.pkg_list.clear()
+        for pkg in self._all_packages:
+            if text in pkg.lower():
+                self.pkg_list.addItem(pkg)
+
+    def _uninstall(self):
+        item = self.pkg_list.currentItem()
+        if not item:
+            return
+        pkg = item.text()
+        reply = QMessageBox.question(
+            self, "Uninstall", f"Uninstall '{pkg}'?",
+            QMessageBox.Yes | QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            ok, msg = adb_manager.uninstall(self.ip, pkg)
+            if ok:
+                QMessageBox.information(self, "Success", f"Uninstalled {pkg}")
+                self._load_packages()
+            else:
+                QMessageBox.warning(self, "Error", f"Failed to uninstall: {msg}")
+
+
+# ---------------------------------------------------------------------------
+# Video launcher dialog
+# ---------------------------------------------------------------------------
+class VideoLauncherDialog(QDialog):
+    """Browse video files on device and launch them."""
+
+    def __init__(self, ip: str, device_name: str, parent=None):
+        super().__init__(parent)
+        self.ip = ip
+        self.setWindowTitle(f"Video Player — {device_name} ({ip})")
+        self.setMinimumSize(500, 400)
+
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(QLabel("Select video file to play:"))
+
+        # Path selector
+        path_row = QHBoxLayout()
+        path_row.addWidget(QLabel("Scan folder:"))
+        self.folder_input = QLineEdit("/sdcard/Movies")
+        path_row.addWidget(self.folder_input, 1)
+        scan_btn = QPushButton("Scan")
+        scan_btn.clicked.connect(self._scan_videos)
+        path_row.addWidget(scan_btn)
+        layout.addLayout(path_row)
+
+        self.video_list = QListWidget()
+        layout.addWidget(self.video_list, 1)
+
+        btn_row = QHBoxLayout()
+        play_btn = QPushButton("Play Selected")
+        play_btn.clicked.connect(self._play)
+        btn_row.addWidget(play_btn)
+
+        play_all_btn = QPushButton("Play on All Devices")
+        play_all_btn.clicked.connect(self._play_all)
+        btn_row.addWidget(play_all_btn)
+
+        btn_row.addStretch()
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        self._videos: list[str] = []
+        self._scan_videos()
+
+    def _scan_videos(self):
+        self.video_list.clear()
+        self.video_list.addItem("Scanning...")
+        folder = self.folder_input.text().strip()
+        cmd = f"find {folder} -type f \\( -name '*.mp4' -o -name '*.mkv' -o -name '*.avi' -o -name '*.mov' -o -name '*.webm' \\) 2>/dev/null"
+        worker = SingleCommandWorker(self.ip, cmd, parent=self)
+        worker.result_ready.connect(self._on_scan_result)
+        worker.start()
+        self._scan_worker = worker
+
+    def _on_scan_result(self, ip: str, result: str):
+        self.video_list.clear()
+        self._videos = []
+        for line in result.splitlines():
+            line = line.strip()
+            if line:
+                self._videos.append(line)
+                self.video_list.addItem(os.path.basename(line))
+        if not self._videos:
+            self.video_list.addItem("(no videos found)")
+
+    def _play(self):
+        idx = self.video_list.currentRow()
+        if idx < 0 or idx >= len(self._videos):
+            return
+        video_path = self._videos[idx]
+        ok, msg = adb_manager.launch_video(self.ip, video_path)
+        if not ok:
+            QMessageBox.warning(self, "Error", f"Failed to launch video: {msg}")
+
+    def _play_all(self):
+        idx = self.video_list.currentRow()
+        if idx < 0 or idx >= len(self._videos):
+            QMessageBox.information(self, "Info", "Select a video first.")
+            return
+        video_path = self._videos[idx]
+        main_win = self._find_main_window()
+        if main_win:
+            main_win.launch_video_all(video_path)
+
+    def _find_main_window(self):
+        parent = self.parent()
+        while parent and not isinstance(parent, MainWindow):
+            parent = parent.parent()
+        return parent
+
+
+# ---------------------------------------------------------------------------
+# Device action selector dialog
+# ---------------------------------------------------------------------------
+class DeviceActionDialog(QDialog):
+    """Choose target: single device or all online devices."""
+
+    def __init__(self, action_name: str, online_devices: list[storage.Device], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"{action_name} — Select Target")
+        self.setMinimumWidth(350)
+        self.selected_devices: list[storage.Device] = []
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel(f"Apply '{action_name}' to:"))
+
+        self.combo = QComboBox()
+        self.combo.addItem("All online devices")
+        for dev in online_devices:
+            label = f"{dev.custom_name} ({dev.last_known_ip})"
+            self.combo.addItem(label)
+        layout.addWidget(self.combo)
+
+        self._online_devices = online_devices
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self._accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _accept(self):
+        idx = self.combo.currentIndex()
+        if idx == 0:
+            self.selected_devices = list(self._online_devices)
+        else:
+            self.selected_devices = [self._online_devices[idx - 1]]
+        self.accept()
 
 
 # ---------------------------------------------------------------------------
@@ -456,7 +1025,7 @@ class MainWindow(QMainWindow):
         left.setMaximumWidth(250)
         splitter.addWidget(left)
 
-        # --- Center: device tiles ---
+        # --- Right: device tiles + action toolbar ---
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
@@ -465,6 +1034,44 @@ class MainWindow(QMainWindow):
         self.group_title.setFont(QFont("Segoe UI", 14, QFont.Bold))
         right_layout.addWidget(self.group_title)
 
+        # Action toolbar
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(6)
+
+        self.btn_push = QPushButton("Upload File")
+        self.btn_push.setToolTip("Push files to devices")
+        self.btn_push.clicked.connect(self._action_push)
+        toolbar.addWidget(self.btn_push)
+
+        self.btn_install = QPushButton("Install APK")
+        self.btn_install.setToolTip("Install APK on devices")
+        self.btn_install.clicked.connect(self._action_install)
+        toolbar.addWidget(self.btn_install)
+
+        self.btn_browse = QPushButton("File Browser")
+        self.btn_browse.setToolTip("Browse files on a device")
+        self.btn_browse.clicked.connect(self._action_browse)
+        toolbar.addWidget(self.btn_browse)
+
+        self.btn_video = QPushButton("Play Video")
+        self.btn_video.setToolTip("Launch video on devices")
+        self.btn_video.clicked.connect(self._action_video)
+        toolbar.addWidget(self.btn_video)
+
+        self.btn_packages = QPushButton("Installed Apps")
+        self.btn_packages.setToolTip("View installed apps on a device")
+        self.btn_packages.clicked.connect(self._action_packages)
+        toolbar.addWidget(self.btn_packages)
+
+        self.btn_mkdir = QPushButton("Create Folder")
+        self.btn_mkdir.setToolTip("Create a folder on devices")
+        self.btn_mkdir.clicked.connect(self._action_mkdir)
+        toolbar.addWidget(self.btn_mkdir)
+
+        toolbar.addStretch()
+        right_layout.addLayout(toolbar)
+
+        # Device tiles scroll area
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.tile_container = QWidget()
@@ -493,6 +1100,173 @@ class MainWindow(QMainWindow):
 
         main_layout.addLayout(bottom)
 
+    # --- Helper: get online devices ---
+    def _get_online_devices(self) -> list[storage.Device]:
+        if not self.current_group:
+            return []
+        group = storage.get_group(self.current_group)
+        if not group:
+            return []
+        return [d for d in group.devices
+                if self.tiles.get(d.mac) and self.tiles[d.mac].is_online]
+
+    def _pick_target(self, action_name: str) -> list[storage.Device] | None:
+        """Show device selector. Returns list of devices or None if cancelled."""
+        online = self._get_online_devices()
+        if not online:
+            QMessageBox.information(self, "No devices", "No online devices in this group.")
+            return None
+        if len(online) == 1:
+            return online
+        dlg = DeviceActionDialog(action_name, online, parent=self)
+        if dlg.exec_() == QDialog.Accepted:
+            return dlg.selected_devices
+        return None
+
+    # --- Actions ---
+    def _action_push(self):
+        if not self.current_group:
+            return
+        devices = self._pick_target("Upload File")
+        if not devices:
+            return
+        paths, _ = QFileDialog.getOpenFileNames(self, "Select files to upload")
+        if not paths:
+            return
+        remote_dir, ok = QInputDialog.getText(
+            self, "Remote path", "Upload to folder on device:",
+            text="/sdcard/Movies/")
+        if not ok or not remote_dir.strip():
+            return
+        for local_path in paths:
+            remote = f"{remote_dir.rstrip('/')}/{os.path.basename(local_path)}"
+            ips = [d.last_known_ip for d in devices]
+            self.start_transfer("push", ips,
+                                local_path=local_path, remote_path=remote)
+
+    def _action_install(self):
+        if not self.current_group:
+            return
+        devices = self._pick_target("Install APK")
+        if not devices:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select APK", "", "APK Files (*.apk)")
+        if not path:
+            return
+        ips = [d.last_known_ip for d in devices]
+        self.start_transfer("install", ips, apk_path=path)
+
+    def _action_browse(self):
+        if not self.current_group:
+            return
+        online = self._get_online_devices()
+        if not online:
+            QMessageBox.information(self, "No devices", "No online devices.")
+            return
+        if len(online) == 1:
+            dev = online[0]
+        else:
+            dlg = DeviceActionDialog("File Browser", online, parent=self)
+            if dlg.exec_() != QDialog.Accepted or not dlg.selected_devices:
+                return
+            dev = dlg.selected_devices[0]
+        fb = FileBrowserDialog(dev.last_known_ip, dev.custom_name, parent=self)
+        fb.exec_()
+
+    def _action_video(self):
+        if not self.current_group:
+            return
+        online = self._get_online_devices()
+        if not online:
+            QMessageBox.information(self, "No devices", "No online devices.")
+            return
+        dev = online[0]
+        dlg = VideoLauncherDialog(dev.last_known_ip, dev.custom_name, parent=self)
+        dlg.exec_()
+
+    def _action_packages(self):
+        if not self.current_group:
+            return
+        online = self._get_online_devices()
+        if not online:
+            QMessageBox.information(self, "No devices", "No online devices.")
+            return
+        if len(online) == 1:
+            dev = online[0]
+        else:
+            dlg = DeviceActionDialog("Installed Apps", online, parent=self)
+            if dlg.exec_() != QDialog.Accepted or not dlg.selected_devices:
+                return
+            dev = dlg.selected_devices[0]
+        pkg_dlg = PackageListDialog(dev.last_known_ip, dev.custom_name, parent=self)
+        pkg_dlg.exec_()
+
+    def _action_mkdir(self):
+        if not self.current_group:
+            return
+        devices = self._pick_target("Create Folder")
+        if not devices:
+            return
+        folder, ok = QInputDialog.getText(
+            self, "Create Folder", "Full path for new folder:",
+            text="/sdcard/Movies/NewFolder")
+        if not ok or not folder.strip():
+            return
+        results = []
+        for dev in devices:
+            ok, msg = adb_manager.mkdir(dev.last_known_ip, folder.strip())
+            status = "OK" if ok else f"FAIL: {msg}"
+            results.append(f"[{dev.last_known_ip}] {status}")
+        QMessageBox.information(self, "Create Folder", "\n".join(results))
+
+    # --- Transfer execution ---
+    def start_transfer(self, operation: str, ips: list[str], **kwargs):
+        """Start a file transfer operation on given IPs with a progress dialog."""
+        title_map = {"push": "Uploading", "pull": "Downloading", "install": "Installing"}
+        title = title_map.get(operation, operation)
+
+        dlg = TransferProgressDialog(title, parent=self)
+        dlg.show()
+
+        group = storage.get_group(self.current_group) if self.current_group else None
+        devices = []
+        for ip in ips:
+            if group:
+                for d in group.devices:
+                    if d.last_known_ip == ip:
+                        devices.append(d)
+                        break
+                else:
+                    devices.append(storage.Device(mac=ip, custom_name=ip, last_known_ip=ip))
+            else:
+                devices.append(storage.Device(mac=ip, custom_name=ip, last_known_ip=ip))
+
+        for dev in devices:
+            dlg.add_device_bar(dev.last_known_ip)
+
+        worker = MultiTransferWorker(devices, operation, **kwargs)
+        dlg.set_worker(worker)
+        worker.device_progress.connect(dlg.update_progress)
+        worker.device_done.connect(dlg.on_device_done)
+        worker.all_done.connect(dlg.on_all_done)
+        worker.finished.connect(lambda: self._cmd_workers.remove(worker) if worker in self._cmd_workers else None)
+        self._cmd_workers.append(worker)
+        worker.start()
+
+    def launch_video_all(self, video_path: str):
+        """Launch video on all online devices."""
+        online = self._get_online_devices()
+        if not online:
+            return
+        results_dlg = CommandResultsDialog(self)
+        results_dlg.setWindowTitle("Video Launch Results")
+        results_dlg.show()
+        for dev in online:
+            ok, msg = adb_manager.launch_video(dev.last_known_ip, video_path)
+            status = "OK" if ok else "FAIL"
+            results_dlg.append_result(dev.last_known_ip, f"{status}: {msg}")
+
     # --- Group management ---
     def _refresh_group_list(self):
         self.group_list.clear()
@@ -511,7 +1285,6 @@ class MainWindow(QMainWindow):
         self.group_title.setText(group_name)
         self.tiles.clear()
 
-        # Clear tile grid
         while self.tile_layout.count():
             item = self.tile_layout.takeAt(0)
             w = item.widget()
@@ -529,7 +1302,6 @@ class MainWindow(QMainWindow):
             self.tile_layout.addWidget(tile, i // cols, i % cols)
             self.tiles[dev.mac] = tile
 
-        # Start polling
         self._start_polling()
 
     def _create_group(self):
@@ -541,7 +1313,6 @@ class MainWindow(QMainWindow):
             ]
             storage.create_group(dlg.name_input.text().strip(), devices)
             self._refresh_group_list()
-            # Select the new group
             for i in range(self.group_list.count()):
                 if self.group_list.item(i).text() == dlg.name_input.text().strip():
                     self.group_list.setCurrentRow(i)
@@ -601,7 +1372,7 @@ class MainWindow(QMainWindow):
         if not self.current_group:
             return
         if self._poll_worker and self._poll_worker.isRunning():
-            return  # Previous poll still running
+            return
 
         self._poll_worker = PollWorker(self.current_group, parent=self)
         self._poll_worker.device_status.connect(self._on_device_status)
@@ -622,7 +1393,7 @@ class MainWindow(QMainWindow):
     def _run_single_command(self, ip: str, cmd: str):
         worker = SingleCommandWorker(ip, cmd, parent=self)
         worker.result_ready.connect(self._on_single_cmd_result)
-        worker.finished.connect(lambda: self._cmd_workers.remove(worker))
+        worker.finished.connect(lambda: self._cmd_workers.remove(worker) if worker in self._cmd_workers else None)
         self._cmd_workers.append(worker)
         worker.start()
 
@@ -641,7 +1412,6 @@ class MainWindow(QMainWindow):
         if not group or not group.devices:
             return
 
-        # Collect online devices
         online_devices = [d for d in group.devices if self.tiles.get(d.mac) and self.tiles[d.mac].is_online]
         if not online_devices:
             QMessageBox.information(self, "No devices", "No online devices in this group.")
@@ -654,7 +1424,7 @@ class MainWindow(QMainWindow):
         worker = GlobalCommandWorker(online_devices, cmd, parent=self)
         worker.result_ready.connect(dlg.append_result)
         worker.all_done.connect(lambda: dlg.text.append("\n=== Done ==="))
-        worker.finished.connect(lambda: self._cmd_workers.remove(worker))
+        worker.finished.connect(lambda: self._cmd_workers.remove(worker) if worker in self._cmd_workers else None)
         self._cmd_workers.append(worker)
         worker.start()
 
