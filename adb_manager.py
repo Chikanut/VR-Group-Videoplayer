@@ -27,6 +27,24 @@ class AdbManager:
         result = self._run(["disconnect", f"{ip}:{ADB_PORT}"])
         return result.returncode == 0
 
+    def execute_input(self, ip: str, raw_input: str, timeout: int = 30) -> str:
+        """Розпізнає тип команди і запускає правильно"""
+        import shlex
+        try:
+            parts = shlex.split(raw_input.strip())
+        except ValueError:
+            parts = raw_input.strip().split()
+        
+        if not parts:
+            return "ERROR: empty command"
+        
+        non_shell = {"push", "pull", "install", "uninstall", "forward", "reverse"}
+        
+        if parts[0] in non_shell:
+            return self.exec_raw(ip, parts, timeout=timeout)
+        else:
+            return self.exec_command(ip, raw_input, timeout=timeout)
+
     def exec_command(self, ip: str, cmd: str, timeout: int = 15) -> str:
         result = self._run(["-s", f"{ip}:{ADB_PORT}", "shell", cmd], timeout=timeout)
         if result.returncode != 0:
@@ -66,3 +84,14 @@ class AdbManager:
                 if match:
                     return match.group(1)
         return None
+    
+    def push_file(self, ip: str, local_path: str, remote_path: str, timeout: int = 120) -> str:
+        result = self._run(["-s", f"{ip}:{ADB_PORT}", "push", local_path, remote_path], timeout=timeout)
+        output = (result.stdout + result.stderr).strip()
+        return output if result.returncode == 0 else f"ERROR: {output}"
+
+    def exec_raw(self, ip: str, args: list[str], timeout: int = 15) -> str:
+        """ADB команда без shell (install, push, pull, etc.)"""
+        result = self._run(["-s", f"{ip}:{ADB_PORT}", *args], timeout=timeout)
+        output = (result.stdout + result.stderr).strip()
+        return output if result.returncode == 0 else f"ERROR: {output}"

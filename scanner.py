@@ -43,8 +43,6 @@ def scan_subnet(
             if not adb_manager.connect(ip):
                 continue
             mac = adb_manager.get_mac(ip)
-            if not mac:
-                continue
             name = adb_manager.get_device_name(ip)
             results.append({"ip": ip, "mac": mac, "name": name})
 

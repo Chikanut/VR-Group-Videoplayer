@@ -105,7 +105,7 @@ class GlobalCommandWorker(QRunnable):
 
     def run(self):
         try:
-            output = self.adb.exec_command(self.ip, self.cmd)
+            output = self.adb.execute_input(self.ip, self.cmd)
             self.signals.finished.emit({"name": self.name, "ip": self.ip, "output": output})
         except Exception as exc:
             self.signals.error.emit(f"{self.name}: {exc}")
@@ -416,7 +416,7 @@ class MainWindow(QMainWindow):
         if not ip:
             self.tiles[device["mac"]].append_output("No IP known")
             return
-        output = self.adb.exec_command(ip, cmd)
+        output = self.adb.execute_input(ip, cmd)
         self.tiles[device["mac"]].append_output(output)
 
     def run_global_command(self):
