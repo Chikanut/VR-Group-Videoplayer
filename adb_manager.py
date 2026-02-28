@@ -49,6 +49,12 @@ def exec_command(ip: str, cmd: str) -> str:
     return out if out else err
 
 
+def exec_shell_args(ip: str, args: list[str], timeout: int = 15) -> str:
+    """Execute adb shell command using argv mode to avoid quoting issues."""
+    _, out, err = _run(["adb", "-s", _target(ip), "shell", *args], timeout=timeout)
+    return out if out else err
+
+
 def get_battery(ip: str) -> int:
     """Get battery level percentage. Returns -1 on failure."""
     out = exec_command(ip, "dumpsys battery | grep level")
@@ -172,15 +178,36 @@ def list_packages(ip: str) -> list[str]:
 
 def launch_video(ip: str, video_path: str) -> tuple[bool, str]:
     """Launch video player with the given file. Returns (success, message)."""
-    cmd = (
-        f"am start -a android.intent.action.VIEW "
-        f"-d file://{video_path} "
-        f"-t video/mp4 "
-        f"-p com.oculus.horizonmediaplayer"
+    normalized_path = video_path.strip()
+    if not normalized_path.startswith("/"):
+        normalized_path = f"/{normalized_path.lstrip('/')}"
+
+    # Ensure MediaStore can index newly copied files so they are visible on-device.
+    exec_shell_args(ip, [
+        "am", "broadcast",
+        "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+        "-d", f"file://{normalized_path}",
+    ])
+
+    uri = f"file://{normalized_path}"
+    out = exec_shell_args(ip, [
+        "am", "start",
+        "-a", "android.intent.action.VIEW",
+        "-d", uri,
+        "-t", "video/*",
+        "--grant-read-uri-permission",
+        "-p", "com.oculus.horizonmediaplayer",
+    ])
+
+    if "Error" not in out and "Exception" not in out:
+        return True, out
+
+    # Fallback: launch the player app even if direct open failed.
+    fallback = exec_command(
+        ip,
+        "monkey -p com.oculus.horizonmediaplayer -c android.intent.category.LAUNCHER 1",
     )
-    out = exec_command(ip, cmd)
-    success = "Error" not in out
-    return success, out
+    return False, f"{out}\nFallback launch: {fallback}"
 
 
 def _run_with_progress(args: list[str], progress_callback=None,
@@ -193,29 +220,40 @@ def _run_with_progress(args: list[str], progress_callback=None,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            bufsize=1,
         )
     except FileNotFoundError:
         return False, "adb not found"
 
-    output_lines = []
+    output_chunks = []
+    pct_buf = ""
+    last_pct = -1
     while True:
         if cancel_event and cancel_event.is_set():
             proc.kill()
             return False, "Cancelled"
 
-        line = proc.stdout.readline()
-        if not line and proc.poll() is not None:
+        ch = proc.stdout.read(1)
+        if not ch and proc.poll() is not None:
             break
-        if line:
-            line = line.strip()
-            output_lines.append(line)
-            if progress_callback:
-                match = re.search(r"(\d+)%", line)
-                if match:
-                    progress_callback(int(match.group(1)))
+        if not ch:
+            continue
 
-    rc = proc.returncode
-    result_text = "\n".join(output_lines)
-    if progress_callback:
+        output_chunks.append(ch)
+        pct_buf += ch
+        if len(pct_buf) > 256:
+            pct_buf = pct_buf[-256:]
+
+        if progress_callback:
+            matches = re.findall(r"(\d{1,3})%", pct_buf)
+            if matches:
+                pct = max(0, min(100, int(matches[-1])))
+                if pct != last_pct:
+                    progress_callback(pct)
+                    last_pct = pct
+
+    rc = proc.wait()
+    result_text = "".join(output_chunks).strip()
+    if progress_callback and rc == 0 and last_pct < 100:
         progress_callback(100)
     return rc == 0, result_text
