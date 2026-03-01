@@ -72,7 +72,8 @@ async def open_video(video_id: str, device_ids: list[str]) -> dict[str, Any]:
     if not devices:
         return {"error": "No online devices with player connected"}
 
-    device_path = video.get("devicePath", "")
+    local_path = (video.get("localPath", "") or "").strip()
+    device_path = f"/sdcard/Movies/{os.path.basename(local_path)}" if local_path else video.get("devicePath", "")
     video_type = video.get("videoType", "360")
     loop = video.get("loop", False)
 

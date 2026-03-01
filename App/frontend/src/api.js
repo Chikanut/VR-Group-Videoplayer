@@ -67,3 +67,14 @@ export async function playbackCommand(command, deviceIds = []) {
     body: JSON.stringify({ deviceIds }),
   });
 }
+
+
+export async function uploadLocalFile(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`${API_BASE}/files/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+  return res.json();
+}
