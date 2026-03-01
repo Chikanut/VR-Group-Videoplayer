@@ -15,6 +15,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
   const [editingName, setEditingName] = useState(false);
   const [requirements, setRequirements] = useState(null);
   const [loadingReqs, setLoadingReqs] = useState(false);
+  const [ignoreRequirements, setIgnoreRequirements] = useState(false);
 
   useEffect(() => {
     if (device) {
@@ -153,12 +154,22 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
         )}
 
         <div className="dialog-section">
-          <h3>Playback Controls</h3>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <h3 style={{ margin: 0 }}>Playback Controls</h3>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+              <input
+                type="checkbox"
+                checked={ignoreRequirements}
+                onChange={(e) => setIgnoreRequirements(e.target.checked)}
+              />
+              Ignore Requirements
+            </label>
+          </div>
           <div className="dialog-controls">
             <button
               className="btn btn-success"
               disabled={!device.online || !device.playerConnected}
-              onClick={onPlayVideo}
+              onClick={() => onPlayVideo(ignoreRequirements)}
             >
               Open Video
             </button>

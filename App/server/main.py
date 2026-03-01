@@ -4,7 +4,7 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -75,6 +75,24 @@ async def update_config_endpoint(config: ConfigModel):
     new_config = update_config(config.model_dump())
     await ws_manager.broadcast({"type": "config_updated", "config": new_config})
     return new_config
+
+
+@app.post("/api/files/upload")
+async def upload_file(file: UploadFile = File(...)):
+    uploads_dir = Path(__file__).parent.parent / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_name = Path(file.filename or "file.bin").name
+    destination = uploads_dir / safe_name
+
+    with destination.open("wb") as out_file:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            out_file.write(chunk)
+
+    return {"ok": True, "path": str(destination.resolve())}
 
 
 # ─── Device endpoints ─────────────────────────────────────────────────────────
@@ -183,7 +201,7 @@ async def update_all_devices():
 
 @app.post("/api/playback/open")
 async def playback_open(cmd: OpenCommand):
-    result = await open_video(cmd.videoId, cmd.deviceIds)
+    result = await open_video(cmd.videoId, cmd.deviceIds, cmd.ignoreRequirements)
     return result
 
 

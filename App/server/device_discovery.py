@@ -121,6 +121,7 @@ async def discovery_loop():
                                             loop=data.get("loop", False),
                                             locked=data.get("locked", False),
                                             uptime_minutes=data.get("uptimeMinutes", 0),
+                                            player_poll_failures=0,
                                         )
                         except Exception:
                             pass

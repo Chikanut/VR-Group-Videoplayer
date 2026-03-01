@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import time
 from typing import Any
 
 import aiohttp
@@ -22,8 +21,47 @@ def _get_update_lock(device_id: str) -> asyncio.Lock:
     return _update_locks[device_id]
 
 
+def _to_file_uri(path: str) -> str:
+    if path.startswith("file://"):
+        return path
+    return "file://" + path
+
+
+def _shell_escape_single_quotes(value: str) -> str:
+    return value.replace("'", "'\\''")
+
+
+def _normalized_device_path(video: dict[str, Any]) -> str:
+    local_path = (video.get("localPath") or "").strip()
+    if local_path:
+        return f"/sdcard/Movies/{os.path.basename(local_path)}"
+    return (video.get("devicePath") or "").strip()
+
+
+async def _scan_media_file(ip: str, normalized_path: str) -> str:
+    """Ask Android media scanner to index a file and return diagnostic output."""
+    file_uri = _to_file_uri(normalized_path)
+    outputs = []
+
+    _, broadcast_out = await adb_executor.shell(
+        ip,
+        "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE "
+        f"-d '{_shell_escape_single_quotes(file_uri)}'",
+    )
+    if broadcast_out:
+        outputs.append(broadcast_out)
+
+    _, cmd_scan_out = await adb_executor.shell(
+        ip,
+        f"cmd media.scan '{_shell_escape_single_quotes(normalized_path)}'",
+    )
+    if cmd_scan_out and "can't find service: media.scan" not in cmd_scan_out.lower():
+        outputs.append(cmd_scan_out)
+
+    return " | ".join(chunk for chunk in outputs if chunk)
+
+
 async def check_requirements(device_id: str) -> list[dict[str, Any]]:
-    """Check which requirements are met for a device."""
     device = await device_manager.get(device_id)
     if not device:
         return []
@@ -35,13 +73,12 @@ async def check_requirements(device_id: str) -> list[dict[str, Any]]:
     player_port = config.get("playerPort", 8080)
     results = []
 
-    # Check APK installation
     apk_installed = False
     if device.adb_connected:
         packages = await adb_executor.list_packages(device.ip)
         apk_installed = package_id in packages
     elif device.player_connected:
-        apk_installed = True  # If player responds, it's installed
+        apk_installed = True
 
     results.append({
         "type": "apk",
@@ -50,10 +87,7 @@ async def check_requirements(device_id: str) -> list[dict[str, Any]]:
         "present": apk_installed,
     })
 
-    # Check video files
     device_files: set[str] = set()
-
-    # Try to get file list from player API first
     if device.player_connected:
         try:
             async with aiohttp.ClientSession() as session:
@@ -68,19 +102,16 @@ async def check_requirements(device_id: str) -> list[dict[str, Any]]:
             pass
 
     for video in videos:
-        device_path = video.get("devicePath", "")
+        device_path = _normalized_device_path(video)
         video_name = video.get("name", "")
         present = False
 
         if device_path:
-            # Check via player file list
             if device_path in device_files:
                 present = True
-            # Check filename only
             elif os.path.basename(device_path) in device_files:
                 present = True
-            # Fallback to ADB check
-            elif device.adb_connected and not present:
+            elif device.adb_connected:
                 present = await adb_executor.file_exists(device.ip, device_path)
 
         results.append({
@@ -92,12 +123,10 @@ async def check_requirements(device_id: str) -> list[dict[str, Any]]:
             "present": present,
         })
 
-    # Update device requirements status
     all_met = all(
         r["present"] for r in results
         if r.get("required", True) and (r["type"] != "apk" or bool(apk_path))
     )
-    # If no requirements configured, all are met
     if not videos and not apk_path:
         all_met = True
 
@@ -112,11 +141,9 @@ async def check_requirements(device_id: str) -> list[dict[str, Any]]:
 
 
 async def run_update(device_id: str) -> dict[str, Any]:
-    """Run the update process for a device: install APK + push missing videos."""
     lock = _get_update_lock(device_id)
 
     if lock.locked():
-        # Update already in progress
         device = await device_manager.get(device_id)
         return {
             "status": "already_running",
@@ -132,7 +159,8 @@ async def run_update(device_id: str) -> dict[str, Any]:
             return {"status": "error", "message": "ADB not connected"}
 
         await device_manager.add_or_update(
-            device_id, device.ip,
+            device_id,
+            device.ip,
             update_in_progress=True,
             update_progress={"stage": "starting", "progress": 0, "message": "Starting update..."},
         )
@@ -144,7 +172,6 @@ async def run_update(device_id: str) -> dict[str, Any]:
         results = {"installed_apk": False, "pushed_videos": [], "errors": []}
 
         try:
-            # Step 1: Install APK if needed
             if apk_path and os.path.isfile(apk_path):
                 packages = await adb_executor.list_packages(device.ip)
                 if package_id not in packages:
@@ -162,29 +189,30 @@ async def run_update(device_id: str) -> dict[str, Any]:
                 logger.warning("APK path configured but file not found: %s", apk_path)
                 await _broadcast_progress(device_id, "install_apk_skipped", 0, f"APK file not found: {apk_path}")
 
-            # Step 2: Push missing videos
             total_videos = len(videos)
             for idx, video in enumerate(videos):
-                # Check if device is still online
                 device = await device_manager.get(device_id)
                 if not device or not device.online:
                     results["errors"].append("Device went offline during update")
                     break
 
-                device_path = video.get("devicePath", "")
                 local_path = video.get("localPath", "")
+                device_path = _normalized_device_path(video)
                 video_name = video.get("name", os.path.basename(local_path))
 
                 if not device_path or not local_path:
                     continue
 
-                # Check if already present
                 exists = await adb_executor.file_exists(device.ip, device_path)
                 if exists:
                     await _broadcast_progress(
-                        device_id, "push_video", 100,
+                        device_id,
+                        "push_video",
+                        100,
                         f"[{idx + 1}/{total_videos}] {video_name} already present",
-                        file=video_name, video_index=idx, total=total_videos,
+                        file=video_name,
+                        video_index=idx,
+                        total=total_videos,
                     )
                     continue
 
@@ -192,56 +220,82 @@ async def run_update(device_id: str) -> dict[str, Any]:
                     error_msg = f"Local file not found: {local_path}"
                     results["errors"].append(error_msg)
                     await _broadcast_progress(
-                        device_id, "push_video_failed", 0, error_msg,
-                        file=video_name, video_index=idx, total=total_videos,
+                        device_id,
+                        "push_video_failed",
+                        0,
+                        error_msg,
+                        file=video_name,
+                        video_index=idx,
+                        total=total_videos,
                     )
                     continue
 
-                # Ensure directory exists on device
                 await adb_executor.ensure_directory(device.ip, device_path)
 
-                file_size = os.path.getsize(local_path)
-                file_size_mb = file_size / (1024 * 1024)
+                file_size_mb = os.path.getsize(local_path) / (1024 * 1024)
 
-                async def progress_cb(pct, text, _name=video_name, _idx=idx):
+                async def progress_cb(pct: int, _text: str, _name=video_name, _idx=idx):
                     await _broadcast_progress(
-                        device_id, "push_video", pct,
+                        device_id,
+                        "push_video",
+                        pct,
                         f"[{_idx + 1}/{total_videos}] Pushing {_name}... {pct}%",
-                        file=_name, video_index=_idx, total=total_videos,
+                        file=_name,
+                        video_index=_idx,
+                        total=total_videos,
                     )
 
                 await _broadcast_progress(
-                    device_id, "push_video", 0,
+                    device_id,
+                    "push_video",
+                    0,
                     f"[{idx + 1}/{total_videos}] Pushing {video_name} ({file_size_mb:.0f}MB)...",
-                    file=video_name, video_index=idx, total=total_videos,
+                    file=video_name,
+                    video_index=idx,
+                    total=total_videos,
                 )
 
                 success, output = await adb_executor.push_file_with_progress(
-                    device.ip, local_path, device_path, progress_cb,
+                    device.ip,
+                    local_path,
+                    device_path,
+                    progress_cb,
                 )
 
                 if success:
                     results["pushed_videos"].append(video_name)
+                    scan_output = await _scan_media_file(device.ip, device_path)
+                    if scan_output:
+                        logger.info("Media scan output [%s] %s: %s", device_id, video_name, scan_output)
                     await _broadcast_progress(
-                        device_id, "push_video", 100,
+                        device_id,
+                        "push_video",
+                        100,
                         f"[{idx + 1}/{total_videos}] {video_name} pushed successfully",
-                        file=video_name, video_index=idx, total=total_videos,
+                        file=video_name,
+                        video_index=idx,
+                        total=total_videos,
                     )
                 else:
                     results["errors"].append(f"Push {video_name} failed: {output}")
                     await _broadcast_progress(
-                        device_id, "push_video_failed", 0,
+                        device_id,
+                        "push_video_failed",
+                        0,
                         f"[{idx + 1}/{total_videos}] {video_name} push failed: {output}",
-                        file=video_name, video_index=idx, total=total_videos,
+                        file=video_name,
+                        video_index=idx,
+                        total=total_videos,
                     )
 
-            # Step 3: Re-check requirements
             await _broadcast_progress(device_id, "verifying", 0, "Verifying requirements...")
             await check_requirements(device_id)
 
             status = "completed" if not results["errors"] else "completed_with_errors"
             await _broadcast_progress(
-                device_id, status, 100,
+                device_id,
+                status,
+                100,
                 f"Update {status}. Pushed {len(results['pushed_videos'])} video(s), {len(results['errors'])} error(s).",
             )
 
@@ -252,7 +306,8 @@ async def run_update(device_id: str) -> dict[str, Any]:
 
         finally:
             await device_manager.add_or_update(
-                device_id, device.ip,
+                device_id,
+                device.ip,
                 update_in_progress=False,
                 update_progress=None,
             )
@@ -262,6 +317,10 @@ async def run_update(device_id: str) -> dict[str, Any]:
 
 
 async def _broadcast_progress(device_id: str, stage: str, progress: int, message: str, **extra):
+    device = await device_manager.get(device_id)
+    if not device:
+        return
+
     progress_data = {
         "deviceId": device_id,
         "stage": stage,
@@ -271,7 +330,7 @@ async def _broadcast_progress(device_id: str, stage: str, progress: int, message
     }
     await device_manager.add_or_update(
         device_id,
-        (await device_manager.get(device_id)).ip,
+        device.ip,
         update_progress=progress_data,
     )
     await ws_manager.broadcast({

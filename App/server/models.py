@@ -60,6 +60,7 @@ class DeviceState:
         self.uptime_minutes: int = 0
         self.last_seen: float = time.time()
         self.last_player_response: float = 0.0
+        self.player_poll_failures: int = 0
         self.installed_packages: list[str] = []
         self.update_in_progress: bool = False
         self.update_progress: dict | None = None
@@ -87,6 +88,7 @@ class DeviceState:
             "uptimeMinutes": self.uptime_minutes,
             "lastSeen": self.last_seen,
             "installedPackages": self.installed_packages,
+            "playerPollFailures": self.player_poll_failures,
             "updateInProgress": self.update_in_progress,
             "updateProgress": self.update_progress,
         }
@@ -99,6 +101,7 @@ class PlaybackCommand(BaseModel):
 class OpenCommand(BaseModel):
     videoId: str = ""
     deviceIds: list[str] = []
+    ignoreRequirements: bool = False
 
 
 class DeviceNameUpdate(BaseModel):

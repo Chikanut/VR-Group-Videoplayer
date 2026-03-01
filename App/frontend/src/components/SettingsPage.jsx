@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getConfig, updateConfig } from '../api';
+import { getConfig, updateConfig, uploadLocalFile } from '../api';
 
 function generateId() {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 }
+
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -12,6 +13,8 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const apkPickerRef = useRef(null);
+  const videoPickerRefs = useRef({});
 
   useEffect(() => {
     loadConfig();
@@ -27,7 +30,6 @@ export default function SettingsPage() {
     setSuccess('');
     setSaving(true);
 
-    // Validate: no duplicate video names/paths
     const videos = config.requirementVideos || [];
     const names = videos.map((v) => v.name).filter(Boolean);
     const paths = videos.map((v) => v.localPath).filter(Boolean);
@@ -81,6 +83,30 @@ export default function SettingsPage() {
     updateField('requirementVideos', videos);
   };
 
+  const handleApkPick = async (event) => {
+    const selected = event.target.files?.[0];
+    if (!selected) return;
+    const result = await uploadLocalFile(selected);
+    if (result?.ok && result?.path) {
+      updateField('apkPath', result.path);
+    } else {
+      setError('APK upload failed');
+    }
+    event.target.value = '';
+  };
+
+  const handleVideoPick = async (index, event) => {
+    const selected = event.target.files?.[0];
+    if (!selected) return;
+    const result = await uploadLocalFile(selected);
+    if (result?.ok && result?.path) {
+      updateVideo(index, 'localPath', result.path);
+    } else {
+      setError('Video upload failed');
+    }
+    event.target.value = '';
+  };
+
   if (!config) {
     return (
       <div className="settings-page">
@@ -92,9 +118,7 @@ export default function SettingsPage() {
   return (
     <div className="settings-page">
       <div className="settings-header">
-        <button className="btn" onClick={() => navigate('/')}>
-          Back
-        </button>
+        <button className="btn" onClick={() => navigate('/')}>Back</button>
         <h1>Settings</h1>
         <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
           {saving ? 'Saving...' : 'Save'}
@@ -107,12 +131,17 @@ export default function SettingsPage() {
       <section className="settings-section">
         <h2>APK Configuration</h2>
         <div className="form-group">
-          <label>APK File Path (on server PC)</label>
+          <label>APK File (upload from your PC)</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input type="text" value={config.apkPath || ''} readOnly placeholder="Select APK file" />
+            <button className="btn" onClick={() => apkPickerRef.current?.click()}>Choose file</button>
+          </div>
           <input
-            type="text"
-            value={config.apkPath || ''}
-            onChange={(e) => updateField('apkPath', e.target.value)}
-            placeholder="/path/to/player.apk"
+            ref={apkPickerRef}
+            type="file"
+            accept=".apk"
+            onChange={handleApkPick}
+            style={{ display: 'none' }}
           />
         </div>
         <div className="form-group">
@@ -142,21 +171,22 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div className="form-group">
-                  <label>Local Path (on server PC)</label>
+                  <label>Video file (upload from your PC)</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input type="text" value={video.localPath || ''} readOnly placeholder="Select video file" />
+                    <button
+                      className="btn"
+                      onClick={() => videoPickerRefs.current[idx]?.click()}
+                    >
+                      Choose file
+                    </button>
+                  </div>
                   <input
-                    type="text"
-                    value={video.localPath || ''}
-                    onChange={(e) => updateVideo(idx, 'localPath', e.target.value)}
-                    placeholder="/path/to/lesson01.mp4"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Device Path (on Quest)</label>
-                  <input
-                    type="text"
-                    value={video.devicePath || ''}
-                    onChange={(e) => updateVideo(idx, 'devicePath', e.target.value)}
-                    placeholder="/sdcard/VRClassroom/lesson01.mp4"
+                    ref={(el) => { videoPickerRefs.current[idx] = el; }}
+                    type="file"
+                    accept="video/*"
+                    onChange={(e) => handleVideoPick(idx, e)}
+                    style={{ display: 'none' }}
                   />
                 </div>
                 <div className="form-group form-group-small">
@@ -178,18 +208,13 @@ export default function SettingsPage() {
                   />
                 </div>
               </div>
-              <button
-                className="btn btn-danger btn-small"
-                onClick={() => removeVideo(idx)}
-              >
+              <button className="btn btn-danger btn-small" onClick={() => removeVideo(idx)}>
                 Remove
               </button>
             </div>
           ))}
         </div>
-        <button className="btn" onClick={addVideo}>
-          + Add Video
-        </button>
+        <button className="btn" onClick={addVideo}>+ Add Video</button>
       </section>
 
       <section className="settings-section">
@@ -197,70 +222,38 @@ export default function SettingsPage() {
         <div className="settings-grid">
           <div className="form-group">
             <label>Battery Warning Threshold (%)</label>
-            <input
-              type="number"
-              min="0"
-              max="100"
-              value={config.batteryThreshold || 20}
-              onChange={(e) => updateField('batteryThreshold', parseInt(e.target.value) || 0)}
-            />
+            <input type="number" min="0" max="100" value={config.batteryThreshold || 20}
+              onChange={(e) => updateField('batteryThreshold', parseInt(e.target.value) || 0)} />
           </div>
           <div className="form-group">
             <label>Network Scan Interval (seconds)</label>
-            <input
-              type="number"
-              min="5"
-              max="300"
-              value={config.scanInterval || 30}
-              onChange={(e) => updateField('scanInterval', parseInt(e.target.value) || 30)}
-            />
+            <input type="number" min="5" max="300" value={config.scanInterval || 30}
+              onChange={(e) => updateField('scanInterval', parseInt(e.target.value) || 30)} />
           </div>
           <div className="form-group">
             <label>Network Subnet (auto-detected if empty)</label>
-            <input
-              type="text"
-              value={config.networkSubnet || ''}
-              onChange={(e) => updateField('networkSubnet', e.target.value)}
-              placeholder="192.168.1"
-            />
+            <input type="text" value={config.networkSubnet || ''}
+              onChange={(e) => updateField('networkSubnet', e.target.value)} placeholder="192.168.1" />
           </div>
           <div className="form-group">
             <label>Player HTTP Port</label>
-            <input
-              type="number"
-              value={config.playerPort || 8080}
-              onChange={(e) => updateField('playerPort', parseInt(e.target.value) || 8080)}
-            />
+            <input type="number" value={config.playerPort || 8080}
+              onChange={(e) => updateField('playerPort', parseInt(e.target.value) || 8080)} />
           </div>
           <div className="form-group">
             <label>Device Offline Timeout (seconds)</label>
-            <input
-              type="number"
-              min="10"
-              max="300"
-              value={config.deviceOfflineTimeout || 30}
-              onChange={(e) => updateField('deviceOfflineTimeout', parseInt(e.target.value) || 30)}
-            />
+            <input type="number" min="10" max="300" value={config.deviceOfflineTimeout || 30}
+              onChange={(e) => updateField('deviceOfflineTimeout', parseInt(e.target.value) || 30)} />
           </div>
           <div className="form-group">
             <label>Status Poll Interval (seconds)</label>
-            <input
-              type="number"
-              min="1"
-              max="60"
-              value={config.statusPollInterval || 5}
-              onChange={(e) => updateField('statusPollInterval', parseInt(e.target.value) || 5)}
-            />
+            <input type="number" min="1" max="60" value={config.statusPollInterval || 5}
+              onChange={(e) => updateField('statusPollInterval', parseInt(e.target.value) || 5)} />
           </div>
           <div className="form-group">
             <label>Update Concurrency</label>
-            <input
-              type="number"
-              min="1"
-              max="20"
-              value={config.updateConcurrency || 5}
-              onChange={(e) => updateField('updateConcurrency', parseInt(e.target.value) || 5)}
-            />
+            <input type="number" min="1" max="20" value={config.updateConcurrency || 5}
+              onChange={(e) => updateField('updateConcurrency', parseInt(e.target.value) || 5)} />
           </div>
         </div>
       </section>

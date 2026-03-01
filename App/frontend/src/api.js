@@ -54,10 +54,10 @@ export async function pingDevice(id) {
   return request(`/devices/${id}/ping`, { method: 'POST' });
 }
 
-export async function playbackOpen(videoId, deviceIds = []) {
+export async function playbackOpen(videoId, deviceIds = [], ignoreRequirements = false) {
   return request('/playback/open', {
     method: 'POST',
-    body: JSON.stringify({ videoId, deviceIds }),
+    body: JSON.stringify({ videoId, deviceIds, ignoreRequirements }),
   });
 }
 
@@ -66,4 +66,15 @@ export async function playbackCommand(command, deviceIds = []) {
     method: 'POST',
     body: JSON.stringify({ deviceIds }),
   });
+}
+
+
+export async function uploadLocalFile(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`${API_BASE}/files/upload`, {
+    method: 'POST',
+    body: formData,
+  });
+  return res.json();
 }

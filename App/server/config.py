@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import uuid
+import re
 from copy import deepcopy
 from pathlib import Path
 from threading import Lock
@@ -25,6 +26,36 @@ DEFAULT_CONFIG = {
     "updateConcurrency": 5,
 }
 
+def _sanitize_filename(value: str) -> str:
+    value = (value or "").strip()
+    if not value:
+        return "video.mp4"
+    cleaned = re.sub(r"[^A-Za-z0-9._-]", "_", value)
+    if "." not in cleaned:
+        cleaned = f"{cleaned}.mp4"
+    return cleaned
+
+
+def _normalized_device_path(video: dict) -> str:
+    local_path = (video.get("localPath") or "").strip()
+    if local_path:
+        filename = os.path.basename(local_path)
+    else:
+        filename = _sanitize_filename(video.get("name", "video"))
+    return f"/sdcard/Movies/{filename}"
+
+
+def _normalize_requirement_videos(videos: list[dict]) -> list[dict]:
+    normalized = []
+    for video in videos or []:
+        item = dict(video)
+        if not item.get("id"):
+            item["id"] = str(uuid.uuid4())
+        item["devicePath"] = _normalized_device_path(item)
+        normalized.append(item)
+    return normalized
+
+
 _config: dict = {}
 _config_lock = Lock()
 _device_names: dict = {}
@@ -39,6 +70,7 @@ def load_config() -> dict:
                 with open(CONFIG_PATH, "r") as f:
                     data = json.load(f)
                 _config = {**deepcopy(DEFAULT_CONFIG), **data}
+                _config["requirementVideos"] = _normalize_requirement_videos(_config.get("requirementVideos", []))
                 logger.info("Config loaded from %s", CONFIG_PATH)
             except (json.JSONDecodeError, OSError) as e:
                 logger.error("Invalid config file, using defaults: %s", e)
@@ -67,10 +99,7 @@ def update_config(new_config: dict) -> dict:
     global _config
     with _config_lock:
         _config.update(new_config)
-        # Ensure requirement videos have IDs
-        for video in _config.get("requirementVideos", []):
-            if not video.get("id"):
-                video["id"] = str(uuid.uuid4())
+        _config["requirementVideos"] = _normalize_requirement_videos(_config.get("requirementVideos", []))
         _save_config_locked()
         logger.info("Config updated")
         return deepcopy(_config)

@@ -119,23 +119,52 @@ class ADBExecutor:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
-                output_lines = []
-                while True:
-                    line = await asyncio.wait_for(proc.stderr.readline(), timeout=300)
-                    if not line:
-                        break
-                    text = line.decode(errors="replace").strip()
-                    output_lines.append(text)
-                    # Parse adb push progress: "[ XX%] /path/to/file"
-                    match = re.search(r"\[\s*(\d+)%\]", text)
+
+                combined_output = []
+                remainder = ""
+                last_pct = -1
+
+                async def consume_stream(stream):
+                    nonlocal remainder, last_pct
+                    while True:
+                        chunk = await stream.read(512)
+                        if not chunk:
+                            break
+                        text_chunk = chunk.decode(errors="replace")
+                        combined_output.append(text_chunk)
+                        remainder += text_chunk
+
+                        while "\r" in remainder or "\n" in remainder:
+                            split_idx = len(remainder)
+                            for token in ("\r", "\n"):
+                                pos = remainder.find(token)
+                                if pos != -1 and pos < split_idx:
+                                    split_idx = pos
+                            line = remainder[:split_idx]
+                            remainder = remainder[split_idx + 1:]
+                            match = re.search(r"(\d+)%", line)
+                            if match and progress_callback:
+                                pct = int(match.group(1))
+                                if pct != last_pct:
+                                    last_pct = pct
+                                    await progress_callback(pct, line.strip())
+
+                await asyncio.wait_for(
+                    asyncio.gather(consume_stream(proc.stdout), consume_stream(proc.stderr)),
+                    timeout=600,
+                )
+                await proc.wait()
+
+                if remainder:
+                    combined_output.append(remainder)
+                    match = re.search(r"(\d+)%", remainder)
                     if match and progress_callback:
                         pct = int(match.group(1))
-                        await progress_callback(pct, text)
+                        if pct != last_pct:
+                            await progress_callback(pct, remainder.strip())
 
-                await proc.wait()
-                stdout_data = await proc.stdout.read()
-                full_output = "\n".join(output_lines) + "\n" + stdout_data.decode(errors="replace")
-                return proc.returncode == 0, full_output.strip()
+                full_output = "".join(combined_output).strip()
+                return proc.returncode == 0, full_output
             except asyncio.TimeoutError:
                 try:
                     proc.kill()
