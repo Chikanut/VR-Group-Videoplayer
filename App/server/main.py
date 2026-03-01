@@ -79,6 +79,24 @@ async def update_config_endpoint(config: ConfigModel):
     return new_config
 
 
+@app.post("/api/files/upload")
+async def upload_file(file: UploadFile = File(...)):
+    uploads_dir = Path(__file__).parent.parent / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_name = Path(file.filename or "file.bin").name
+    destination = uploads_dir / safe_name
+
+    with destination.open("wb") as out_file:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            out_file.write(chunk)
+
+    return {"ok": True, "path": str(destination.resolve())}
+
+
 # ─── Device endpoints ─────────────────────────────────────────────────────────
 
 
@@ -262,7 +280,7 @@ async def browse_files(
 
 @app.post("/api/playback/open")
 async def playback_open(cmd: OpenCommand):
-    result = await open_video(cmd.videoId, cmd.deviceIds)
+    result = await open_video(cmd.videoId, cmd.deviceIds, cmd.ignoreRequirements)
     return result
 
 

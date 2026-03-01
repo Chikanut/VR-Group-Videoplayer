@@ -209,6 +209,7 @@ namespace VRClassroom
                 {
                     FileInfo fileInfo = new FileInfo(file);
                     Debug.Log($"[VideoPlayerController] Found file: name={fileInfo.Name}, sizeBytes={fileInfo.Length}, modifiedUtc={fileInfo.LastWriteTimeUtc:O}");
+                    RegisterFileInMediaLibrary(file);
                 }
             }
             catch (Exception exception)
@@ -278,12 +279,48 @@ namespace VRClassroom
                 return;
             }
 
+            RegisterFileInMediaLibrary(fullPath);
+
             Debug.Log("[VideoPlayerController] File exists, preparing playback...");
             CurrentFile = filename;
             _videoPlayer.url = "file://" + fullPath;
 
             SetState(PlayerState.Loading);
             _videoPlayer.Prepare();
+        }
+
+        private void RegisterFileInMediaLibrary(string fullPath)
+        {
+            if (string.IsNullOrEmpty(fullPath) || !File.Exists(fullPath))
+                return;
+
+#if UNITY_ANDROID && !UNITY_EDITOR
+            try
+            {
+                using (var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+                using (var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
+                using (var uriClass = new AndroidJavaClass("android.net.Uri"))
+                using (var mediaScannerClass = new AndroidJavaClass("android.media.MediaScannerConnection"))
+                {
+                    using (var javaFile = new AndroidJavaObject("java.io.File", fullPath))
+                    using (var fileUri = uriClass.CallStatic<AndroidJavaObject>("fromFile", javaFile))
+                    using (var intent = new AndroidJavaObject("android.content.Intent", "android.intent.action.MEDIA_SCANNER_SCAN_FILE"))
+                    {
+                        intent.Call<AndroidJavaObject>("setData", fileUri);
+                        activity.Call("sendBroadcast", intent);
+                    }
+
+                    string[] paths = { fullPath };
+                    mediaScannerClass.CallStatic("scanFile", activity, paths, null, null);
+                }
+
+                Debug.Log($"[VideoPlayerController] Media scan requested for file: {fullPath}");
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[VideoPlayerController] Media registration failed for '{fullPath}'. Exception={exception.GetType().Name}, message={exception.Message}");
+            }
+#endif
         }
 
         public void Play()

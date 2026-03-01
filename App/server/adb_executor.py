@@ -166,10 +166,8 @@ class ADBExecutor:
                     if match and progress_callback:
                         await progress_callback(int(match.group(1)), text)
 
-                await proc.wait()
-                stdout_data = await proc.stdout.read()
-                full_output = "\n".join(output_lines) + "\n" + stdout_data.decode(errors="replace")
-                return proc.returncode == 0, full_output.strip()
+                full_output = "".join(combined_output).strip()
+                return proc.returncode == 0, full_output
             except asyncio.TimeoutError:
                 try:
                     proc.kill()
