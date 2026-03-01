@@ -14,6 +14,7 @@ namespace VRClassroom
         public event Action<PlayerState> OnStateChanged;
         public event Action<string> OnVideoLoaded;
         public event Action OnVideoCompleted;
+        public event Action<RenderTexture> OnRenderTextureResized;
 
         public PlayerState CurrentState { get; private set; } = PlayerState.Idle;
         public string CurrentFile { get; private set; } = string.Empty;
@@ -335,6 +336,10 @@ namespace VRClassroom
                       $"width={source.width}, height={source.height}, " +
                       $"frameCount={source.frameCount}, frameRate={source.frameRate:F1}, " +
                       $"canSetTime={source.canSetTime}, audioTrackCount={source.audioTrackCount}");
+
+            // Resize RenderTexture to match video resolution
+            ResizeRenderTexture((int)source.width, (int)source.height);
+
             SetState(PlayerState.Ready);
             OnVideoLoaded?.Invoke(CurrentFile);
 
@@ -342,6 +347,48 @@ namespace VRClassroom
             Debug.Log("[VideoPlayerController] Auto-playing video...");
             source.Play();
             SetState(PlayerState.Playing);
+        }
+
+        private void ResizeRenderTexture(int videoWidth, int videoHeight)
+        {
+            if (videoWidth <= 0 || videoHeight <= 0)
+            {
+                Debug.LogWarning($"[VideoPlayerController] Invalid video dimensions: {videoWidth}x{videoHeight}, keeping current RenderTexture.");
+                return;
+            }
+
+            // Clamp to reasonable limits for Quest hardware
+            const int maxDimension = 4096;
+            int targetWidth = Math.Min(videoWidth, maxDimension);
+            int targetHeight = Math.Min(videoHeight, maxDimension);
+
+            if (TargetTexture != null && TargetTexture.width == targetWidth && TargetTexture.height == targetHeight)
+            {
+                Debug.Log($"[VideoPlayerController] RenderTexture already matches video: {targetWidth}x{targetHeight}");
+                return;
+            }
+
+            Debug.Log($"[VideoPlayerController] Resizing RenderTexture: {TargetTexture?.width}x{TargetTexture?.height} -> {targetWidth}x{targetHeight}");
+
+            // Release old texture
+            if (TargetTexture != null)
+            {
+                _videoPlayer.targetTexture = null;
+                TargetTexture.Release();
+                Destroy(TargetTexture);
+            }
+
+            // Create new texture matching video resolution
+            TargetTexture = new RenderTexture(targetWidth, targetHeight, 0, RenderTextureFormat.ARGB32);
+            TargetTexture.Create();
+
+            // Reassign to video player
+            _videoPlayer.targetTexture = TargetTexture;
+
+            Debug.Log($"[VideoPlayerController] RenderTexture resized to {targetWidth}x{targetHeight}, isCreated={TargetTexture.IsCreated()}");
+
+            // Notify listeners about the new texture
+            OnRenderTextureResized?.Invoke(TargetTexture);
         }
 
         private void OnLoopPointReached(VideoPlayer source)

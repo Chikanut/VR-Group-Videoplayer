@@ -332,6 +332,41 @@ async def websocket_endpoint(ws: WebSocket):
         await ws_manager.disconnect(ws)
 
 
+# ─── Server info endpoint ─────────────────────────────────────────────────────
+
+
+@app.get("/api/server-info")
+async def get_server_info():
+    """Return server IP and port for QR code connection."""
+    ip = _get_local_ip()
+    config = get_config()
+    port = config.get("serverPort", 8000)
+    return {"ip": ip, "port": port, "url": f"http://{ip}:{port}"}
+
+
+def _get_local_ip() -> str:
+    """Get the local network IP address of this machine."""
+    import socket
+
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.1)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        pass
+    try:
+        hostname = socket.gethostname()
+        ip = socket.gethostbyname(hostname)
+        if ip and not ip.startswith("127."):
+            return ip
+    except Exception:
+        pass
+    return "127.0.0.1"
+
+
 # ─── Static files (frontend) ─────────────────────────────────────────────────
 
 FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"

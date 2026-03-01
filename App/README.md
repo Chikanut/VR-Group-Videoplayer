@@ -1,4 +1,6 @@
-# VR Group Videoplayer
+# VR Group Videoplayer — Control Panel
+
+> See the [root README](../README.md) for the full project overview.
 
 Control panel for managing a fleet of Meta Quest VR headsets in a classroom / training environment.
 Push videos, install apps, and control playback across multiple devices simultaneously from a single web interface.
