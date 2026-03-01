@@ -18,6 +18,7 @@ namespace VRClassroom
         public ViewMode CurrentMode { get; private set; }
 
         [SerializeField] private Transform vrCamera;
+        [SerializeField] private Shader videoShaderOverride;
 
         private GameObject _sphere360;
         private GameObject _flat2D;
@@ -164,12 +165,17 @@ namespace VRClassroom
                 return new Material(shader);
             }
 
-            Debug.LogError($"[ViewModeManager] No compatible shader found for {targetName}. Using primitive default material as fallback.");
+            Debug.LogError($"[ViewModeManager] No compatible shader found for {targetName}. Assign 'videoShaderOverride' in the inspector. Using primitive default material as fallback.");
             return renderer.material;
         }
 
         private Shader FindFirstAvailableShader()
         {
+            if (videoShaderOverride != null)
+            {
+                return videoShaderOverride;
+            }
+
             for (int i = 0; i < VideoShaderCandidates.Length; i++)
             {
                 var shader = Shader.Find(VideoShaderCandidates[i]);
