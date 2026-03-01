@@ -10,6 +10,7 @@ namespace VRClassroom
         [SerializeField] private OrientationManager orientationManager;
         [SerializeField] private StatusReporter statusReporter;
         [SerializeField] private ADBReceiverBridge adbReceiver;
+        [SerializeField] private DebugLogPanel debugLogPanel;
 
         private bool _videoPlayerMissing;
         private bool _viewModeManagerMissing;
@@ -57,34 +58,67 @@ namespace VRClassroom
 
         public void HandleCommand(string action, Dictionary<string, string> extras)
         {
+            Debug.Log($"[ADBCommandRouter] Handling action: {action}");
+
             switch (action.ToUpperInvariant())
             {
                 case "OPEN":
                     HandleOpen(extras);
                     break;
                 case "PLAY":
-                    if (!_videoPlayerMissing) videoPlayer.Play();
+                    if (!_videoPlayerMissing)
+                    {
+                        Debug.Log("[ADBCommandRouter] Dispatching: Play()");
+                        videoPlayer.Play();
+                    }
                     break;
                 case "PAUSE":
-                    if (!_videoPlayerMissing) videoPlayer.Pause();
+                    if (!_videoPlayerMissing)
+                    {
+                        Debug.Log("[ADBCommandRouter] Dispatching: Pause()");
+                        videoPlayer.Pause();
+                    }
                     break;
                 case "STOP":
-                    if (!_videoPlayerMissing) videoPlayer.Stop();
+                    if (!_videoPlayerMissing)
+                    {
+                        Debug.Log("[ADBCommandRouter] Dispatching: Stop()");
+                        videoPlayer.Stop();
+                    }
                     break;
                 case "RESTART":
-                    if (!_videoPlayerMissing) videoPlayer.Restart();
+                    if (!_videoPlayerMissing)
+                    {
+                        Debug.Log("[ADBCommandRouter] Dispatching: Restart()");
+                        videoPlayer.Restart();
+                    }
                     break;
                 case "RECENTER":
-                    if (!_orientationManagerMissing) orientationManager.Recenter();
+                    if (!_orientationManagerMissing)
+                    {
+                        Debug.Log("[ADBCommandRouter] Dispatching: Recenter()");
+                        orientationManager.Recenter();
+                    }
                     break;
                 case "SET_MODE":
                     HandleSetMode(extras);
                     break;
                 case "GET_STATUS":
-                    if (!_statusReporterMissing) statusReporter.ReportNow();
+                    if (!_statusReporterMissing)
+                    {
+                        Debug.Log("[ADBCommandRouter] Dispatching: ReportNow()");
+                        statusReporter.ReportNow();
+                    }
                     break;
                 case "SET_LOOP":
                     HandleSetLoop(extras);
+                    break;
+                case "TOGGLE_DEBUG":
+                    if (debugLogPanel != null)
+                    {
+                        Debug.Log("[ADBCommandRouter] Dispatching: ToggleDebug()");
+                        debugLogPanel.Toggle();
+                    }
                     break;
                 default:
                     Debug.LogWarning($"[ADBCommandRouter] Unknown action: {action}");
@@ -106,9 +140,13 @@ namespace VRClassroom
             if (extras.TryGetValue("mode", out string mode) && !string.IsNullOrEmpty(mode))
             {
                 if (!_viewModeManagerMissing)
+                {
+                    Debug.Log($"[ADBCommandRouter] Setting mode: {mode}");
                     viewModeManager.SetMode(ParseMode(mode));
+                }
             }
 
+            Debug.Log($"[ADBCommandRouter] Opening file: {file}");
             videoPlayer.Open(file);
         }
 
@@ -118,6 +156,7 @@ namespace VRClassroom
 
             if (extras.TryGetValue("mode", out string mode) && !string.IsNullOrEmpty(mode))
             {
+                Debug.Log($"[ADBCommandRouter] Setting mode: {mode}");
                 viewModeManager.SetMode(ParseMode(mode));
             }
             else
@@ -132,7 +171,9 @@ namespace VRClassroom
 
             if (extras.TryGetValue("loop", out string loop))
             {
-                videoPlayer.IsLooping = loop.ToLowerInvariant() == "true";
+                bool loopValue = loop.ToLowerInvariant() == "true";
+                Debug.Log($"[ADBCommandRouter] Setting loop: {loopValue}");
+                videoPlayer.IsLooping = loopValue;
             }
             else
             {

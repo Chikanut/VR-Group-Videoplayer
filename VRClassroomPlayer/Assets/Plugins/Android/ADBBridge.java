@@ -28,7 +28,8 @@ public class ADBBridge {
         ACTION_PREFIX + "RECENTER",
         ACTION_PREFIX + "SET_MODE",
         ACTION_PREFIX + "GET_STATUS",
-        ACTION_PREFIX + "SET_LOOP"
+        ACTION_PREFIX + "SET_LOOP",
+        ACTION_PREFIX + "TOGGLE_DEBUG"
     };
 
     public static void initialize() {
