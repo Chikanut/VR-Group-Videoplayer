@@ -25,6 +25,7 @@ namespace VRClassroom
         private bool _dirty;
 
         private const int MaxEntries = 80;
+        private const bool CaptureAllLogs = true;
         private const float CanvasDistance = 2.5f;
         private const float CanvasScale = 0.003f;
         private const float PanelOffsetX = 0f; // Centered in view
@@ -44,16 +45,19 @@ namespace VRClassroom
 
             // Start visible so logs are immediately accessible for debugging
             _panelRoot.SetActive(true);
+
+            AddPanelInfo("Panel initialized");
         }
 
         private void OnEnable()
         {
-            Application.logMessageReceivedThreaded += OnLogMessageReceived;
+            // Keep callback on main thread so UI update signal is always observed.
+            Application.logMessageReceived += OnLogMessageReceived;
         }
 
         private void OnDisable()
         {
-            Application.logMessageReceivedThreaded -= OnLogMessageReceived;
+            Application.logMessageReceived -= OnLogMessageReceived;
         }
 
         private void Update()
@@ -111,6 +115,8 @@ namespace VRClassroom
 
         private void OnLogMessageReceived(string condition, string stackTrace, LogType type)
         {
+            condition ??= "<null log message>";
+
             // Filter: only capture logs with relevant prefixes or errors/warnings
             bool relevant = IsRelevantLog(condition, type);
             if (!relevant) return;
@@ -131,8 +137,26 @@ namespace VRClassroom
             _dirty = true;
         }
 
+        private void AddPanelInfo(string message)
+        {
+            lock (_logEntries)
+            {
+                _logEntries.Add(new LogEntry
+                {
+                    Time = DateTime.Now,
+                    Message = $"[DebugLogPanel] {message}",
+                    Type = LogType.Log
+                });
+            }
+
+            _dirty = true;
+        }
+
         private static bool IsRelevantLog(string message, LogType type)
         {
+            if (CaptureAllLogs)
+                return true;
+
             // Always capture errors and warnings
             if (type == LogType.Error || type == LogType.Exception)
                 return true;
