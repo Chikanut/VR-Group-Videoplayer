@@ -132,7 +132,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
           ) : (
             <p>Unable to check requirements</p>
           )}
-          {device.online && device.adbConnected && device.requirementsMet === false && (
+          {device.online && device.adbConnected && (device.requirementsMet === false || device.requirementsMet === null) && (
             <button
               className="btn btn-primary"
               onClick={() => updateDevice(deviceId)}
@@ -168,42 +168,42 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
           <div className="dialog-controls">
             <button
               className="btn btn-success"
-              disabled={!device.online || !device.playerConnected}
-              onClick={() => onPlayVideo(ignoreRequirements)}
+              disabled={!device.online || (!device.playerConnected && !device.adbConnected)}
+              onClick={onPlayVideo}
             >
               Open Video
             </button>
             <button
               className="btn"
-              disabled={!device.online || !device.playerConnected}
+              disabled={!device.online || (!device.playerConnected && !device.adbConnected)}
               onClick={() => playbackCommand('play', [deviceId])}
             >
               Play
             </button>
             <button
               className="btn"
-              disabled={!device.online || !device.playerConnected}
+              disabled={!device.online || (!device.playerConnected && !device.adbConnected)}
               onClick={() => playbackCommand('pause', [deviceId])}
             >
               Pause
             </button>
             <button
               className="btn"
-              disabled={!device.online || !device.playerConnected}
+              disabled={!device.online || (!device.playerConnected && !device.adbConnected)}
               onClick={() => playbackCommand('stop', [deviceId])}
             >
               Stop
             </button>
             <button
               className="btn"
-              disabled={!device.online || !device.playerConnected}
+              disabled={!device.online || (!device.playerConnected && !device.adbConnected)}
               onClick={() => playbackCommand('recenter', [deviceId])}
             >
               Recenter
             </button>
             <button
               className="btn"
-              disabled={!device.online || !device.playerConnected}
+              disabled={!device.online || (!device.playerConnected && !device.adbConnected)}
               onClick={() => pingDevice(deviceId)}
             >
               Ping

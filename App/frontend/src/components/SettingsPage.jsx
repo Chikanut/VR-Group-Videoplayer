@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getConfig, updateConfig, uploadLocalFile } from '../api';
+import { getConfig, updateConfig } from '../api';
+import FilePicker from './FilePicker';
 
 function generateId() {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
@@ -13,8 +14,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const apkPickerRef = useRef(null);
-  const videoPickerRefs = useRef({});
+  const [filePicker, setFilePicker] = useState(null); // { target, filter, title }
 
   useEffect(() => {
     loadConfig();
@@ -64,7 +64,6 @@ export default function SettingsPage() {
       id: generateId(),
       name: '',
       localPath: '',
-      devicePath: '',
       loop: false,
       videoType: '360',
     });
@@ -83,28 +82,25 @@ export default function SettingsPage() {
     updateField('requirementVideos', videos);
   };
 
-  const handleApkPick = async (event) => {
-    const selected = event.target.files?.[0];
-    if (!selected) return;
-    const result = await uploadLocalFile(selected);
-    if (result?.ok && result?.path) {
-      updateField('apkPath', result.path);
-    } else {
-      setError('APK upload failed');
-    }
-    event.target.value = '';
+  const openFilePicker = (target, filter, title) => {
+    setFilePicker({ target, filter, title });
   };
 
-  const handleVideoPick = async (index, event) => {
-    const selected = event.target.files?.[0];
-    if (!selected) return;
-    const result = await uploadLocalFile(selected);
-    if (result?.ok && result?.path) {
-      updateVideo(index, 'localPath', result.path);
-    } else {
-      setError('Video upload failed');
+  const handleFileSelected = (path) => {
+    const { target } = filePicker;
+    if (target === 'apkPath') {
+      updateField('apkPath', path);
+    } else if (target.startsWith('video_')) {
+      const idx = parseInt(target.split('_')[1]);
+      updateVideo(idx, 'localPath', path);
+      // Auto-fill name from filename if empty
+      const videos = config.requirementVideos || [];
+      if (videos[idx] && !videos[idx].name) {
+        const name = path.split(/[/\\]/).pop().replace(/\.[^.]+$/, '');
+        updateVideo(idx, 'name', name);
+      }
     }
-    event.target.value = '';
+    setFilePicker(null);
   };
 
   if (!config) {
@@ -131,18 +127,21 @@ export default function SettingsPage() {
       <section className="settings-section">
         <h2>APK Configuration</h2>
         <div className="form-group">
-          <label>APK File (upload from your PC)</label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input type="text" value={config.apkPath || ''} readOnly placeholder="Select APK file" />
-            <button className="btn" onClick={() => apkPickerRef.current?.click()}>Choose file</button>
+          <label>APK File Path (on server PC)</label>
+          <div className="input-with-button">
+            <input
+              type="text"
+              value={config.apkPath || ''}
+              readOnly
+              placeholder="Click Browse to select APK file"
+            />
+            <button
+              className="btn btn-small"
+              onClick={() => openFilePicker('apkPath', '.apk', 'Select APK File')}
+            >
+              Browse
+            </button>
           </div>
-          <input
-            ref={apkPickerRef}
-            type="file"
-            accept=".apk"
-            onChange={handleApkPick}
-            style={{ display: 'none' }}
-          />
         </div>
         <div className="form-group">
           <label>Package ID</label>
@@ -157,6 +156,9 @@ export default function SettingsPage() {
 
       <section className="settings-section">
         <h2>Requirement Videos</h2>
+        <p className="settings-note">
+          Videos are automatically saved to /sdcard/Movies/ on the device.
+        </p>
         <div className="video-requirements-list">
           {(config.requirementVideos || []).map((video, idx) => (
             <div key={video.id || idx} className="video-requirement-row">
@@ -171,23 +173,21 @@ export default function SettingsPage() {
                   />
                 </div>
                 <div className="form-group">
-                  <label>Video file (upload from your PC)</label>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <input type="text" value={video.localPath || ''} readOnly placeholder="Select video file" />
+                  <label>Source File (on server PC)</label>
+                  <div className="input-with-button">
+                    <input
+                      type="text"
+                      value={video.localPath || ''}
+                      readOnly
+                      placeholder="Click Browse to select video"
+                    />
                     <button
-                      className="btn"
-                      onClick={() => videoPickerRefs.current[idx]?.click()}
+                      className="btn btn-small"
+                      onClick={() => openFilePicker(`video_${idx}`, '.mp4,.mkv,.avi,.mov,.webm', 'Select Video File')}
                     >
-                      Choose file
+                      Browse
                     </button>
                   </div>
-                  <input
-                    ref={(el) => { videoPickerRefs.current[idx] = el; }}
-                    type="file"
-                    accept="video/*"
-                    onChange={(e) => handleVideoPick(idx, e)}
-                    style={{ display: 'none' }}
-                  />
                 </div>
                 <div className="form-group form-group-small">
                   <label>Type</label>
@@ -255,8 +255,30 @@ export default function SettingsPage() {
             <input type="number" min="1" max="20" value={config.updateConcurrency || 5}
               onChange={(e) => updateField('updateConcurrency', parseInt(e.target.value) || 5)} />
           </div>
+          <div className="form-group">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={config.ignoreRequirements || false}
+                onChange={(e) => updateField('ignoreRequirements', e.target.checked)}
+              />
+              <span>Ignore Requirements</span>
+            </label>
+            <span className="form-hint">
+              Allow playback commands even if videos/APK are not confirmed on device
+            </span>
+          </div>
         </div>
       </section>
+
+      {filePicker && (
+        <FilePicker
+          title={filePicker.title}
+          filter={filePicker.filter}
+          onSelect={handleFileSelected}
+          onClose={() => setFilePicker(null)}
+        />
+      )}
     </div>
   );
 }

@@ -36,7 +36,7 @@ export default function VideoSelector({ targetDeviceIds, ignoreRequirements = fa
         continue;
       }
       const req = d.requirementsDetail.find(
-        (r) => r.type === 'video' && r.devicePath === video.devicePath
+        (r) => r.type === 'video' && (r.id === video.id || r.name === video.name)
       );
       if (!req || req.present) available++;
     }

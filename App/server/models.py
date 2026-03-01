@@ -10,7 +10,6 @@ class RequirementVideo(BaseModel):
     id: str = ""
     name: str = ""
     localPath: str = ""
-    devicePath: str = ""
     loop: bool = False
     videoType: str = "360"
 
@@ -27,6 +26,7 @@ class ConfigModel(BaseModel):
     deviceOfflineTimeout: int = 30
     statusPollInterval: int = 5
     updateConcurrency: int = 5
+    ignoreRequirements: bool = False
 
 
 class DeviceRegistration(BaseModel):
@@ -64,6 +64,7 @@ class DeviceState:
         self.installed_packages: list[str] = []
         self.update_in_progress: bool = False
         self.update_progress: dict | None = None
+        self.usb_connected: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -91,6 +92,7 @@ class DeviceState:
             "playerPollFailures": self.player_poll_failures,
             "updateInProgress": self.update_in_progress,
             "updateProgress": self.update_progress,
+            "usbConnected": self.usb_connected,
         }
 
 

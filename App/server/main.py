@@ -1,10 +1,12 @@
 import asyncio
 import logging
 import os
+import platform
+import string
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -21,7 +23,7 @@ from .models import (
     PlaybackCommand,
 )
 from .playback_controller import open_video, ping_device, send_command
-from .requirements_manager import check_requirements, run_update
+from .requirements_manager import check_requirements, run_update, run_usb_update
 from .websocket_manager import ws_manager
 
 logging.basicConfig(
@@ -194,6 +196,83 @@ async def update_all_devices():
         asyncio.create_task(update_with_semaphore(d.device_id))
 
     return {"started": started, "skipped": skipped}
+
+
+# ─── USB endpoints ───────────────────────────────────────────────────────────
+
+@app.get("/api/usb-devices")
+async def get_usb_devices():
+    serials = await adb_executor.list_usb_devices()
+    return {"devices": serials}
+
+
+@app.post("/api/usb-devices/{serial}/update")
+async def update_usb_device(serial: str):
+    serials = await adb_executor.list_usb_devices()
+    if serial not in serials:
+        return JSONResponse(status_code=404, content={"error": "USB device not found"})
+    asyncio.create_task(run_usb_update(serial))
+    return {"ok": True, "message": f"USB update started for {serial}"}
+
+
+# ─── File browse endpoint ────────────────────────────────────────────────────
+
+@app.get("/api/browse")
+async def browse_files(
+    path: str = Query("", description="Directory path to browse"),
+    filter: str = Query("", description="File extension filter, e.g. .apk,.mp4"),
+):
+    """Browse local file system for the file picker UI."""
+    if not path:
+        # Return drives on Windows, or home dir on Linux/Mac
+        if platform.system() == "Windows":
+            drives = []
+            for letter in string.ascii_uppercase:
+                drive = f"{letter}:\\"
+                if os.path.isdir(drive):
+                    drives.append({"name": drive, "path": drive, "type": "directory"})
+            return {"path": "", "entries": drives, "parent": ""}
+        else:
+            path = os.path.expanduser("~")
+
+    path = os.path.abspath(path)
+    if not os.path.isdir(path):
+        return JSONResponse(status_code=400, content={"error": "Not a directory"})
+
+    entries = []
+    ext_filter = set()
+    if filter:
+        for ext in filter.split(","):
+            ext = ext.strip().lower()
+            if not ext.startswith("."):
+                ext = f".{ext}"
+            ext_filter.add(ext)
+
+    try:
+        for name in sorted(os.listdir(path)):
+            full_path = os.path.join(path, name)
+            if name.startswith("."):
+                continue
+            if os.path.isdir(full_path):
+                entries.append({"name": name, "path": full_path, "type": "directory"})
+            elif os.path.isfile(full_path):
+                if ext_filter:
+                    _, ext = os.path.splitext(name)
+                    if ext.lower() not in ext_filter:
+                        continue
+                try:
+                    size = os.path.getsize(full_path)
+                except OSError:
+                    size = 0
+                entries.append({"name": name, "path": full_path, "type": "file", "size": size})
+    except PermissionError:
+        return JSONResponse(status_code=403, content={"error": "Permission denied"})
+
+    parent = os.path.dirname(path)
+    if parent == path:
+        parent = ""
+
+    return {"path": path, "entries": entries, "parent": parent}
 
 
 # ─── Playback endpoints ──────────────────────────────────────────────────────

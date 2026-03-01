@@ -15,7 +15,9 @@ $RECYCLE.BIN/
 ############################################
 
 # Byte-compiled / optimized / DLL files
+__pycache__/
 App/__pycache__/
+App/**/__pycache__/
 App/*.py[cod]
 App/*$py.class
 

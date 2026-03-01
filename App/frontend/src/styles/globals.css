@@ -668,3 +668,119 @@ body {
   border: 1px solid var(--success);
   color: var(--success);
 }
+
+/* ─── Input with Button ────────────────────────────────────────────────────── */
+.input-with-button {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.input-with-button input {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.input-with-button input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+/* ─── File Picker Modal ────────────────────────────────────────────────────── */
+.file-picker-modal {
+  max-width: 650px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-picker-path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+.path-label {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-family: monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-picker-list {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 50vh;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.file-picker-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.1s;
+}
+.file-picker-entry:hover {
+  background: var(--bg-card-hover);
+}
+.file-picker-entry.directory {
+  font-weight: 600;
+}
+.file-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+.file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-size {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+.file-picker-empty {
+  color: var(--text-dim);
+  text-align: center;
+  padding: 24px;
+}
+
+/* ─── Settings extras ──────────────────────────────────────────────────────── */
+.settings-note {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+.checkbox-label {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+}
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+}
+.form-hint {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}

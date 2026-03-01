@@ -68,13 +68,17 @@ export async function playbackCommand(command, deviceIds = []) {
   });
 }
 
+export async function browseFiles(path = '', filter = '') {
+  const params = new URLSearchParams();
+  if (path) params.set('path', path);
+  if (filter) params.set('filter', filter);
+  return request(`/browse?${params.toString()}`);
+}
 
-export async function uploadLocalFile(file) {
-  const formData = new FormData();
-  formData.append('file', file);
-  const res = await fetch(`${API_BASE}/files/upload`, {
-    method: 'POST',
-    body: formData,
-  });
-  return res.json();
+export async function getUsbDevices() {
+  return request('/usb-devices');
+}
+
+export async function updateUsbDevice(serial) {
+  return request(`/usb-devices/${serial}/update`, { method: 'POST' });
 }
