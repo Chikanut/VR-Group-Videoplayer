@@ -3,12 +3,11 @@
   "packageId": "com.vrclass.player",
   "requirementVideos": [
     {
-      "id": "8194261d-a73c-4676-ab48-ccf7e088bbe5",
-      "name": "Lesson_1",
-      "localPath": "C:\\Users\\eugen\\Desktop\\Working Files\\GSPP\\VR Videos\\FIRST BATTLE\\First Battle short (8 min).mp4",
-      "devicePath": "/sdcard/Movies/First Battle short (8 min).mp4",
+      "id": "01dad1df-b686-4e9a-810d-94e44a0400ce",
+      "name": "Lesson 1",
+      "localPath": "C:\\Users\\eugen\\Desktop\\Working Files\\GSPP\\VR Videos\\Promo\\SkyFall training PROMO.mp4",
       "loop": false,
-      "videoType": "360"
+      "videoType": "2d"
     }
   ],
   "batteryThreshold": 20,
@@ -18,5 +17,6 @@
   "playerPort": 8080,
   "deviceOfflineTimeout": 30,
   "statusPollInterval": 5,
-  "updateConcurrency": 5
+  "updateConcurrency": 5,
+  "ignoreRequirements": true
 }
