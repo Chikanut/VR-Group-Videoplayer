@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace VRClassroom
@@ -12,10 +13,12 @@ namespace VRClassroom
         [SerializeField] private Transform vrCamera;
         [SerializeField] private Shader videoShaderOverride;
 
-        private GameObject _sphere360;
-        private GameObject _flat2D;
-        private Material _sphereMaterial;
-        private Material _flatMaterial;
+        [Header("View Mode Configs (optional — override material, mesh, transform per mode)")]
+        [SerializeField] private ViewModeConfig[] viewModeConfigs;
+
+        private readonly Dictionary<ViewMode, GameObject> _displayObjects = new Dictionary<ViewMode, GameObject>();
+        private readonly Dictionary<ViewMode, Material> _materials = new Dictionary<ViewMode, Material>();
+        private readonly Dictionary<ViewMode, ViewModeConfig> _configLookup = new Dictionary<ViewMode, ViewModeConfig>();
 
         private void Awake()
         {
@@ -25,9 +28,20 @@ namespace VRClassroom
                 Debug.Log($"[ViewModeManager] VR camera auto-resolved to: {vrCamera.name}");
             }
 
+            // Build config lookup
+            if (viewModeConfigs != null)
+            {
+                foreach (var cfg in viewModeConfigs)
+                {
+                    if (cfg == null) continue;
+                    _configLookup[cfg.viewMode] = cfg;
+                    Debug.Log($"[ViewModeManager] Config loaded for mode: {cfg.viewMode}");
+                }
+            }
+
             Debug.Log("[ViewModeManager] Creating display geometry...");
-            CreateSphere360();
-            CreateFlat2D();
+            CreateDisplay(ViewMode.Sphere360);
+            CreateDisplay(ViewMode.Flat2D);
 
             Debug.Log($"[ViewModeManager] Setting default mode: {PlayerConfig.DefaultViewMode}");
             SetMode(PlayerConfig.DefaultViewMode);
@@ -35,14 +49,27 @@ namespace VRClassroom
 
         private void OnDestroy()
         {
-            if (_sphereMaterial != null) Destroy(_sphereMaterial);
-            if (_flatMaterial != null) Destroy(_flatMaterial);
+            foreach (var kvp in _materials)
+            {
+                if (kvp.Value != null)
+                    Destroy(kvp.Value);
+            }
+            _materials.Clear();
         }
 
         public void SetMode(ViewMode mode)
         {
-            if (_sphere360 != null && _flat2D != null && mode == CurrentMode
-                && (_sphere360.activeSelf || _flat2D.activeSelf))
+            bool anyActive = false;
+            foreach (var kvp in _displayObjects)
+            {
+                if (kvp.Value != null && kvp.Value.activeSelf)
+                {
+                    anyActive = true;
+                    break;
+                }
+            }
+
+            if (anyActive && mode == CurrentMode)
             {
                 Debug.Log($"[ViewModeManager] Already in mode {mode}, skipping.");
                 return;
@@ -51,13 +78,16 @@ namespace VRClassroom
             Debug.Log($"[ViewModeManager] Switching mode: {CurrentMode} -> {mode}");
             CurrentMode = mode;
 
-            if (_sphere360 != null)
-                _sphere360.SetActive(mode == ViewMode.Sphere360);
+            foreach (var kvp in _displayObjects)
+            {
+                if (kvp.Value != null)
+                    kvp.Value.SetActive(kvp.Key == mode);
+            }
 
-            if (_flat2D != null)
-                _flat2D.SetActive(mode == ViewMode.Flat2D);
-
-            Debug.Log($"[ViewModeManager] Sphere360 active={_sphere360?.activeSelf}, Flat2D active={_flat2D?.activeSelf}");
+            string activeStates = "";
+            foreach (var kvp in _displayObjects)
+                activeStates += $" {kvp.Key}={kvp.Value?.activeSelf}";
+            Debug.Log($"[ViewModeManager] Display states:{activeStates}");
 
             OnModeChanged?.Invoke(mode);
         }
@@ -66,89 +96,106 @@ namespace VRClassroom
         {
             Debug.Log($"[ViewModeManager] SetRenderTexture called: {(rt != null ? $"{rt.width}x{rt.height}" : "null")}");
 
-            if (_sphereMaterial != null)
+            foreach (var kvp in _materials)
             {
-                _sphereMaterial.mainTexture = rt;
-                Debug.Log("[ViewModeManager] Assigned RenderTexture to sphere material.");
-            }
-            else
-            {
-                Debug.LogError("[ViewModeManager] _sphereMaterial is null, cannot assign RenderTexture!");
-            }
-
-            if (_flatMaterial != null)
-            {
-                _flatMaterial.mainTexture = rt;
-                Debug.Log("[ViewModeManager] Assigned RenderTexture to flat material.");
-            }
-            else
-            {
-                Debug.LogError("[ViewModeManager] _flatMaterial is null, cannot assign RenderTexture!");
+                if (kvp.Value != null)
+                {
+                    kvp.Value.mainTexture = rt;
+                    Debug.Log($"[ViewModeManager] Assigned RenderTexture to {kvp.Key} material.");
+                }
+                else
+                {
+                    Debug.LogError($"[ViewModeManager] {kvp.Key} material is null, cannot assign RenderTexture!");
+                }
             }
         }
 
-        private void CreateSphere360()
+        private void CreateDisplay(ViewMode mode)
         {
-            _sphere360 = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            _sphere360.name = "VideoSphere360";
-            _sphere360.transform.SetParent(transform);
-            _sphere360.transform.localPosition = Vector3.zero;
-            // Negative X scale inverts normals so video renders on the inside
-            _sphere360.transform.localScale = new Vector3(-100f, 100f, 100f);
+            _configLookup.TryGetValue(mode, out ViewModeConfig config);
+
+            // --- Geometry ---
+            GameObject obj;
+            if (config != null && config.meshOverride != null)
+            {
+                obj = new GameObject($"Video_{mode}");
+                var mf = obj.AddComponent<MeshFilter>();
+                mf.mesh = config.meshOverride;
+                obj.AddComponent<MeshRenderer>();
+                Debug.Log($"[ViewModeManager] Using mesh override for {mode}: {config.meshOverride.name}");
+            }
+            else
+            {
+                // Default primitives
+                var primitiveType = mode == ViewMode.Sphere360
+                    ? PrimitiveType.Sphere
+                    : PrimitiveType.Quad;
+                obj = GameObject.CreatePrimitive(primitiveType);
+                obj.name = mode == ViewMode.Sphere360 ? "VideoSphere360" : "VideoQuad2D";
+            }
 
             // Remove collider — not needed and avoids physics conflicts
-            var collider = _sphere360.GetComponent<Collider>();
+            var collider = obj.GetComponent<Collider>();
             if (collider != null) Destroy(collider);
+            obj.layer = 0;
 
-            // Set layer to avoid UI conflicts (use Default layer)
-            _sphere360.layer = 0;
-
-            var renderer = _sphere360.GetComponent<Renderer>();
-            _sphereMaterial = VideoRenderShaderFactory.CreateSphereMaterial(videoShaderOverride);
-
-            if (_sphereMaterial != null)
+            // --- Transform ---
+            if (config != null)
             {
-                renderer.material = _sphereMaterial;
+                bool parentToCam = config.parentToCamera;
+                obj.transform.SetParent(parentToCam ? vrCamera : transform);
+                obj.transform.localPosition = config.localPosition;
+                obj.transform.localRotation = Quaternion.Euler(config.localRotation);
+                obj.transform.localScale = config.localScale;
+                Debug.Log($"[ViewModeManager] Config transform for {mode}: pos={config.localPosition}, rot={config.localRotation}, scale={config.localScale}, parentToCam={parentToCam}");
             }
             else
             {
-                Debug.LogError("[ViewModeManager] No compatible shader found for sphere. Assign 'videoShaderOverride' in inspector.");
+                // Defaults matching original behaviour
+                if (mode == ViewMode.Sphere360)
+                {
+                    obj.transform.SetParent(transform);
+                    obj.transform.localPosition = Vector3.zero;
+                    obj.transform.localScale = new Vector3(-100f, 100f, 100f);
+                }
+                else
+                {
+                    obj.transform.SetParent(vrCamera);
+                    obj.transform.localPosition = new Vector3(0f, 0f, 10f);
+                    obj.transform.localRotation = Quaternion.identity;
+                    obj.transform.localScale = new Vector3(16f, 9f, 1f);
+                }
             }
 
-            _sphere360.SetActive(false);
-            Debug.Log("[ViewModeManager] Sphere360 geometry created.");
-        }
-
-        private void CreateFlat2D()
-        {
-            _flat2D = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            _flat2D.name = "VideoQuad2D";
-            // Child of camera so it moves with the user
-            _flat2D.transform.SetParent(vrCamera);
-            _flat2D.transform.localPosition = new Vector3(0f, 0f, 10f);
-            _flat2D.transform.localRotation = Quaternion.identity;
-            // 16:9 aspect ratio
-            _flat2D.transform.localScale = new Vector3(16f, 9f, 1f);
-
-            // Remove collider
-            var collider = _flat2D.GetComponent<Collider>();
-            if (collider != null) Destroy(collider);
-
-            var renderer = _flat2D.GetComponent<Renderer>();
-            _flatMaterial = VideoRenderShaderFactory.CreateFlatMaterial(videoShaderOverride);
-
-            if (_flatMaterial != null)
+            // --- Material ---
+            Material material;
+            if (config != null)
             {
-                renderer.material = _flatMaterial;
+                material = VideoRenderShaderFactory.CreateFromConfig(config);
             }
             else
             {
-                Debug.LogError("[ViewModeManager] No compatible shader found for flat quad. Assign 'videoShaderOverride' in inspector.");
+                material = mode == ViewMode.Sphere360
+                    ? VideoRenderShaderFactory.CreateSphereMaterial(videoShaderOverride)
+                    : VideoRenderShaderFactory.CreateFlatMaterial(videoShaderOverride);
             }
 
-            _flat2D.SetActive(false);
-            Debug.Log("[ViewModeManager] Flat2D geometry created.");
-        }
+            var renderer = obj.GetComponent<Renderer>();
+            if (material != null)
+            {
+                renderer.material = material;
+            }
+            else
+            {
+                Debug.LogError($"[ViewModeManager] No compatible shader found for {mode}. Assign shader in config or inspector.");
+            }
 
+            obj.SetActive(false);
+
+            _displayObjects[mode] = obj;
+            _materials[mode] = material;
+
+            Debug.Log($"[ViewModeManager] {mode} display created.");
+        }
     }
 }
