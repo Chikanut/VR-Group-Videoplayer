@@ -5,11 +5,20 @@ namespace VRClassroom
 {
     public class ViewModeManager : MonoBehaviour
     {
+        private static readonly string[] VideoShaderCandidates =
+        {
+            "Unlit/Texture",
+            "Universal Render Pipeline/Unlit",
+            "Universal Render Pipeline/Lit",
+            "Standard"
+        };
+
         public event Action<ViewMode> OnModeChanged;
 
         public ViewMode CurrentMode { get; private set; }
 
         [SerializeField] private Transform vrCamera;
+        [SerializeField] private Shader videoShaderOverride;
 
         private GameObject _sphere360;
         private GameObject _flat2D;
@@ -103,17 +112,12 @@ namespace VRClassroom
             _sphere360.layer = 0;
 
             var renderer = _sphere360.GetComponent<Renderer>();
-            var shader = Shader.Find("Unlit/Texture");
-            if (shader == null)
+            _sphereMaterial = CreateVideoMaterial(renderer, "sphere");
+
+            if (_sphereMaterial != null)
             {
-                Debug.LogError("[ViewModeManager] Shader 'Unlit/Texture' NOT FOUND for sphere! Video will not render.");
+                renderer.material = _sphereMaterial;
             }
-            else
-            {
-                Debug.Log("[ViewModeManager] Sphere shader found: Unlit/Texture");
-            }
-            _sphereMaterial = new Material(shader != null ? shader : Shader.Find("Unlit/Color"));
-            renderer.material = _sphereMaterial;
 
             _sphere360.SetActive(false);
             Debug.Log("[ViewModeManager] Sphere360 geometry created.");
@@ -135,20 +139,53 @@ namespace VRClassroom
             if (collider != null) Destroy(collider);
 
             var renderer = _flat2D.GetComponent<Renderer>();
-            var shader = Shader.Find("Unlit/Texture");
-            if (shader == null)
+            _flatMaterial = CreateVideoMaterial(renderer, "flat quad");
+
+            if (_flatMaterial != null)
             {
-                Debug.LogError("[ViewModeManager] Shader 'Unlit/Texture' NOT FOUND for flat quad! Video will not render.");
+                renderer.material = _flatMaterial;
             }
-            else
-            {
-                Debug.Log("[ViewModeManager] Flat quad shader found: Unlit/Texture");
-            }
-            _flatMaterial = new Material(shader != null ? shader : Shader.Find("Unlit/Color"));
-            renderer.material = _flatMaterial;
 
             _flat2D.SetActive(false);
             Debug.Log("[ViewModeManager] Flat2D geometry created.");
+        }
+
+        private Material CreateVideoMaterial(Renderer renderer, string targetName)
+        {
+            if (renderer == null)
+            {
+                Debug.LogError($"[ViewModeManager] Renderer is missing for {targetName}.");
+                return null;
+            }
+
+            var shader = FindFirstAvailableShader();
+            if (shader != null)
+            {
+                Debug.Log($"[ViewModeManager] {targetName} shader found: {shader.name}");
+                return new Material(shader);
+            }
+
+            Debug.LogError($"[ViewModeManager] No compatible shader found for {targetName}. Assign 'videoShaderOverride' in the inspector. Using primitive default material as fallback.");
+            return renderer.material;
+        }
+
+        private Shader FindFirstAvailableShader()
+        {
+            if (videoShaderOverride != null)
+            {
+                return videoShaderOverride;
+            }
+
+            for (int i = 0; i < VideoShaderCandidates.Length; i++)
+            {
+                var shader = Shader.Find(VideoShaderCandidates[i]);
+                if (shader != null)
+                {
+                    return shader;
+                }
+            }
+
+            return null;
         }
     }
 }
