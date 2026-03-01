@@ -37,7 +37,7 @@ RenderSettings:
   m_ReflectionBounces: 1
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
-  m_Sun: {fileID: 0}
+  m_Sun: {fileID: 410087040}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -793,6 +793,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::VRClassroom.ViewModeManager
   vrCamera: {fileID: 1256054558}
   videoShaderOverride: {fileID: 10752, guid: 0000000000000000f000000000000000, type: 0}
+  viewModeConfigs:
+  - {fileID: 11400000, guid: 93a800ab48640a64c801a8293d003c53, type: 2}
+  - {fileID: 11400000, guid: 19b246d19bd4cb348aa0667b7632f478, type: 2}
 --- !u!4 &904553243
 Transform:
   m_ObjectHideFlags: 0
