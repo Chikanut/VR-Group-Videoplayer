@@ -1,0 +1,27 @@
+[
+  {
+    "name": "Test",
+    "devices": [
+      {
+        "mac": "",
+        "custom_name": "Quest 3",
+        "last_known_ip": "192.168.0.164"
+      }
+    ]
+  },
+  {
+    "name": "Test2",
+    "devices": [
+      {
+        "mac": "192.168.0.139",
+        "custom_name": "Quest 3",
+        "last_known_ip": "192.168.0.139"
+      },
+      {
+        "mac": "192.168.0.164",
+        "custom_name": "Quest 3S",
+        "last_known_ip": "192.168.0.164"
+      }
+    ]
+  }
+]

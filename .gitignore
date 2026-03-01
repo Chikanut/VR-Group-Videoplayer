@@ -1,9 +1,133 @@
-__pycache__/
-*.pyc
-*.pyo
-groups.json
-.venv/
-venv/
-*.egg-info/
-dist/
-build/
+############################################
+# GLOBAL OS FILES
+############################################
+
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.log
+
+
+############################################
+# PYTHON APP (App/)
+############################################
+
+# Byte-compiled / optimized / DLL files
+App/__pycache__/
+App/*.py[cod]
+App/*$py.class
+
+# Virtual environments
+App/.env
+App/.venv
+App/venv/
+App/ENV/
+App/env/
+App/.python-version
+
+# Distribution / packaging
+App/build/
+App/dist/
+App/*.egg-info/
+App/.eggs/
+App/*.egg
+App/pip-wheel-metadata/
+
+# Installer logs
+App/pip-log.txt
+App/pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+App/.tox/
+App/.nox/
+App/.coverage
+App/.coverage.*
+App/htmlcov/
+App/.pytest_cache/
+App/.mypy_cache/
+App/.ruff_cache/
+
+# IDEs
+App/.idea/
+App/.vscode/
+App/*.sublime-project
+App/*.sublime-workspace
+
+# Jupyter
+App/.ipynb_checkpoints
+
+# PyInstaller
+App/*.manifest
+App/*.spec
+
+# Environment variables
+App/.env.*
+App/.envrc
+
+
+############################################
+# UNITY PROJECT (VRClassroomPlayer/)
+############################################
+
+# Unity generated folders
+VRClassroomPlayer/[Ll]ibrary/
+VRClassroomPlayer/[Tt]emp/
+VRClassroomPlayer/[Oo]bj/
+VRClassroomPlayer/[Bb]uild/
+VRClassroomPlayer/[Bb]uilds/
+VRClassroomPlayer/[Ll]ogs/
+VRClassroomPlayer/[Mm]emoryCaptures/
+VRClassroomPlayer/UserSettings/
+
+# Asset meta conflicts (НЕ ігноруємо .meta!)
+# *.meta  <-- НЕ ДОДАВАТИ, Unity їх потребує
+
+# Addressables
+VRClassroomPlayer/[Aa]ssets/[Aa]ddressable[Aa]ssets[Dd]ata/*/*.bin*
+
+# Crash Reports
+VRClassroomPlayer/sysinfo.txt
+
+# Visual Studio / Rider
+VRClassroomPlayer/*.csproj
+VRClassroomPlayer/*.unityproj
+VRClassroomPlayer/*.sln
+VRClassroomPlayer/*.suo
+VRClassroomPlayer/*.tmp
+VRClassroomPlayer/*.user
+VRClassroomPlayer/*.userprefs
+VRClassroomPlayer/*.pidb
+VRClassroomPlayer/*.booproj
+VRClassroomPlayer/*.svd
+VRClassroomPlayer/*.pdb
+
+VRClassroomPlayer/.vs/
+VRClassroomPlayer/.idea/
+VRClassroomPlayer/.vscode/
+
+# Android builds
+VRClassroomPlayer/*.apk
+VRClassroomPlayer/*.aab
+VRClassroomPlayer/*.keystore
+
+# Gradle
+VRClassroomPlayer/.gradle/
+VRClassroomPlayer/gradleOut/
+
+# IL2CPP builds
+VRClassroomPlayer/Il2CppBuildCache/
+
+############################################
+# OPTIONAL (if you don't want commits of large video files)
+############################################
+
+# VR video assets (optional)
+# VRClassroomPlayer/Assets/Videos/*.mp4
+# VRClassroomPlayer/Assets/Videos/*.mov
+# VRClassroomPlayer/StreamingAssets/*.mp4
+
+############################################
+# END
+############################################
