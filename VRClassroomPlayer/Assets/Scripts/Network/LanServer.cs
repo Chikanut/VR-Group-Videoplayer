@@ -30,6 +30,12 @@ namespace VRClassroom
 
         private void Start()
         {
+            Debug.Log("[LanServer] Initializing...");
+            if (videoPlayer == null) Debug.LogError("[LanServer] VideoPlayerController reference is NOT assigned!");
+            if (viewModeManager == null) Debug.LogError("[LanServer] ViewModeManager reference is NOT assigned!");
+            if (orientationManager == null) Debug.LogError("[LanServer] OrientationManager reference is NOT assigned!");
+            if (statusReporter == null) Debug.LogError("[LanServer] StatusReporter reference is NOT assigned!");
+            if (debugLogPanel == null) Debug.LogWarning("[LanServer] DebugLogPanel reference is not assigned (debug toggle will not work).");
             StartServer();
         }
 

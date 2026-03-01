@@ -46,6 +46,7 @@ namespace VRClassroom
             }
 
             _instance = this;
+            Debug.Log("[PlayerStateManager] Instance initialized.");
         }
 
         private void Start()
@@ -55,11 +56,36 @@ namespace VRClassroom
                 videoPlayerController.OnStateChanged += HandleStateChanged;
                 videoPlayerController.OnVideoLoaded += HandleVideoLoaded;
                 videoPlayerController.OnVideoCompleted += HandleVideoCompleted;
+                Debug.Log("[PlayerStateManager] Subscribed to VideoPlayerController events.");
+            }
+            else
+            {
+                Debug.LogError("[PlayerStateManager] VideoPlayerController reference is NOT assigned!");
             }
 
             if (viewModeManager != null)
             {
                 viewModeManager.OnModeChanged += HandleModeChanged;
+                Debug.Log("[PlayerStateManager] Subscribed to ViewModeManager events.");
+            }
+            else
+            {
+                Debug.LogError("[PlayerStateManager] ViewModeManager reference is NOT assigned!");
+            }
+
+            // Connect the RenderTexture from VideoPlayerController to ViewModeManager
+            if (videoPlayerController != null && viewModeManager != null)
+            {
+                var rt = videoPlayerController.TargetTexture;
+                if (rt != null)
+                {
+                    viewModeManager.SetRenderTexture(rt);
+                    Debug.Log($"[PlayerStateManager] Connected RenderTexture ({rt.width}x{rt.height}) to ViewModeManager.");
+                }
+                else
+                {
+                    Debug.LogError("[PlayerStateManager] VideoPlayerController.TargetTexture is null!");
+                }
             }
         }
 
@@ -83,12 +109,15 @@ namespace VRClassroom
 
         private void HandleStateChanged(PlayerState newState)
         {
+            Debug.Log($"[PlayerStateManager] State changed: {State} -> {newState}");
+
             if (newState == PlayerState.Error)
             {
                 // Preserve previous state info for recovery
                 _previousStateBeforeError = State;
                 _previousFileBeforeError = CurrentFile;
                 _previousModeBeforeError = CurrentMode;
+                Debug.LogError($"[PlayerStateManager] Error state entered. Previous: state={_previousStateBeforeError}, file={_previousFileBeforeError}, mode={_previousModeBeforeError}");
             }
 
             State = newState;
@@ -97,17 +126,20 @@ namespace VRClassroom
 
         private void HandleVideoLoaded(string filename)
         {
+            Debug.Log($"[PlayerStateManager] Video loaded: {filename}");
             CurrentFile = filename;
             OnPlayerStateUpdated?.Invoke();
         }
 
         private void HandleVideoCompleted()
         {
+            Debug.Log($"[PlayerStateManager] Video completed: {CurrentFile}");
             OnPlayerStateUpdated?.Invoke();
         }
 
         private void HandleModeChanged(ViewMode mode)
         {
+            Debug.Log($"[PlayerStateManager] View mode changed: {CurrentMode} -> {mode}");
             CurrentMode = mode;
             OnPlayerStateUpdated?.Invoke();
         }

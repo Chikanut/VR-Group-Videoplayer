@@ -27,7 +27,7 @@ namespace VRClassroom
         private const int MaxEntries = 80;
         private const float CanvasDistance = 2.5f;
         private const float CanvasScale = 0.003f;
-        private const float PanelOffsetX = 1.8f; // Offset right of center
+        private const float PanelOffsetX = 0f; // Centered in view
 
         // Multi-tap toggle: 3 taps within 1.5 seconds
         private const int TapsRequired = 3;
@@ -42,8 +42,8 @@ namespace VRClassroom
             CreateCanvas();
             CreateUI();
 
-            // Start hidden
-            _panelRoot.SetActive(false);
+            // Start visible so logs are immediately accessible for debugging
+            _panelRoot.SetActive(true);
         }
 
         private void OnEnable()
@@ -150,6 +150,7 @@ namespace VRClassroom
             if (message.StartsWith("[StatusReporter]", StringComparison.Ordinal)) return true;
             if (message.StartsWith("[PlayerStateManager]", StringComparison.Ordinal)) return true;
             if (message.StartsWith("[DebugLogPanel]", StringComparison.Ordinal)) return true;
+            if (message.StartsWith("[PlayerHUD]", StringComparison.Ordinal)) return true;
             if (message.StartsWith("[VRPlayer]", StringComparison.Ordinal)) return true;
 
             return false;
@@ -201,7 +202,7 @@ namespace VRClassroom
             _panelRoot = new GameObject("DebugLogPanelCanvas");
             _panelRoot.transform.SetParent(vrCamera);
             _panelRoot.transform.localPosition = new Vector3(PanelOffsetX, 0f, CanvasDistance);
-            _panelRoot.transform.localRotation = Quaternion.Euler(0f, 20f, 0f);
+            _panelRoot.transform.localRotation = Quaternion.identity;
             _panelRoot.transform.localScale = Vector3.one * CanvasScale;
 
             _canvas = _panelRoot.AddComponent<Canvas>();

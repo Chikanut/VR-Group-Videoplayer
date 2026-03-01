@@ -19,11 +19,16 @@ namespace VRClassroom
         private void Awake()
         {
             if (vrCamera == null)
+            {
                 vrCamera = Camera.main != null ? Camera.main.transform : transform;
+                Debug.Log($"[ViewModeManager] VR camera auto-resolved to: {vrCamera.name}");
+            }
 
+            Debug.Log("[ViewModeManager] Creating display geometry...");
             CreateSphere360();
             CreateFlat2D();
 
+            Debug.Log($"[ViewModeManager] Setting default mode: {PlayerConfig.DefaultViewMode}");
             SetMode(PlayerConfig.DefaultViewMode);
         }
 
@@ -38,10 +43,11 @@ namespace VRClassroom
             if (_sphere360 != null && _flat2D != null && mode == CurrentMode
                 && (_sphere360.activeSelf || _flat2D.activeSelf))
             {
-                // Already in this mode and geometry is active
+                Debug.Log($"[ViewModeManager] Already in mode {mode}, skipping.");
                 return;
             }
 
+            Debug.Log($"[ViewModeManager] Switching mode: {CurrentMode} -> {mode}");
             CurrentMode = mode;
 
             if (_sphere360 != null)
@@ -50,16 +56,34 @@ namespace VRClassroom
             if (_flat2D != null)
                 _flat2D.SetActive(mode == ViewMode.Flat2D);
 
+            Debug.Log($"[ViewModeManager] Sphere360 active={_sphere360?.activeSelf}, Flat2D active={_flat2D?.activeSelf}");
+
             OnModeChanged?.Invoke(mode);
         }
 
         public void SetRenderTexture(RenderTexture rt)
         {
+            Debug.Log($"[ViewModeManager] SetRenderTexture called: {(rt != null ? $"{rt.width}x{rt.height}" : "null")}");
+
             if (_sphereMaterial != null)
+            {
                 _sphereMaterial.mainTexture = rt;
+                Debug.Log("[ViewModeManager] Assigned RenderTexture to sphere material.");
+            }
+            else
+            {
+                Debug.LogError("[ViewModeManager] _sphereMaterial is null, cannot assign RenderTexture!");
+            }
 
             if (_flatMaterial != null)
+            {
                 _flatMaterial.mainTexture = rt;
+                Debug.Log("[ViewModeManager] Assigned RenderTexture to flat material.");
+            }
+            else
+            {
+                Debug.LogError("[ViewModeManager] _flatMaterial is null, cannot assign RenderTexture!");
+            }
         }
 
         private void CreateSphere360()
@@ -79,10 +103,20 @@ namespace VRClassroom
             _sphere360.layer = 0;
 
             var renderer = _sphere360.GetComponent<Renderer>();
-            _sphereMaterial = new Material(Shader.Find("Unlit/Texture"));
+            var shader = Shader.Find("Unlit/Texture");
+            if (shader == null)
+            {
+                Debug.LogError("[ViewModeManager] Shader 'Unlit/Texture' NOT FOUND for sphere! Video will not render.");
+            }
+            else
+            {
+                Debug.Log("[ViewModeManager] Sphere shader found: Unlit/Texture");
+            }
+            _sphereMaterial = new Material(shader != null ? shader : Shader.Find("Unlit/Color"));
             renderer.material = _sphereMaterial;
 
             _sphere360.SetActive(false);
+            Debug.Log("[ViewModeManager] Sphere360 geometry created.");
         }
 
         private void CreateFlat2D()
@@ -101,10 +135,20 @@ namespace VRClassroom
             if (collider != null) Destroy(collider);
 
             var renderer = _flat2D.GetComponent<Renderer>();
-            _flatMaterial = new Material(Shader.Find("Unlit/Texture"));
+            var shader = Shader.Find("Unlit/Texture");
+            if (shader == null)
+            {
+                Debug.LogError("[ViewModeManager] Shader 'Unlit/Texture' NOT FOUND for flat quad! Video will not render.");
+            }
+            else
+            {
+                Debug.Log("[ViewModeManager] Flat quad shader found: Unlit/Texture");
+            }
+            _flatMaterial = new Material(shader != null ? shader : Shader.Find("Unlit/Color"));
             renderer.material = _flatMaterial;
 
             _flat2D.SetActive(false);
+            Debug.Log("[ViewModeManager] Flat2D geometry created.");
         }
     }
 }

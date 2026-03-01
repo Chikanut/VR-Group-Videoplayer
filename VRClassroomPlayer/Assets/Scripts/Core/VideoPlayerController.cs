@@ -48,9 +48,18 @@ namespace VRClassroom
 
         private void Awake()
         {
+            Debug.Log("[VideoPlayerController] Awake: initializing...");
+
             _videoPlayer = GetComponent<VideoPlayer>();
             if (_videoPlayer == null)
+            {
                 _videoPlayer = gameObject.AddComponent<VideoPlayer>();
+                Debug.Log("[VideoPlayerController] VideoPlayer component added dynamically.");
+            }
+            else
+            {
+                Debug.Log("[VideoPlayerController] VideoPlayer component found on GameObject.");
+            }
 
             TargetTexture = new RenderTexture(
                 PlayerConfig.RenderTextureSize,
@@ -59,6 +68,7 @@ namespace VRClassroom
                 RenderTextureFormat.ARGB32
             );
             TargetTexture.Create();
+            Debug.Log($"[VideoPlayerController] RenderTexture created: {TargetTexture.width}x{TargetTexture.height}, isCreated={TargetTexture.IsCreated()}");
 
             _videoPlayer.source = VideoSource.Url;
             _videoPlayer.renderMode = VideoRenderMode.RenderTexture;
@@ -69,6 +79,8 @@ namespace VRClassroom
             _videoPlayer.prepareCompleted += OnPrepareCompleted;
             _videoPlayer.loopPointReached += OnLoopPointReached;
             _videoPlayer.errorReceived += OnErrorReceived;
+
+            Debug.Log($"[VideoPlayerController] VideoPlayer configured: source=Url, renderMode=RenderTexture, videoPath={PlayerConfig.VideoPath}");
         }
 
         private void OnDestroy()
@@ -167,11 +179,15 @@ namespace VRClassroom
 
         private void OnPrepareCompleted(VideoPlayer source)
         {
-            Debug.Log($"[VideoPlayerController] Prepare completed for: {CurrentFile}");
+            Debug.Log($"[VideoPlayerController] Prepare completed for: {CurrentFile}, " +
+                      $"width={source.width}, height={source.height}, " +
+                      $"frameCount={source.frameCount}, frameRate={source.frameRate:F1}, " +
+                      $"canSetTime={source.canSetTime}, audioTrackCount={source.audioTrackCount}");
             SetState(PlayerState.Ready);
             OnVideoLoaded?.Invoke(CurrentFile);
 
             // Auto-play after preparation
+            Debug.Log("[VideoPlayerController] Auto-playing video...");
             source.Play();
             SetState(PlayerState.Playing);
         }

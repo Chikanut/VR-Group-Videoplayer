@@ -32,6 +32,11 @@ namespace VRClassroom
             if (stateManager != null)
             {
                 stateManager.OnPlayerStateUpdated += UpdateHUD;
+                Debug.Log("[PlayerHUD] Subscribed to PlayerStateManager updates.");
+            }
+            else
+            {
+                Debug.LogError("[PlayerHUD] PlayerStateManager.Instance is null! HUD will not update.");
             }
 
             // Initial update
@@ -55,6 +60,8 @@ namespace VRClassroom
             // Hide during Playing and Paused
             bool visible = state != PlayerState.Playing && state != PlayerState.Paused;
             _canvas.gameObject.SetActive(visible);
+
+            Debug.Log($"[PlayerHUD] UpdateHUD: state={state}, visible={visible}");
 
             if (!visible) return;
 

@@ -20,6 +20,20 @@ namespace VRClassroom
         {
             // Check for instructor push endpoint
             _pushEndpoint = PlayerPrefs.GetString("instructor_ip", string.Empty);
+
+            if (videoPlayer == null)
+                Debug.LogError("[StatusReporter] VideoPlayerController reference is NOT assigned!");
+            else
+                Debug.Log("[StatusReporter] VideoPlayerController reference OK.");
+
+            if (viewModeManager == null)
+                Debug.LogError("[StatusReporter] ViewModeManager reference is NOT assigned!");
+            else
+                Debug.Log("[StatusReporter] ViewModeManager reference OK.");
+
+            string ip = GetLocalIPAddress();
+            string deviceId = GetDeviceId();
+            Debug.Log($"[StatusReporter] Initialized. DeviceID={deviceId}, IP={ip}, InstructorIP={(_pushEndpoint == "" ? "(not set)" : _pushEndpoint)}");
         }
 
         private void Update()
