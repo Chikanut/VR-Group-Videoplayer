@@ -49,6 +49,7 @@ namespace VRClassroom
         private void Awake()
         {
             Debug.Log("[VideoPlayerController] Awake: initializing...");
+            LogVideoDirectoryState();
 
             _videoPlayer = GetComponent<VideoPlayer>();
             if (_videoPlayer == null)
@@ -81,6 +82,40 @@ namespace VRClassroom
             _videoPlayer.errorReceived += OnErrorReceived;
 
             Debug.Log($"[VideoPlayerController] VideoPlayer configured: source=Url, renderMode=RenderTexture, videoPath={PlayerConfig.VideoPath}");
+        }
+
+        private void LogVideoDirectoryState()
+        {
+            string videoDirectory = PlayerConfig.VideoPath;
+            Debug.Log($"[VideoPlayerController] Video directory diagnostics start. path={videoDirectory}, platform={Application.platform}, persistentDataPath={Application.persistentDataPath}");
+
+            try
+            {
+                if (!Directory.Exists(videoDirectory))
+                {
+                    Debug.LogError($"[VideoPlayerController] Video directory does not exist or is inaccessible: {videoDirectory}");
+                    return;
+                }
+
+                string[] files = Directory.GetFiles(videoDirectory);
+                Debug.Log($"[VideoPlayerController] Video directory is accessible. File count={files.Length}");
+
+                if (files.Length == 0)
+                {
+                    Debug.LogWarning($"[VideoPlayerController] Video directory is empty: {videoDirectory}");
+                    return;
+                }
+
+                foreach (string file in files)
+                {
+                    FileInfo fileInfo = new FileInfo(file);
+                    Debug.Log($"[VideoPlayerController] Found file: name={fileInfo.Name}, sizeBytes={fileInfo.Length}, modifiedUtc={fileInfo.LastWriteTimeUtc:O}");
+                }
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError($"[VideoPlayerController] Failed to inspect video directory '{videoDirectory}'. Exception={exception.GetType().Name}, message={exception.Message}");
+            }
         }
 
         private void OnDestroy()
