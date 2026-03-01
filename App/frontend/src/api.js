@@ -82,3 +82,14 @@ export async function getUsbDevices() {
 export async function updateUsbDevice(serial) {
   return request(`/usb-devices/${serial}/update`, { method: 'POST' });
 }
+
+export async function launchPlayer(deviceIds = []) {
+  return request('/devices/launch-player', {
+    method: 'POST',
+    body: JSON.stringify({ deviceIds }),
+  });
+}
+
+export async function launchPlayerSingle(deviceId) {
+  return request(`/devices/${deviceId}/launch-player`, { method: 'POST' });
+}

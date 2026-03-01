@@ -114,7 +114,7 @@ export default function DeviceTile({ device, onClick }) {
       <div className="tile-actions">
         <button
           className="btn-small"
-          disabled={!device.online || !device.playerConnected}
+          disabled={!device.online || (!device.playerConnected && !device.adbConnected)}
           onClick={handlePing}
         >
           Ping

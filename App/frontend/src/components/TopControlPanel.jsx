@@ -1,7 +1,7 @@
 import React, { useRef, useCallback, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useDeviceStore from '../store/deviceStore';
-import { playbackCommand, updateAllDevices, getUsbDevices, updateUsbDevice } from '../api';
+import { playbackCommand, updateAllDevices, getUsbDevices, updateUsbDevice, launchPlayer } from '../api';
 
 export default function TopControlPanel({ onPlayAll }) {
   const navigate = useNavigate();
@@ -11,6 +11,8 @@ export default function TopControlPanel({ onPlayAll }) {
   const hasOnline = onlineDevices.length > 0;
   const ignoreReq = config?.ignoreRequirements || false;
   const hasCommandTargets = onlineDevices.some((d) => d.playerConnected || (ignoreReq && d.adbConnected));
+  const hasAdbDevices = onlineDevices.some((d) => d.adbConnected);
+  const adbNoPlayer = onlineDevices.filter((d) => d.adbConnected && !d.playerConnected);
   const debounceRef = useRef({});
   const [usbScanning, setUsbScanning] = useState(false);
 
@@ -79,6 +81,22 @@ export default function TopControlPanel({ onPlayAll }) {
           disabled={usbScanning}
         >
           {usbScanning ? 'Scanning USB...' : 'USB Init'}
+        </button>
+        <button
+          className="btn"
+          disabled={!hasAdbDevices}
+          title={adbNoPlayer.length > 0 ? `${adbNoPlayer.length} device(s) without player` : 'Launch player on all ADB devices'}
+          onClick={() => debounce('launchPlayer', async () => {
+            const result = await launchPlayer();
+            if (result.error && (!result.success || result.success.length === 0)) {
+              alert(result.error);
+            } else if (result.success) {
+              const connected = result.success.filter((s) => s.playerConnected).length;
+              alert(`Player launched on ${result.success.length} device(s). ${connected} confirmed HTTP connection.`);
+            }
+          })}
+        >
+          Launch Player {adbNoPlayer.length > 0 && `(${adbNoPlayer.length})`}
         </button>
         <button
           className="btn btn-success"

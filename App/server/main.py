@@ -22,7 +22,7 @@ from .models import (
     OpenCommand,
     PlaybackCommand,
 )
-from .playback_controller import open_video, ping_device, send_command
+from .playback_controller import launch_player, open_video, ping_device, send_command
 from .requirements_manager import check_requirements, run_update, run_usb_update
 from .websocket_manager import ws_manager
 
@@ -255,6 +255,26 @@ async def browse_files(
         parent = ""
 
     return {"path": path, "entries": entries, "parent": parent}
+
+
+# ─── Player launch endpoints ─────────────────────────────────────────────────
+
+
+@app.post("/api/devices/launch-player")
+async def launch_player_all(cmd: PlaybackCommand):
+    """Launch the player app on all online ADB-connected devices."""
+    return await launch_player(cmd.deviceIds)
+
+
+@app.post("/api/devices/{device_id}/launch-player")
+async def launch_player_single(device_id: str):
+    """Launch the player app on a specific device via ADB."""
+    device = await device_manager.get(device_id)
+    if not device:
+        return JSONResponse(status_code=404, content={"error": "Device not found"})
+    if not device.adb_connected:
+        return JSONResponse(status_code=400, content={"error": "ADB not connected"})
+    return await launch_player([device_id])
 
 
 # ─── Playback endpoints ──────────────────────────────────────────────────────

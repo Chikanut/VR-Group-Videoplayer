@@ -52,16 +52,24 @@ async def scan_subnet(subnet: str) -> list[str]:
 
 async def _check_player_http(ip: str, player_port: int, max_retries: int = 2) -> dict | None:
     """Check if player HTTP server responds, with retries for Quest 3 startup delay."""
+    url = f"http://{ip}:{player_port}/status"
+    last_error = None
     for attempt in range(max_retries + 1):
         try:
             async with aiohttp.ClientSession() as session:
-                url = f"http://{ip}:{player_port}/status"
                 async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
                     if resp.status == 200:
                         return await resp.json()
-        except Exception:
+                    else:
+                        last_error = f"HTTP {resp.status}"
+                        logger.debug("Player HTTP check %s attempt %d: status %d", ip, attempt + 1, resp.status)
+        except Exception as e:
+            last_error = str(e)
+            logger.debug("Player HTTP check %s attempt %d failed: %s", ip, attempt + 1, e)
             if attempt < max_retries:
                 await asyncio.sleep(2)
+    if last_error:
+        logger.info("Player HTTP not responding on %s after %d attempts: %s", ip, max_retries + 1, last_error)
     return None
 
 
@@ -146,8 +154,19 @@ async def discovery_loop():
                                 uptime_minutes=data.get("uptimeMinutes", 0),
                             )
                         else:
-                            # Player installed but not responding - try launching it
-                            logger.info("Player installed but not responding on %s, attempting launch", ip)
+                            # Player installed but HTTP not responding
+                            # Check if the player process is actually running
+                            proc_ok, pid_output = await adb_executor.shell(ip, f"pidof {package_id}")
+                            if proc_ok and pid_output.strip():
+                                logger.warning(
+                                    "Player process IS running on %s (PID: %s) but HTTP port %d not responding. "
+                                    "Possible causes: player HTTP server not started, port blocked, or player in bad state.",
+                                    ip, pid_output.strip(), player_port
+                                )
+                            else:
+                                logger.info("Player installed but not running on %s, attempting launch", ip)
+
+                            # Try launching it
                             await adb_executor.shell(
                                 ip,
                                 f"monkey -p {package_id} -c android.intent.category.LAUNCHER 1"
@@ -171,7 +190,16 @@ async def discovery_loop():
                                     uptime_minutes=data.get("uptimeMinutes", 0),
                                 )
                             else:
-                                logger.warning("Player on %s not responding after launch attempt", ip)
+                                # Check again if process is running after launch
+                                proc_ok2, pid2 = await adb_executor.shell(ip, f"pidof {package_id}")
+                                if proc_ok2 and pid2.strip():
+                                    logger.warning(
+                                        "Player on %s launched (PID: %s) but HTTP port %d still not responding. "
+                                        "The player_recheck_loop will keep trying to detect it.",
+                                        ip, pid2.strip(), config.get("playerPort", 8080)
+                                    )
+                                else:
+                                    logger.warning("Player on %s failed to start after launch attempt", ip)
                 else:
                     logger.debug("ADB port open on %s but connect failed", ip)
 

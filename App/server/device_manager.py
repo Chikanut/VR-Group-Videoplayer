@@ -18,17 +18,21 @@ class DeviceManager:
         self._lock = asyncio.Lock()
         self._polling_task: asyncio.Task | None = None
         self._offline_task: asyncio.Task | None = None
+        self._player_recheck_task: asyncio.Task | None = None
 
     async def start(self):
         load_device_names()
         self._polling_task = asyncio.create_task(self._poll_loop())
         self._offline_task = asyncio.create_task(self._offline_check_loop())
+        self._player_recheck_task = asyncio.create_task(self._player_recheck_loop())
 
     async def stop(self):
         if self._polling_task:
             self._polling_task.cancel()
         if self._offline_task:
             self._offline_task.cancel()
+        if self._player_recheck_task:
+            self._player_recheck_task.cancel()
 
     async def add_or_update(self, device_id: str, ip: str, **kwargs) -> DeviceState:
         async with self._lock:
@@ -194,6 +198,74 @@ class DeviceManager:
                     device.ip,
                     player_connected=False,
                 )
+
+    async def _player_recheck_loop(self):
+        """Periodically try to detect player HTTP on ADB-connected devices without player_connected.
+
+        This catches cases where the player is running but wasn't detected during discovery
+        (e.g. player started after discovery, HTTP temporarily unavailable, etc).
+        """
+        await asyncio.sleep(15)  # Initial delay to let discovery run first
+        while True:
+            try:
+                config = get_config()
+                player_port = config.get("playerPort", 8080)
+                # Run every 20 seconds
+                await asyncio.sleep(20)
+
+                async with self._lock:
+                    # Find online ADB devices without player connection
+                    adb_only = [
+                        d for d in self._devices.values()
+                        if d.online and d.adb_connected and not d.player_connected
+                    ]
+
+                if not adb_only:
+                    continue
+
+                logger.debug("Rechecking player HTTP on %d ADB-only device(s)", len(adb_only))
+                tasks = [self._try_player_http(d, player_port) for d in adb_only]
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("Player recheck loop error: %s", e)
+                await asyncio.sleep(10)
+
+    async def _try_player_http(self, device: DeviceState, player_port: int):
+        """Try to connect to player HTTP on a device and update state if successful."""
+        url = f"http://{device.ip}:{player_port}/status"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        logger.info(
+                            "Player HTTP now responding on %s (%s) - marking as connected",
+                            device.device_id, device.ip
+                        )
+                        await self.add_or_update(
+                            device.device_id,
+                            device.ip,
+                            player_connected=True,
+                            player_version=data.get("playerVersion", data.get("version", "")),
+                            playback_state=data.get("state", "idle"),
+                            current_video=data.get("file", ""),
+                            current_mode=data.get("mode", "360"),
+                            playback_time=data.get("time", 0.0),
+                            playback_duration=data.get("duration", 0.0),
+                            loop=data.get("loop", False),
+                            locked=data.get("locked", False),
+                            uptime_minutes=data.get("uptimeMinutes", 0),
+                            last_player_response=time.time(),
+                        )
+                    else:
+                        logger.debug(
+                            "Player HTTP on %s returned %d", device.ip, resp.status
+                        )
+        except Exception as e:
+            logger.debug("Player HTTP check failed for %s: %s", device.ip, e)
 
     async def _offline_check_loop(self):
         while True:
