@@ -5,14 +5,6 @@ namespace VRClassroom
 {
     public class ViewModeManager : MonoBehaviour
     {
-        private static readonly string[] VideoShaderCandidates =
-        {
-            "Unlit/Texture",
-            "Universal Render Pipeline/Unlit",
-            "Universal Render Pipeline/Lit",
-            "Standard"
-        };
-
         public event Action<ViewMode> OnModeChanged;
 
         public ViewMode CurrentMode { get; private set; }
@@ -112,11 +104,15 @@ namespace VRClassroom
             _sphere360.layer = 0;
 
             var renderer = _sphere360.GetComponent<Renderer>();
-            _sphereMaterial = CreateVideoMaterial(renderer, "sphere");
+            _sphereMaterial = VideoRenderShaderFactory.CreateSphereMaterial(videoShaderOverride);
 
             if (_sphereMaterial != null)
             {
                 renderer.material = _sphereMaterial;
+            }
+            else
+            {
+                Debug.LogError("[ViewModeManager] No compatible shader found for sphere. Assign 'videoShaderOverride' in inspector.");
             }
 
             _sphere360.SetActive(false);
@@ -139,53 +135,20 @@ namespace VRClassroom
             if (collider != null) Destroy(collider);
 
             var renderer = _flat2D.GetComponent<Renderer>();
-            _flatMaterial = CreateVideoMaterial(renderer, "flat quad");
+            _flatMaterial = VideoRenderShaderFactory.CreateFlatMaterial(videoShaderOverride);
 
             if (_flatMaterial != null)
             {
                 renderer.material = _flatMaterial;
+            }
+            else
+            {
+                Debug.LogError("[ViewModeManager] No compatible shader found for flat quad. Assign 'videoShaderOverride' in inspector.");
             }
 
             _flat2D.SetActive(false);
             Debug.Log("[ViewModeManager] Flat2D geometry created.");
         }
 
-        private Material CreateVideoMaterial(Renderer renderer, string targetName)
-        {
-            if (renderer == null)
-            {
-                Debug.LogError($"[ViewModeManager] Renderer is missing for {targetName}.");
-                return null;
-            }
-
-            var shader = FindFirstAvailableShader();
-            if (shader != null)
-            {
-                Debug.Log($"[ViewModeManager] {targetName} shader found: {shader.name}");
-                return new Material(shader);
-            }
-
-            Debug.LogError($"[ViewModeManager] No compatible shader found for {targetName}. Assign 'videoShaderOverride' in the inspector. Using primitive default material as fallback.");
-            return renderer.material;
-        }
-
-        private Shader FindFirstAvailableShader()
-        {
-            if (videoShaderOverride != null)
-            {
-                return videoShaderOverride;
-            }
-
-            for (int i = 0; i < VideoShaderCandidates.Length; i++)
-            {
-                var shader = Shader.Find(VideoShaderCandidates[i]);
-                if (shader != null)
-                {
-                    return shader;
-                }
-            }
-
-            return null;
-        }
     }
 }
