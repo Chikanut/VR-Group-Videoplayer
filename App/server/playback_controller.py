@@ -201,6 +201,73 @@ async def send_command(command: str, device_ids: list[str]) -> dict[str, Any]:
     return {"success": success_list, "failed": failed_list}
 
 
+async def launch_player(device_ids: list[str]) -> dict[str, Any]:
+    """Launch the player app on target devices via ADB."""
+    config = get_config()
+    package_id = config.get("packageId", "com.vrclassroom.player")
+    player_port = config.get("playerPort", 8080)
+
+    # Resolve to online ADB-connected devices
+    if device_ids:
+        devices = []
+        for did in device_ids:
+            d = await device_manager.get(did)
+            if d and d.online and d.adb_connected:
+                devices.append(d)
+    else:
+        devices = await device_manager.get_online_adb_devices()
+
+    if not devices:
+        return {"error": "No online ADB-connected devices available", "success": [], "failed": []}
+
+    success_list = []
+    failed_list = []
+
+    async def _launch_on_device(device):
+        # Launch via monkey command
+        ok, output = await adb_executor.shell(
+            device.ip,
+            f"monkey -p {package_id} -c android.intent.category.LAUNCHER 1"
+        )
+        if not ok:
+            return {"deviceId": device.device_id, "error": f"Launch failed: {output}"}
+
+        # Wait for player to start and check HTTP
+        await asyncio.sleep(5)
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = f"http://{device.ip}:{player_port}/status"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        await device_manager.add_or_update(
+                            device.device_id,
+                            device.ip,
+                            player_connected=True,
+                            player_version=data.get("playerVersion", data.get("version", "")),
+                            playback_state=data.get("state", "idle"),
+                        )
+                        return {"deviceId": device.device_id, "playerConnected": True}
+        except Exception:
+            pass
+
+        # Player launched but HTTP not responding yet - still count as success
+        return {"deviceId": device.device_id, "playerConnected": False, "note": "Launched but player HTTP not responding yet"}
+
+    tasks = [_launch_on_device(d) for d in devices]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for result in results:
+        if isinstance(result, Exception):
+            failed_list.append({"error": str(result)})
+        elif result.get("error"):
+            failed_list.append(result)
+        else:
+            success_list.append(result)
+
+    return {"success": success_list, "failed": failed_list}
+
+
 async def ping_device(device_id: str) -> dict[str, Any]:
     """Send a ping (beep) to a single device."""
     device = await device_manager.get(device_id)

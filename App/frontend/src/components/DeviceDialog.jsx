@@ -6,6 +6,7 @@ import {
   updateDevice,
   getRequirements,
   playbackCommand,
+  launchPlayerSingle,
 } from '../api';
 import UpdateProgress from './UpdateProgress';
 
@@ -149,6 +150,27 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
           <div className="dialog-section">
             <h3>Update Progress</h3>
             <UpdateProgress progress={device.updateProgress} />
+          </div>
+        )}
+
+        {device.online && device.adbConnected && !device.playerConnected && (
+          <div className="dialog-section">
+            <h3>Player</h3>
+            <p className="text-warn">Player not connected. You can try to launch it via ADB.</p>
+            <button
+              className="btn btn-primary"
+              onClick={async () => {
+                const result = await launchPlayerSingle(deviceId);
+                if (result.error && (!result.success || result.success.length === 0)) {
+                  alert(result.error);
+                } else if (result.success && result.success.length > 0) {
+                  const s = result.success[0];
+                  alert(s.playerConnected ? 'Player launched and HTTP connected!' : 'Player launched but HTTP not responding yet.');
+                }
+              }}
+            >
+              Launch Player via ADB
+            </button>
           </div>
         )}
 

@@ -5,8 +5,14 @@ import { playbackOpen } from '../api';
 export default function VideoSelector({ targetDeviceIds, onClose }) {
   const config = useDeviceStore((s) => s.config);
   const devices = useDeviceStore((s) => s.getDeviceList());
-  const onlinePlayerDevices = devices.filter((d) => d.online && d.playerConnected);
+  const ignoreReq = config?.ignoreRequirements || false;
   const videos = config?.requirementVideos || [];
+
+  // When ignoreRequirements is on, include ADB-connected devices as valid targets
+  const isCommandTarget = (d) =>
+    d.online && (d.playerConnected || (ignoreReq && d.adbConnected));
+
+  const onlineCommandDevices = devices.filter(isCommandTarget);
 
   if (videos.length === 0) {
     return (
@@ -25,12 +31,17 @@ export default function VideoSelector({ targetDeviceIds, onClose }) {
   }
 
   const targetDevices = targetDeviceIds.length > 0
-    ? devices.filter((d) => targetDeviceIds.includes(d.deviceId) && d.online && d.playerConnected)
-    : onlinePlayerDevices;
+    ? devices.filter((d) => targetDeviceIds.includes(d.deviceId) && isCommandTarget(d))
+    : onlineCommandDevices;
 
   const getVideoAvailability = (video) => {
     let available = 0;
     for (const d of targetDevices) {
+      // When ignoring requirements, count all target devices as available
+      if (ignoreReq) {
+        available++;
+        continue;
+      }
       if (!d.requirementsDetail) {
         available++;
         continue;
@@ -62,10 +73,16 @@ export default function VideoSelector({ targetDeviceIds, onClose }) {
           <h2>Select Video</h2>
           <button className="btn-close" onClick={onClose}>x</button>
         </div>
+        {ignoreReq && targetDevices.some((d) => !d.playerConnected) && (
+          <div className="dialog-warning" style={{ margin: '0 1rem' }}>
+            Some devices have no player HTTP connection. Commands will be sent via ADB.
+          </div>
+        )}
         <div className="video-list">
           {videos.map((video) => {
             const { available, total } = getVideoAvailability(video);
-            const canPlay = available > 0;
+            // When ignoring requirements, allow play even if availability is uncertain
+            const canPlay = ignoreReq ? total > 0 : available > 0;
             return (
               <div key={video.id} className="video-item">
                 <div className="video-info">
@@ -74,9 +91,9 @@ export default function VideoSelector({ targetDeviceIds, onClose }) {
                     {video.videoType.toUpperCase()} {video.loop ? '| Loop' : ''}
                   </span>
                   <span className={`video-availability ${available < total ? 'partial' : ''}`}>
-                    Available on {available}/{total} device(s)
+                    {ignoreReq ? `${total} device(s) targeted` : `Available on ${available}/${total} device(s)`}
                   </span>
-                  {available < total && (
+                  {!ignoreReq && available < total && (
                     <span className="video-missing-note">
                       {total - available} device(s) missing this video
                     </span>
@@ -87,7 +104,9 @@ export default function VideoSelector({ targetDeviceIds, onClose }) {
                   disabled={!canPlay}
                   onClick={() => handlePlay(video)}
                 >
-                  {canPlay ? (available < total ? 'Play on available' : 'Play') : 'Not available'}
+                  {canPlay
+                    ? (ignoreReq ? 'Force Play' : (available < total ? 'Play on available' : 'Play'))
+                    : 'Not available'}
                 </button>
               </div>
             );
