@@ -21,6 +21,10 @@ App/**/__pycache__/
 App/*.py[cod]
 App/*$py.class
 App/frontend/node_modules/
+node_modules/
+**/__pycache__/
+*.pyc
+[Uu]tpm/
 
 # Virtual environments
 App/.env
