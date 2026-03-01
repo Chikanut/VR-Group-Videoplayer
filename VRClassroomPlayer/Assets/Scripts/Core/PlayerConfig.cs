@@ -20,7 +20,7 @@ namespace VRClassroom
         /// <summary>
         /// Default view mode when none is specified.
         /// </summary>
-        public const ViewMode DefaultViewMode = ViewMode.Flat2D;
+        public const ViewMode DefaultViewMode = ViewMode.Sphere360;
 
         /// <summary>
         /// RenderTexture resolution for video output.

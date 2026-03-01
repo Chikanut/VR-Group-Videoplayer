@@ -62,17 +62,17 @@ namespace VRClassroom
 
         private void Update()
         {
+            if (_dirty && _panelRoot.activeSelf)
+            {
+                RefreshText();
+                _dirty = false;
+            }
+
             // Multi-tap detection via right controller primary button (A button on Quest)
             if (OVRInput.GetDown(OVRInput.Button.Two, OVRInput.Controller.RTouch) ||
                 Input.GetKeyDown(KeyCode.BackQuote))
             {
                 RegisterTap();
-            }
-
-            if (_dirty && _panelRoot.activeSelf)
-            {
-                RefreshText();
-                _dirty = false;
             }
         }
 
