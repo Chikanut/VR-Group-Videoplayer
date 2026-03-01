@@ -89,6 +89,45 @@ namespace VRClassroom
         }
 
 
+        private bool IsPermissionDeclaredInManifest(string permission)
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            try
+            {
+                using (var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+                using (var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
+                using (var packageManager = activity.Call<AndroidJavaObject>("getPackageManager"))
+                {
+                    string packageName = activity.Call<string>("getPackageName");
+                    using (var packageInfo = packageManager.Call<AndroidJavaObject>(
+                               "getPackageInfo",
+                               packageName,
+                               4096)) // PackageManager.GET_PERMISSIONS
+                    {
+                        string[] requestedPermissions = packageInfo.Get<string[]>("requestedPermissions");
+                        if (requestedPermissions == null || requestedPermissions.Length == 0)
+                            return false;
+
+                        foreach (string declaredPermission in requestedPermissions)
+                        {
+                            if (declaredPermission == permission)
+                                return true;
+                        }
+
+                        return false;
+                    }
+                }
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[VideoPlayerController] Unable to inspect manifest permissions. Exception={exception.GetType().Name}, message={exception.Message}");
+                return false;
+            }
+#else
+            return true;
+#endif
+        }
+
         private void EnsureExternalVideoAccess()
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -127,6 +166,15 @@ namespace VRClassroom
             string permissionToRequest = sdkInt >= 33
                 ? "android.permission.READ_MEDIA_VIDEO"
                 : Permission.ExternalStorageRead;
+
+            bool isDeclaredInManifest = IsPermissionDeclaredInManifest(permissionToRequest);
+            Debug.Log($"[VideoPlayerController] Storage permission manifest check. permission={permissionToRequest}, declared={isDeclaredInManifest}, sdkInt={sdkInt}");
+
+            if (!isDeclaredInManifest)
+            {
+                Debug.LogError($"[VideoPlayerController] Permission '{permissionToRequest}' is not declared in AndroidManifest. Runtime request will not work correctly until it is declared.");
+                return;
+            }
 
             Debug.Log($"[VideoPlayerController] Requesting storage permission: {permissionToRequest}, sdkInt={sdkInt}");
             Permission.RequestUserPermission(permissionToRequest, callbacks);
