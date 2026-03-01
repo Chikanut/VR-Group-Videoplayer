@@ -14,7 +14,10 @@ namespace VRClassroom
         [SerializeField] private ViewModeManager viewModeManager;
 
         private float _lastReportTime;
+        private float _lastRegistrationTime;
         private string _pushEndpoint;
+        private const float RegistrationInterval = 10f;
+        public const string PlayerVersion = "1.0.0";
 
         private void Start()
         {
@@ -38,21 +41,22 @@ namespace VRClassroom
 
         private void Update()
         {
-            if (Time.time - _lastReportTime < PlayerConfig.StatusInterval)
-                return;
-
-            _lastReportTime = Time.time;
-
-            // Only auto-report if not Idle
-            if (videoPlayer != null && videoPlayer.CurrentState != PlayerState.Idle)
+            if (Time.time - _lastReportTime >= PlayerConfig.StatusInterval)
             {
-                ReportNow();
+                _lastReportTime = Time.time;
+
+                // Only auto-report if not Idle
+                if (videoPlayer != null && videoPlayer.CurrentState != PlayerState.Idle)
+                {
+                    ReportNow();
+                }
             }
 
-            // Push to instructor if configured
-            if (!string.IsNullOrEmpty(_pushEndpoint))
+            // Self-registration / heartbeat to instructor server
+            if (!string.IsNullOrEmpty(_pushEndpoint) && Time.time - _lastRegistrationTime >= RegistrationInterval)
             {
-                PushStatus();
+                _lastRegistrationTime = Time.time;
+                PushRegistration();
             }
         }
 
@@ -134,28 +138,45 @@ namespace VRClassroom
             return sb.ToString();
         }
 
-        private void PushStatus()
+        private void PushRegistration()
         {
-            string ip = PlayerPrefs.GetString("instructor_ip", string.Empty);
-            if (string.IsNullOrEmpty(ip)) return;
+            string server = PlayerPrefs.GetString("instructor_ip", string.Empty);
+            if (string.IsNullOrEmpty(server)) return;
 
-            string url = $"http://{ip}:9090/device_status";
-            string json = GetStatusJson();
+            // Support both "IP" and "IP:PORT" format
+            string url;
+            if (server.Contains(":"))
+                url = $"http://{server}/api/devices/register";
+            else
+                url = $"http://{server}:8000/api/devices/register";
+
+            string deviceId = GetDeviceId();
+            string ip = GetLocalIPAddress();
+            int battery = GetBatteryPercent();
+
+            var sb = new StringBuilder(256);
+            sb.Append('{');
+            sb.AppendFormat("\"deviceId\":\"{0}\",", EscapeJson(deviceId));
+            sb.AppendFormat("\"ip\":\"{0}\",", EscapeJson(ip));
+            sb.AppendFormat("\"battery\":{0},", battery);
+            sb.AppendFormat("\"playerVersion\":\"{0}\",", EscapeJson(PlayerVersion));
+            sb.Append("\"installedPackages\":[\"com.vrclassroom.player\"]");
+            sb.Append('}');
 
             try
             {
                 var request = new UnityWebRequest(url, "POST");
-                byte[] bodyRaw = Encoding.UTF8.GetBytes(json);
+                byte[] bodyRaw = Encoding.UTF8.GetBytes(sb.ToString());
                 request.uploadHandler = new UploadHandlerRaw(bodyRaw);
                 request.downloadHandler = new DownloadHandlerBuffer();
                 request.SetRequestHeader("Content-Type", "application/json");
-                request.timeout = 2;
+                request.timeout = 3;
                 request.SendWebRequest();
-                // Fire and forget — we don't wait for the result
+                // Fire and forget
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[StatusReporter] Push to instructor failed: {e.Message}");
+                Debug.LogWarning($"[StatusReporter] Registration push failed: {e.Message}");
             }
         }
 
