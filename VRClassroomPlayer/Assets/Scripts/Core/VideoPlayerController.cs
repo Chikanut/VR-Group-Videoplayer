@@ -2,6 +2,9 @@ using System;
 using System.IO;
 using UnityEngine;
 using UnityEngine.Video;
+#if UNITY_ANDROID && !UNITY_EDITOR
+using UnityEngine.Android;
+#endif
 
 namespace VRClassroom
 {
@@ -49,6 +52,7 @@ namespace VRClassroom
         private void Awake()
         {
             Debug.Log("[VideoPlayerController] Awake: initializing...");
+            EnsureExternalVideoAccess();
             LogVideoDirectoryState();
 
             _videoPlayer = GetComponent<VideoPlayer>();
@@ -84,6 +88,101 @@ namespace VRClassroom
             Debug.Log($"[VideoPlayerController] VideoPlayer configured: source=Url, renderMode=RenderTexture, videoPath={PlayerConfig.VideoPath}");
         }
 
+
+        private bool IsPermissionDeclaredInManifest(string permission)
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            try
+            {
+                using (var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+                using (var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
+                using (var packageManager = activity.Call<AndroidJavaObject>("getPackageManager"))
+                {
+                    string packageName = activity.Call<string>("getPackageName");
+                    using (var packageInfo = packageManager.Call<AndroidJavaObject>(
+                               "getPackageInfo",
+                               packageName,
+                               4096)) // PackageManager.GET_PERMISSIONS
+                    {
+                        string[] requestedPermissions = packageInfo.Get<string[]>("requestedPermissions");
+                        if (requestedPermissions == null || requestedPermissions.Length == 0)
+                            return false;
+
+                        foreach (string declaredPermission in requestedPermissions)
+                        {
+                            if (declaredPermission == permission)
+                                return true;
+                        }
+
+                        return false;
+                    }
+                }
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning($"[VideoPlayerController] Unable to inspect manifest permissions. Exception={exception.GetType().Name}, message={exception.Message}");
+                return false;
+            }
+#else
+            return true;
+#endif
+        }
+
+        private void EnsureExternalVideoAccess()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            bool hasReadExternalStorage = Permission.HasUserAuthorizedPermission(Permission.ExternalStorageRead);
+            bool hasReadMediaVideo = Permission.HasUserAuthorizedPermission("android.permission.READ_MEDIA_VIDEO");
+
+            Debug.Log($"[VideoPlayerController] Android storage permission state. READ_EXTERNAL_STORAGE={hasReadExternalStorage}, READ_MEDIA_VIDEO={hasReadMediaVideo}");
+
+            if (hasReadExternalStorage || hasReadMediaVideo)
+            {
+                Debug.Log("[VideoPlayerController] Storage read permission already granted.");
+                return;
+            }
+
+            var callbacks = new PermissionCallbacks();
+            callbacks.PermissionGranted += permission =>
+            {
+                Debug.Log($"[VideoPlayerController] Permission granted: {permission}");
+                LogVideoDirectoryState();
+            };
+            callbacks.PermissionDenied += permission =>
+            {
+                Debug.LogWarning($"[VideoPlayerController] Permission denied: {permission}. External videos may be inaccessible.");
+            };
+            callbacks.PermissionDeniedAndDontAskAgain += permission =>
+            {
+                Debug.LogError($"[VideoPlayerController] Permission denied with 'Don't ask again': {permission}. External videos will remain inaccessible until enabled in system settings.");
+            };
+
+            int sdkInt = 0;
+            using (var version = new AndroidJavaClass("android.os.Build$VERSION"))
+            {
+                sdkInt = version.GetStatic<int>("SDK_INT");
+            }
+
+            string permissionToRequest = sdkInt >= 33
+                ? "android.permission.READ_MEDIA_VIDEO"
+                : Permission.ExternalStorageRead;
+
+            bool isDeclaredInManifest = IsPermissionDeclaredInManifest(permissionToRequest);
+            Debug.Log($"[VideoPlayerController] Storage permission manifest check. permission={permissionToRequest}, declared={isDeclaredInManifest}, sdkInt={sdkInt}");
+
+            if (!isDeclaredInManifest)
+            {
+                Debug.LogError($"[VideoPlayerController] Permission '{permissionToRequest}' is not declared in AndroidManifest. Runtime request will not work correctly until it is declared.");
+                return;
+            }
+
+            Debug.Log($"[VideoPlayerController] Requesting storage permission: {permissionToRequest}, sdkInt={sdkInt}");
+            Permission.RequestUserPermission(permissionToRequest, callbacks);
+#else
+            Debug.Log("[VideoPlayerController] External storage permission request is Android-only; skipping on this platform.");
+#endif
+        }
+
         private void LogVideoDirectoryState()
         {
             string videoDirectory = PlayerConfig.VideoPath;
@@ -116,6 +215,18 @@ namespace VRClassroom
             {
                 Debug.LogError($"[VideoPlayerController] Failed to inspect video directory '{videoDirectory}'. Exception={exception.GetType().Name}, message={exception.Message}");
             }
+        }
+
+
+        private bool HasExternalVideoReadPermission()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            bool hasReadExternalStorage = Permission.HasUserAuthorizedPermission(Permission.ExternalStorageRead);
+            bool hasReadMediaVideo = Permission.HasUserAuthorizedPermission("android.permission.READ_MEDIA_VIDEO");
+            return hasReadExternalStorage || hasReadMediaVideo;
+#else
+            return true;
+#endif
         }
 
         private void OnDestroy()
@@ -153,6 +264,11 @@ namespace VRClassroom
 
             string fullPath = PlayerConfig.VideoPath + filename;
             Debug.Log($"[VideoPlayerController] Full path: {fullPath}");
+
+            if (!HasExternalVideoReadPermission())
+            {
+                Debug.LogWarning("[VideoPlayerController] Read permission for external video storage is not granted. File access may fail.");
+            }
 
             if (!File.Exists(fullPath))
             {
