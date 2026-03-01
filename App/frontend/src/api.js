@@ -67,3 +67,18 @@ export async function playbackCommand(command, deviceIds = []) {
     body: JSON.stringify({ deviceIds }),
   });
 }
+
+export async function browseFiles(path = '', filter = '') {
+  const params = new URLSearchParams();
+  if (path) params.set('path', path);
+  if (filter) params.set('filter', filter);
+  return request(`/browse?${params.toString()}`);
+}
+
+export async function getUsbDevices() {
+  return request('/usb-devices');
+}
+
+export async function updateUsbDevice(serial) {
+  return request(`/usb-devices/${serial}/update`, { method: 'POST' });
+}

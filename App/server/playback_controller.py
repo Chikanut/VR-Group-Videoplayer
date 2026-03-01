@@ -5,7 +5,8 @@ from typing import Any
 
 import aiohttp
 
-from .config import get_config
+from .adb_executor import adb_executor
+from .config import get_config, get_device_video_path
 from .device_manager import device_manager
 
 logger = logging.getLogger("vrclassroom.playback")
@@ -40,25 +41,78 @@ async def _send_to_player(ip: str, method: str, path: str, json_body: dict | Non
         return {"success": False, "error": str(e)}
 
 
-async def _resolve_devices(device_ids: list[str]) -> list:
-    """Resolve device IDs to DeviceState objects. Empty list means all online player devices."""
+async def _send_via_adb(ip: str, command: str, intent_extra: str = "") -> dict[str, Any]:
+    """Send a command to device via ADB intent as fallback."""
+    config = get_config()
+    package_id = config.get("packageId", "com.vrclassroom.player")
+    cmd = (
+        f"am broadcast -a {package_id}.{command} "
+        f"-n {package_id}/.CommandReceiver"
+    )
+    if intent_extra:
+        cmd += f" {intent_extra}"
+    success, output = await adb_executor.shell(ip, cmd)
+    return {"success": success, "data": output, "via": "adb"}
+
+
+async def _resolve_devices(device_ids: list[str], require_player: bool = True) -> list:
+    """Resolve device IDs to DeviceState objects.
+    Empty list means all online devices.
+    If require_player is False and ignoreRequirements is set, include ADB-only devices.
+    """
+    config = get_config()
+    ignore_req = config.get("ignoreRequirements", False)
+
     if device_ids:
         devices = []
         for did in device_ids:
             d = await device_manager.get(did)
-            if d and d.online and d.player_connected:
+            if not d or not d.online:
+                continue
+            if d.player_connected:
+                devices.append(d)
+            elif ignore_req and d.adb_connected:
                 devices.append(d)
         return devices
     else:
+        if ignore_req:
+            async with device_manager._lock:
+                return [d for d in device_manager._devices.values()
+                        if d.online and (d.player_connected or d.adb_connected)]
         return await device_manager.get_online_player_devices()
+
+
+async def _send_command_to_device(device, command: str, path: str, payload: dict | None = None) -> dict[str, Any]:
+    """Send command prioritizing HTTP API, falling back to ADB."""
+    # Try HTTP API first if player is connected
+    if device.player_connected:
+        result = await _send_to_player(device.ip, "POST", path, payload)
+        if result.get("success"):
+            return result
+        logger.warning("HTTP command %s failed for %s, trying ADB fallback", command, device.ip)
+
+    # Fallback to ADB
+    if device.adb_connected:
+        extra = ""
+        if payload:
+            for k, v in payload.items():
+                if isinstance(v, bool):
+                    extra += f" --ez {k} {str(v).lower()}"
+                elif isinstance(v, str):
+                    extra += f" --es {k} '{v}'"
+                elif isinstance(v, (int, float)):
+                    extra += f" --ei {k} {v}"
+        return await _send_via_adb(device.ip, command, extra)
+
+    return {"success": False, "error": "Neither player nor ADB connected"}
 
 
 async def open_video(video_id: str, device_ids: list[str]) -> dict[str, Any]:
     """Open a video on target devices."""
     config = get_config()
     videos = config.get("requirementVideos", [])
+    ignore_req = config.get("ignoreRequirements", False)
 
-    # Find the video by ID
     video = None
     for v in videos:
         if v.get("id") == video_id:
@@ -70,13 +124,13 @@ async def open_video(video_id: str, device_ids: list[str]) -> dict[str, Any]:
 
     devices = await _resolve_devices(device_ids)
     if not devices:
-        return {"error": "No online devices with player connected"}
+        return {"error": "No online devices available"}
 
-    device_path = video.get("devicePath", "")
+    local_path = video.get("localPath", "")
+    device_path = get_device_video_path(local_path) if local_path else ""
     video_type = video.get("videoType", "360")
     loop = video.get("loop", False)
 
-    # Map video type to player mode
     mode_map = {"2d": "2d", "360": "360", "360_mono": "360"}
     mode = mode_map.get(video_type, "360")
 
@@ -86,27 +140,25 @@ async def open_video(video_id: str, device_ids: list[str]) -> dict[str, Any]:
         "loop": loop,
     }
 
-    # Check which devices have the video
     success_list = []
     failed_list = []
     missing_list = []
 
     tasks = []
     for d in devices:
-        # Check if video is present (from cached requirements)
         video_present = True
-        if d.requirements_detail:
+        if not ignore_req and d.requirements_detail:
             for req in d.requirements_detail:
-                if req.get("type") == "video" and req.get("devicePath") == device_path:
+                if req.get("type") == "video" and req.get("id") == video_id:
                     if not req.get("present", False):
                         video_present = False
                     break
 
-        if not video_present:
+        if not video_present and not ignore_req:
             missing_list.append({"deviceId": d.device_id, "name": d.name or d.device_id})
             continue
 
-        tasks.append((d, _send_to_player(d.ip, "POST", "/open", payload)))
+        tasks.append((d, _send_command_to_device(d, "open", "/open", payload)))
 
     results = await asyncio.gather(*[t[1] for t in tasks], return_exceptions=True)
 
@@ -129,10 +181,10 @@ async def send_command(command: str, device_ids: list[str]) -> dict[str, Any]:
     """Send a playback command (play/pause/stop/recenter) to target devices."""
     devices = await _resolve_devices(device_ids)
     if not devices:
-        return {"success": [], "failed": [], "message": "No online devices with player connected"}
+        return {"success": [], "failed": [], "message": "No online devices available"}
 
     path = f"/{command}"
-    tasks = [(d, _send_to_player(d.ip, "POST", path)) for d in devices]
+    tasks = [(d, _send_command_to_device(d, command, path)) for d in devices]
     results = await asyncio.gather(*[t[1] for t in tasks], return_exceptions=True)
 
     success_list = []
@@ -154,8 +206,13 @@ async def ping_device(device_id: str) -> dict[str, Any]:
     device = await device_manager.get(device_id)
     if not device:
         return {"error": "Device not found"}
-    if not device.player_connected:
-        return {"error": "Player not connected"}
 
-    result = await _send_to_player(device.ip, "POST", "/ping")
-    return result
+    if device.player_connected:
+        result = await _send_to_player(device.ip, "POST", "/ping")
+        if result.get("success"):
+            return result
+
+    if device.adb_connected:
+        return await _send_via_adb(device.ip, "ping")
+
+    return {"error": "Neither player nor ADB connected"}

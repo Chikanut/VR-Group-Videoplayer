@@ -150,32 +150,45 @@ class DeviceManager:
         config = get_config()
         player_port = config.get("playerPort", 8080)
         url = f"http://{device.ip}:{player_port}/status"
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        await self.add_or_update(
-                            device.device_id,
-                            device.ip,
-                            battery=data.get("battery", device.battery),
-                            battery_charging=data.get("batteryCharging", False),
-                            playback_state=data.get("state", "idle"),
-                            current_video=data.get("file", ""),
-                            current_mode=data.get("mode", "360"),
-                            playback_time=data.get("time", 0.0),
-                            playback_duration=data.get("duration", 0.0),
-                            loop=data.get("loop", False),
-                            locked=data.get("locked", False),
-                            uptime_minutes=data.get("uptimeMinutes", 0),
-                            last_player_response=time.time(),
-                            player_connected=True,
-                        )
-                    else:
-                        logger.warning("Player %s returned status %d", device.ip, resp.status)
-        except Exception:
-            # Player not responding
-            if device.player_connected:
+
+        # Try up to 2 times with increasing timeout for Quest 3 stability
+        for attempt in range(2):
+            try:
+                timeout = 5 if attempt == 0 else 8
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            await self.add_or_update(
+                                device.device_id,
+                                device.ip,
+                                battery=data.get("battery", device.battery),
+                                battery_charging=data.get("batteryCharging", data.get("charging", False)),
+                                playback_state=data.get("state", "idle"),
+                                current_video=data.get("file", ""),
+                                current_mode=data.get("mode", "360"),
+                                playback_time=data.get("time", 0.0),
+                                playback_duration=data.get("duration", 0.0),
+                                loop=data.get("loop", False),
+                                locked=data.get("locked", False),
+                                uptime_minutes=data.get("uptimeMinutes", 0),
+                                last_player_response=time.time(),
+                                player_connected=True,
+                            )
+                            return  # Success
+                        else:
+                            logger.warning("Player %s returned status %d", device.ip, resp.status)
+            except Exception:
+                if attempt == 0:
+                    await asyncio.sleep(1)
+                    continue
+
+        # All attempts failed - mark as disconnected only after consecutive failures
+        # Use a grace period: don't disconnect immediately
+        if device.player_connected:
+            now = time.time()
+            grace_period = config.get("deviceOfflineTimeout", 30)
+            if device.last_player_response > 0 and (now - device.last_player_response) > grace_period:
                 await self.add_or_update(
                     device.device_id,
                     device.ip,

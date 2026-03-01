@@ -23,7 +23,10 @@ DEFAULT_CONFIG = {
     "deviceOfflineTimeout": 30,
     "statusPollInterval": 5,
     "updateConcurrency": 5,
+    "ignoreRequirements": False,
 }
+
+DEVICE_VIDEO_DIR = "/sdcard/Movies"
 
 _config: dict = {}
 _config_lock = Lock()
@@ -67,13 +70,20 @@ def update_config(new_config: dict) -> dict:
     global _config
     with _config_lock:
         _config.update(new_config)
-        # Ensure requirement videos have IDs
+        # Ensure requirement videos have IDs and strip legacy devicePath
         for video in _config.get("requirementVideos", []):
             if not video.get("id"):
                 video["id"] = str(uuid.uuid4())
+            video.pop("devicePath", None)
         _save_config_locked()
         logger.info("Config updated")
         return deepcopy(_config)
+
+
+def get_device_video_path(local_path: str) -> str:
+    """Compute the device path for a video: /sdcard/Movies/<filename>."""
+    basename = os.path.basename(local_path)
+    return f"{DEVICE_VIDEO_DIR}/{basename}"
 
 
 def load_device_names() -> dict:
