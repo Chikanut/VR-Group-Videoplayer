@@ -2,7 +2,7 @@ import React from 'react';
 import useDeviceStore from '../store/deviceStore';
 import { playbackOpen } from '../api';
 
-export default function VideoSelector({ targetDeviceIds, ignoreRequirements = false, onClose }) {
+export default function VideoSelector({ targetDeviceIds, onClose }) {
   const config = useDeviceStore((s) => s.config);
   const devices = useDeviceStore((s) => s.getDeviceList());
   const onlinePlayerDevices = devices.filter((d) => d.online && d.playerConnected);
@@ -44,7 +44,7 @@ export default function VideoSelector({ targetDeviceIds, ignoreRequirements = fa
   };
 
   const handlePlay = async (video) => {
-    const result = await playbackOpen(video.id, targetDeviceIds, ignoreRequirements);
+    const result = await playbackOpen(video.id, targetDeviceIds);
     if (result.missing && result.missing.length > 0) {
       const names = result.missing.map((m) => m.name || m.deviceId).join(', ');
       alert(
@@ -65,7 +65,7 @@ export default function VideoSelector({ targetDeviceIds, ignoreRequirements = fa
         <div className="video-list">
           {videos.map((video) => {
             const { available, total } = getVideoAvailability(video);
-            const canPlay = ignoreRequirements ? total > 0 : available > 0;
+            const canPlay = available > 0;
             return (
               <div key={video.id} className="video-item">
                 <div className="video-info">
@@ -87,7 +87,7 @@ export default function VideoSelector({ targetDeviceIds, ignoreRequirements = fa
                   disabled={!canPlay}
                   onClick={() => handlePlay(video)}
                 >
-                  {canPlay ? (ignoreRequirements ? 'Play (ignore reqs)' : (available < total ? 'Play on available' : 'Play')) : 'Not available'}
+                  {canPlay ? (available < total ? 'Play on available' : 'Play') : 'Not available'}
                 </button>
               </div>
             );

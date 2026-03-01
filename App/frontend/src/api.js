@@ -54,10 +54,10 @@ export async function pingDevice(id) {
   return request(`/devices/${id}/ping`, { method: 'POST' });
 }
 
-export async function playbackOpen(videoId, deviceIds = [], ignoreRequirements = false) {
+export async function playbackOpen(videoId, deviceIds = []) {
   return request('/playback/open', {
     method: 'POST',
-    body: JSON.stringify({ videoId, deviceIds, ignoreRequirements }),
+    body: JSON.stringify({ videoId, deviceIds }),
   });
 }
 

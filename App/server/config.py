@@ -2,7 +2,6 @@ import json
 import logging
 import os
 import uuid
-import re
 from copy import deepcopy
 from pathlib import Path
 from threading import Lock
@@ -43,7 +42,6 @@ def load_config() -> dict:
                 with open(CONFIG_PATH, "r") as f:
                     data = json.load(f)
                 _config = {**deepcopy(DEFAULT_CONFIG), **data}
-                _config["requirementVideos"] = _normalize_requirement_videos(_config.get("requirementVideos", []))
                 logger.info("Config loaded from %s", CONFIG_PATH)
             except (json.JSONDecodeError, OSError) as e:
                 logger.error("Invalid config file, using defaults: %s", e)
