@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getConfig, updateConfig } from '../api';
 import FilePicker from './FilePicker';
@@ -6,6 +6,7 @@ import FilePicker from './FilePicker';
 function generateId() {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 }
+
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -113,9 +114,7 @@ export default function SettingsPage() {
   return (
     <div className="settings-page">
       <div className="settings-header">
-        <button className="btn" onClick={() => navigate('/')}>
-          Back
-        </button>
+        <button className="btn" onClick={() => navigate('/')}>Back</button>
         <h1>Settings</h1>
         <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
           {saving ? 'Saving...' : 'Save'}
@@ -209,18 +208,13 @@ export default function SettingsPage() {
                   />
                 </div>
               </div>
-              <button
-                className="btn btn-danger btn-small"
-                onClick={() => removeVideo(idx)}
-              >
+              <button className="btn btn-danger btn-small" onClick={() => removeVideo(idx)}>
                 Remove
               </button>
             </div>
           ))}
         </div>
-        <button className="btn" onClick={addVideo}>
-          + Add Video
-        </button>
+        <button className="btn" onClick={addVideo}>+ Add Video</button>
       </section>
 
       <section className="settings-section">
@@ -228,70 +222,38 @@ export default function SettingsPage() {
         <div className="settings-grid">
           <div className="form-group">
             <label>Battery Warning Threshold (%)</label>
-            <input
-              type="number"
-              min="0"
-              max="100"
-              value={config.batteryThreshold || 20}
-              onChange={(e) => updateField('batteryThreshold', parseInt(e.target.value) || 0)}
-            />
+            <input type="number" min="0" max="100" value={config.batteryThreshold || 20}
+              onChange={(e) => updateField('batteryThreshold', parseInt(e.target.value) || 0)} />
           </div>
           <div className="form-group">
             <label>Network Scan Interval (seconds)</label>
-            <input
-              type="number"
-              min="5"
-              max="300"
-              value={config.scanInterval || 30}
-              onChange={(e) => updateField('scanInterval', parseInt(e.target.value) || 30)}
-            />
+            <input type="number" min="5" max="300" value={config.scanInterval || 30}
+              onChange={(e) => updateField('scanInterval', parseInt(e.target.value) || 30)} />
           </div>
           <div className="form-group">
             <label>Network Subnet (auto-detected if empty)</label>
-            <input
-              type="text"
-              value={config.networkSubnet || ''}
-              onChange={(e) => updateField('networkSubnet', e.target.value)}
-              placeholder="192.168.1"
-            />
+            <input type="text" value={config.networkSubnet || ''}
+              onChange={(e) => updateField('networkSubnet', e.target.value)} placeholder="192.168.1" />
           </div>
           <div className="form-group">
             <label>Player HTTP Port</label>
-            <input
-              type="number"
-              value={config.playerPort || 8080}
-              onChange={(e) => updateField('playerPort', parseInt(e.target.value) || 8080)}
-            />
+            <input type="number" value={config.playerPort || 8080}
+              onChange={(e) => updateField('playerPort', parseInt(e.target.value) || 8080)} />
           </div>
           <div className="form-group">
             <label>Device Offline Timeout (seconds)</label>
-            <input
-              type="number"
-              min="10"
-              max="300"
-              value={config.deviceOfflineTimeout || 30}
-              onChange={(e) => updateField('deviceOfflineTimeout', parseInt(e.target.value) || 30)}
-            />
+            <input type="number" min="10" max="300" value={config.deviceOfflineTimeout || 30}
+              onChange={(e) => updateField('deviceOfflineTimeout', parseInt(e.target.value) || 30)} />
           </div>
           <div className="form-group">
             <label>Status Poll Interval (seconds)</label>
-            <input
-              type="number"
-              min="1"
-              max="60"
-              value={config.statusPollInterval || 5}
-              onChange={(e) => updateField('statusPollInterval', parseInt(e.target.value) || 5)}
-            />
+            <input type="number" min="1" max="60" value={config.statusPollInterval || 5}
+              onChange={(e) => updateField('statusPollInterval', parseInt(e.target.value) || 5)} />
           </div>
           <div className="form-group">
             <label>Update Concurrency</label>
-            <input
-              type="number"
-              min="1"
-              max="20"
-              value={config.updateConcurrency || 5}
-              onChange={(e) => updateField('updateConcurrency', parseInt(e.target.value) || 5)}
-            />
+            <input type="number" min="1" max="20" value={config.updateConcurrency || 5}
+              onChange={(e) => updateField('updateConcurrency', parseInt(e.target.value) || 5)} />
           </div>
           <div className="form-group">
             <label className="checkbox-label">
