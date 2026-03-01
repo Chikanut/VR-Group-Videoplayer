@@ -95,13 +95,17 @@ namespace VRClassroom
                 return;
             }
 
+            Debug.Log($"[VideoPlayerController] Open requested: {filename}");
+
             // Stop current playback if any
             if (CurrentState == PlayerState.Playing || CurrentState == PlayerState.Paused || CurrentState == PlayerState.Loading)
             {
+                Debug.Log($"[VideoPlayerController] Stopping current playback (state={CurrentState})");
                 _videoPlayer.Stop();
             }
 
             string fullPath = PlayerConfig.VideoPath + filename;
+            Debug.Log($"[VideoPlayerController] Full path: {fullPath}");
 
             if (!File.Exists(fullPath))
             {
@@ -110,6 +114,7 @@ namespace VRClassroom
                 return;
             }
 
+            Debug.Log("[VideoPlayerController] File exists, preparing playback...");
             CurrentFile = filename;
             _videoPlayer.url = "file://" + fullPath;
 
@@ -162,6 +167,7 @@ namespace VRClassroom
 
         private void OnPrepareCompleted(VideoPlayer source)
         {
+            Debug.Log($"[VideoPlayerController] Prepare completed for: {CurrentFile}");
             SetState(PlayerState.Ready);
             OnVideoLoaded?.Invoke(CurrentFile);
 
@@ -188,6 +194,7 @@ namespace VRClassroom
         private void SetState(PlayerState newState)
         {
             if (CurrentState == newState) return;
+            Debug.Log($"[VideoPlayerController] State: {CurrentState} -> {newState}");
             CurrentState = newState;
             OnStateChanged?.Invoke(newState);
         }

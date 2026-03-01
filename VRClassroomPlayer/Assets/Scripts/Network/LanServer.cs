@@ -15,6 +15,7 @@ namespace VRClassroom
         [SerializeField] private ViewModeManager viewModeManager;
         [SerializeField] private OrientationManager orientationManager;
         [SerializeField] private StatusReporter statusReporter;
+        [SerializeField] private DebugLogPanel debugLogPanel;
 
         private HttpListener _listener;
         private Thread _listenerThread;
@@ -149,6 +150,8 @@ namespace VRClassroom
             string path = request.Url.AbsolutePath.TrimEnd('/').ToLowerInvariant();
             string method = request.HttpMethod.ToUpperInvariant();
 
+            Debug.Log($"[LanServer] {method} {path} from {request.RemoteEndPoint}");
+
             try
             {
                 // GET endpoints — can be answered directly from the listener thread
@@ -161,6 +164,9 @@ namespace VRClassroom
                             return;
                         case "/battery":
                             HandleGetBattery(response);
+                            return;
+                        case "/debug":
+                            HandleGetDebugToggle(response);
                             return;
                     }
                 }
@@ -177,33 +183,57 @@ namespace VRClassroom
                         }
                     }
 
+                    Debug.Log($"[LanServer] POST {path} body: {body ?? "(empty)"}");
+
                     switch (path)
                     {
                         case "/play":
-                            QueueCommand(() => videoPlayer?.Play());
+                            QueueCommand(() =>
+                            {
+                                Debug.Log("[LanServer] Executing: play");
+                                videoPlayer?.Play();
+                            });
                             SendJson(response, 200, "{\"ok\":true}");
                             return;
                         case "/pause":
-                            QueueCommand(() => videoPlayer?.Pause());
+                            QueueCommand(() =>
+                            {
+                                Debug.Log("[LanServer] Executing: pause");
+                                videoPlayer?.Pause();
+                            });
                             SendJson(response, 200, "{\"ok\":true}");
                             return;
                         case "/restart":
-                            QueueCommand(() => videoPlayer?.Restart());
+                            QueueCommand(() =>
+                            {
+                                Debug.Log("[LanServer] Executing: restart");
+                                videoPlayer?.Restart();
+                            });
                             SendJson(response, 200, "{\"ok\":true}");
                             return;
                         case "/stop":
-                            QueueCommand(() => videoPlayer?.Stop());
+                            QueueCommand(() =>
+                            {
+                                Debug.Log("[LanServer] Executing: stop");
+                                videoPlayer?.Stop();
+                            });
                             SendJson(response, 200, "{\"ok\":true}");
                             return;
                         case "/open":
-                            return; // Handled below
+                            HandlePostOpen(response, body);
+                            return;
                         case "/recenter":
-                            QueueCommand(() => orientationManager?.Recenter());
+                            QueueCommand(() =>
+                            {
+                                Debug.Log("[LanServer] Executing: recenter");
+                                orientationManager?.Recenter();
+                            });
                             SendJson(response, 200, "{\"ok\":true}");
                             return;
                         case "/lock":
                             QueueCommand(() =>
                             {
+                                Debug.Log("[LanServer] Executing: lock");
                                 var sm = PlayerStateManager.Instance;
                                 if (sm != null) sm.IsLocked = true;
                             });
@@ -212,6 +242,7 @@ namespace VRClassroom
                         case "/unlock":
                             QueueCommand(() =>
                             {
+                                Debug.Log("[LanServer] Executing: unlock");
                                 var sm = PlayerStateManager.Instance;
                                 if (sm != null) sm.IsLocked = false;
                             });
@@ -220,23 +251,21 @@ namespace VRClassroom
                         case "/emergencystop":
                             QueueCommand(() =>
                             {
+                                Debug.Log("[LanServer] Executing: emergencystop");
                                 videoPlayer?.Stop();
                                 var sm = PlayerStateManager.Instance;
                                 if (sm != null) sm.IsLocked = false;
                             });
                             SendJson(response, 200, "{\"ok\":true}");
                             return;
-                    }
-
-                    // Handle /open separately since it needs body parsing
-                    if (path == "/open")
-                    {
-                        HandlePostOpen(response, body);
-                        return;
+                        case "/debug":
+                            HandlePostDebugToggle(response, body);
+                            return;
                     }
                 }
 
                 // Unknown route
+                Debug.LogWarning($"[LanServer] Unknown route: {method} {path}");
                 SendJson(response, 404, "{\"error\":\"not found\"}");
             }
             catch (Exception e)
@@ -254,6 +283,7 @@ namespace VRClassroom
         {
             if (string.IsNullOrEmpty(body))
             {
+                Debug.LogWarning("[LanServer] POST /open: missing body");
                 SendJson(response, 400, "{\"error\":\"missing body\"}");
                 return;
             }
@@ -263,6 +293,7 @@ namespace VRClassroom
                 var data = JsonUtility.FromJson<OpenRequest>(body);
                 if (string.IsNullOrEmpty(data.file))
                 {
+                    Debug.LogWarning("[LanServer] POST /open: missing file parameter");
                     SendJson(response, 400, "{\"error\":\"missing file parameter\"}");
                     return;
                 }
@@ -270,8 +301,11 @@ namespace VRClassroom
                 string file = data.file;
                 string mode = data.mode;
 
+                Debug.Log($"[LanServer] POST /open: file={file}, mode={mode ?? "(default)"}");
+
                 QueueCommand(() =>
                 {
+                    Debug.Log($"[LanServer] Executing: open file={file} mode={mode ?? "(default)"}");
                     if (!string.IsNullOrEmpty(mode) && viewModeManager != null)
                     {
                         viewModeManager.SetMode(ADBCommandRouter.ParseMode(mode));
@@ -283,6 +317,7 @@ namespace VRClassroom
             }
             catch (Exception e)
             {
+                Debug.LogError($"[LanServer] POST /open: invalid json: {e.Message}");
                 SendJson(response, 400, $"{{\"error\":\"invalid json: {EscapeJson(e.Message)}\"}}");
             }
         }
@@ -315,6 +350,37 @@ namespace VRClassroom
 
             string json = $"{{\"battery\":{battery},\"charging\":{(charging ? "true" : "false")}}}";
             SendJson(response, 200, json);
+        }
+
+        private void HandleGetDebugToggle(HttpListenerResponse response)
+        {
+            bool currentState = false;
+            QueueCommand(() =>
+            {
+                if (debugLogPanel != null)
+                    debugLogPanel.Toggle();
+            });
+
+            string json = "{\"ok\":true,\"debug\":\"toggled\"}";
+            SendJson(response, 200, json);
+        }
+
+        private void HandlePostDebugToggle(HttpListenerResponse response, string body)
+        {
+            QueueCommand(() =>
+            {
+                if (debugLogPanel != null)
+                {
+                    if (!string.IsNullOrEmpty(body) && body.Contains("\"on\""))
+                        debugLogPanel.SetVisible(true);
+                    else if (!string.IsNullOrEmpty(body) && body.Contains("\"off\""))
+                        debugLogPanel.SetVisible(false);
+                    else
+                        debugLogPanel.Toggle();
+                }
+            });
+
+            SendJson(response, 200, "{\"ok\":true}");
         }
 
         private void QueueCommand(Action action)
