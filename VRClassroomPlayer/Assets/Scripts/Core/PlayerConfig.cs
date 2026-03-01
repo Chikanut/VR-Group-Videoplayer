@@ -5,7 +5,7 @@ namespace VRClassroom
         /// <summary>
         /// Path to video files on Quest internal storage (Android forward slashes).
         /// </summary>
-        public const string VideoPath = "/sdcard/VRClassroom/Videos/";
+        public const string VideoPath = "/sdcard/Movies/";
 
         /// <summary>
         /// Port for the built-in HTTP server.
