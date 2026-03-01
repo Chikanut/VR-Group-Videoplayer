@@ -171,6 +171,9 @@ namespace VRClassroom
                         case "/battery":
                             HandleGetBattery(response);
                             return;
+                        case "/files":
+                            HandleGetFiles(response);
+                            return;
                         case "/debug":
                             HandleGetDebugToggle(response);
                             return;
@@ -264,6 +267,14 @@ namespace VRClassroom
                             });
                             SendJson(response, 200, "{\"ok\":true}");
                             return;
+                        case "/ping":
+                            QueueCommand(() =>
+                            {
+                                Debug.Log("[LanServer] Executing: ping (audio beep)");
+                                PlayPingSound();
+                            });
+                            SendJson(response, 200, "{\"ok\":true}");
+                            return;
                         case "/debug":
                             HandlePostDebugToggle(response, body);
                             return;
@@ -306,15 +317,20 @@ namespace VRClassroom
 
                 string file = data.file;
                 string mode = data.mode;
+                bool loop = data.loop;
 
-                Debug.Log($"[LanServer] POST /open: file={file}, mode={mode ?? "(default)"}");
+                Debug.Log($"[LanServer] POST /open: file={file}, mode={mode ?? "(default)"}, loop={loop}");
 
                 QueueCommand(() =>
                 {
-                    Debug.Log($"[LanServer] Executing: open file={file} mode={mode ?? "(default)"}");
+                    Debug.Log($"[LanServer] Executing: open file={file} mode={mode ?? "(default)"} loop={loop}");
                     if (!string.IsNullOrEmpty(mode) && viewModeManager != null)
                     {
                         viewModeManager.SetMode(ADBCommandRouter.ParseMode(mode));
+                    }
+                    if (videoPlayer != null)
+                    {
+                        videoPlayer.IsLooping = loop;
                     }
                     videoPlayer?.Open(file);
                 });
@@ -410,11 +426,74 @@ namespace VRClassroom
             return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
         }
 
+        private void HandleGetFiles(HttpListenerResponse response)
+        {
+            try
+            {
+                string videoDir = PlayerConfig.VideoPath;
+                var sb = new StringBuilder(1024);
+                sb.Append("{\"files\":[");
+
+                if (Directory.Exists(videoDir))
+                {
+                    string[] files = Directory.GetFiles(videoDir);
+                    for (int i = 0; i < files.Length; i++)
+                    {
+                        if (i > 0) sb.Append(',');
+                        var fi = new FileInfo(files[i]);
+                        sb.Append('{');
+                        sb.AppendFormat("\"name\":\"{0}\",", EscapeJson(fi.Name));
+                        sb.AppendFormat("\"path\":\"{0}\",", EscapeJson(files[i]));
+                        sb.AppendFormat("\"size\":{0}", fi.Length);
+                        sb.Append('}');
+                    }
+                }
+
+                sb.Append("]}");
+                SendJson(response, 200, sb.ToString());
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LanServer] Error listing files: {e.Message}");
+                SendJson(response, 500, $"{{\"error\":\"{EscapeJson(e.Message)}\"}}");
+            }
+        }
+
+        private void PlayPingSound()
+        {
+            try
+            {
+                int sampleRate = 44100;
+                float duration = 0.5f;
+                float frequency = 880f;
+                int sampleCount = Mathf.CeilToInt(sampleRate * duration);
+                var clip = AudioClip.Create("Ping", sampleCount, 1, sampleRate, false);
+                float[] samples = new float[sampleCount];
+                for (int i = 0; i < sampleCount; i++)
+                {
+                    float t = (float)i / sampleRate;
+                    float envelope = 1f - (t / duration);
+                    samples[i] = Mathf.Sin(2f * Mathf.PI * frequency * t) * envelope * 0.8f;
+                }
+                clip.SetData(samples, 0);
+
+                var audioSource = gameObject.GetComponent<AudioSource>();
+                if (audioSource == null)
+                    audioSource = gameObject.AddComponent<AudioSource>();
+                audioSource.PlayOneShot(clip);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[LanServer] Ping sound failed: {e.Message}");
+            }
+        }
+
         [Serializable]
         private class OpenRequest
         {
             public string file;
             public string mode;
+            public bool loop;
         }
 
         private class PendingResponse

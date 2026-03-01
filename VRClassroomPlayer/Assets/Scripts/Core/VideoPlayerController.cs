@@ -262,7 +262,8 @@ namespace VRClassroom
                 _videoPlayer.Stop();
             }
 
-            string fullPath = PlayerConfig.VideoPath + filename;
+            // Support both full paths and filenames relative to VideoPath
+            string fullPath = filename.StartsWith("/") ? filename : PlayerConfig.VideoPath + filename;
             Debug.Log($"[VideoPlayerController] Full path: {fullPath}");
 
             if (!HasExternalVideoReadPermission())

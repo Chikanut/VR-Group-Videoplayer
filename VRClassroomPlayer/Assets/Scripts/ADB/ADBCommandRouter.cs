@@ -189,6 +189,7 @@ namespace VRClassroom
             switch (mode.ToLowerInvariant())
             {
                 case "360":
+                case "360_mono":
                 case "sphere":
                     return ViewMode.Sphere360;
                 case "2d":
