@@ -201,7 +201,7 @@ async def update_all_devices():
 
 @app.post("/api/playback/open")
 async def playback_open(cmd: OpenCommand):
-    result = await open_video(cmd.videoId, cmd.deviceIds)
+    result = await open_video(cmd.videoId, cmd.deviceIds, cmd.ignoreRequirements)
     return result
 
 

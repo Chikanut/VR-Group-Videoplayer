@@ -10,14 +10,17 @@ export default function Layout() {
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
   const [videoSelectorOpen, setVideoSelectorOpen] = useState(false);
   const [videoSelectorDeviceIds, setVideoSelectorDeviceIds] = useState([]);
+  const [videoSelectorIgnoreRequirements, setVideoSelectorIgnoreRequirements] = useState(false);
 
   const handlePlayAll = () => {
     setVideoSelectorDeviceIds([]);
+    setVideoSelectorIgnoreRequirements(false);
     setVideoSelectorOpen(true);
   };
 
-  const handlePlaySingle = (deviceId) => {
+  const handlePlaySingle = (deviceId, ignoreRequirements = false) => {
     setVideoSelectorDeviceIds([deviceId]);
+    setVideoSelectorIgnoreRequirements(ignoreRequirements);
     setVideoSelectorOpen(true);
   };
 
@@ -47,12 +50,13 @@ export default function Layout() {
         <DeviceDialog
           deviceId={selectedDeviceId}
           onClose={() => setSelectedDeviceId(null)}
-          onPlayVideo={() => handlePlaySingle(selectedDeviceId)}
+          onPlayVideo={(ignoreRequirements) => handlePlaySingle(selectedDeviceId, ignoreRequirements)}
         />
       )}
       {videoSelectorOpen && (
         <VideoSelector
           targetDeviceIds={videoSelectorDeviceIds}
+          ignoreRequirements={videoSelectorIgnoreRequirements}
           onClose={() => setVideoSelectorOpen(false)}
         />
       )}

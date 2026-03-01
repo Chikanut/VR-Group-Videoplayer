@@ -53,7 +53,7 @@ async def _resolve_devices(device_ids: list[str]) -> list:
         return await device_manager.get_online_player_devices()
 
 
-async def open_video(video_id: str, device_ids: list[str]) -> dict[str, Any]:
+async def open_video(video_id: str, device_ids: list[str], ignore_requirements: bool = False) -> dict[str, Any]:
     """Open a video on target devices."""
     config = get_config()
     videos = config.get("requirementVideos", [])
@@ -103,7 +103,7 @@ async def open_video(video_id: str, device_ids: list[str]) -> dict[str, Any]:
                         video_present = False
                     break
 
-        if not video_present:
+        if not ignore_requirements and not video_present:
             missing_list.append({"deviceId": d.device_id, "name": d.name or d.device_id})
             continue
 

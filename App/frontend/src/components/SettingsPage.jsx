@@ -6,13 +6,6 @@ function generateId() {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 }
 
-function getDevicePath(video) {
-  const localPath = (video.localPath || '').trim();
-  if (!localPath) return '/sdcard/Movies/<file-name>';
-  const parts = localPath.split(/[/\\]/);
-  const filename = parts[parts.length - 1] || '<file-name>';
-  return `/sdcard/Movies/${filename}`;
-}
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -195,10 +188,6 @@ export default function SettingsPage() {
                     onChange={(e) => handleVideoPick(idx, e)}
                     style={{ display: 'none' }}
                   />
-                </div>
-                <div className="form-group">
-                  <label>Device Path (auto)</label>
-                  <input type="text" value={getDevicePath(video)} readOnly />
                 </div>
                 <div className="form-group form-group-small">
                   <label>Type</label>

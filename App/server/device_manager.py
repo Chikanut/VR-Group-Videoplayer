@@ -133,7 +133,7 @@ class DeviceManager:
                 async with self._lock:
                     devices = [
                         d for d in self._devices.values()
-                        if d.online and d.player_connected
+                        if d.online and (d.player_connected or d.adb_connected)
                     ]
 
                 if devices:
@@ -170,17 +170,30 @@ class DeviceManager:
                             uptime_minutes=data.get("uptimeMinutes", 0),
                             last_player_response=time.time(),
                             player_connected=True,
+                            player_poll_failures=0,
                         )
+                        await self._refresh_requirements(device.device_id)
                     else:
                         logger.warning("Player %s returned status %d", device.ip, resp.status)
+                        await self._handle_player_poll_failure(device)
         except Exception:
-            # Player not responding
-            if device.player_connected:
-                await self.add_or_update(
-                    device.device_id,
-                    device.ip,
-                    player_connected=False,
-                )
+            await self._handle_player_poll_failure(device)
+
+    async def _handle_player_poll_failure(self, device: DeviceState):
+        failures = getattr(device, "player_poll_failures", 0) + 1
+        updates = {"player_poll_failures": failures}
+
+        if failures >= 3 and device.player_connected:
+            updates["player_connected"] = False
+
+        await self.add_or_update(device.device_id, device.ip, **updates)
+
+    async def _refresh_requirements(self, device_id: str):
+        try:
+            from .requirements_manager import check_requirements
+            await check_requirements(device_id)
+        except Exception:
+            pass
 
     async def _offline_check_loop(self):
         while True:
