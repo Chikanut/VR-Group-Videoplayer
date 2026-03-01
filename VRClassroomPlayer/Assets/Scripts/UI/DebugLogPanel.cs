@@ -24,7 +24,7 @@ namespace VRClassroom
         private readonly List<LogEntry> _logEntries = new List<LogEntry>();
         private bool _dirty;
 
-        private const int MaxEntries = 80;
+        private const int MaxEntries = 30;
         private const bool CaptureAllLogs = true;
         private const float CanvasDistance = 2.5f;
         private const float CanvasScale = 0.003f;

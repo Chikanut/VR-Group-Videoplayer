@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Text;
 using UnityEngine;
 using UnityEngine.Networking;
+using System.Globalization;
 
 namespace VRClassroom
 {
@@ -120,19 +121,22 @@ namespace VRClassroom
             // Build JSON manually to avoid external dependencies
             var sb = new StringBuilder(512);
             sb.Append('{');
-            sb.AppendFormat("\"deviceId\":\"{0}\",", EscapeJson(deviceId));
-            sb.AppendFormat("\"ip\":\"{0}\",", EscapeJson(ip));
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"deviceId\":\"{0}\",", EscapeJson(deviceId));
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"ip\":\"{0}\",", EscapeJson(ip));
             sb.Append("\"online\":true,");
-            sb.AppendFormat("\"state\":\"{0}\",", EscapeJson(state));
-            sb.AppendFormat("\"file\":\"{0}\",", EscapeJson(file));
-            sb.AppendFormat("\"mode\":\"{0}\",", EscapeJson(mode));
-            sb.AppendFormat("\"time\":{0:F1},", time);
-            sb.AppendFormat("\"duration\":{0:F1},", duration);
-            sb.AppendFormat("\"loop\":{0},", loop ? "true" : "false");
-            sb.AppendFormat("\"locked\":{0},", locked ? "true" : "false");
-            sb.AppendFormat("\"battery\":{0},", battery);
-            sb.AppendFormat("\"batteryCharging\":{0},", charging ? "true" : "false");
-            sb.AppendFormat("\"uptimeMinutes\":{0}", uptimeMinutes);
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"state\":\"{0}\",", EscapeJson(state));
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"file\":\"{0}\",", EscapeJson(file));
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"mode\":\"{0}\",", EscapeJson(mode));
+
+            // Ось ці два рядки були головними винуватцями:
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"time\":{0:F1},", time);
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"duration\":{0:F1},", duration);
+
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"loop\":{0},", loop ? "true" : "false");
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"locked\":{0},", locked ? "true" : "false");
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"battery\":{0},", battery);
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"batteryCharging\":{0},", charging ? "true" : "false");
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"uptimeMinutes\":{0}", uptimeMinutes);
             sb.Append('}');
 
             return sb.ToString();

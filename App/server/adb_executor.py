@@ -8,7 +8,7 @@ from collections import defaultdict
 logger = logging.getLogger("vrclassroom.adb")
 
 ADB_PORT = 5555
-COMMAND_TIMEOUT = 30
+COMMAND_TIMEOUT = 50
 
 
 class ADBExecutor:

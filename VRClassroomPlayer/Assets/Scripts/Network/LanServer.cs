@@ -6,6 +6,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using UnityEngine;
+using System.Globalization;
 
 namespace VRClassroom
 {
@@ -355,6 +356,7 @@ namespace VRClassroom
                 try
                 {
                     json = statusReporter.GetStatusJson();
+                    Debug.Log($"[LanServer] Status: {json}");
                 }
                 catch (Exception e)
                 {
@@ -442,9 +444,9 @@ namespace VRClassroom
                         if (i > 0) sb.Append(',');
                         var fi = new FileInfo(files[i]);
                         sb.Append('{');
-                        sb.AppendFormat("\"name\":\"{0}\",", EscapeJson(fi.Name));
-                        sb.AppendFormat("\"path\":\"{0}\",", EscapeJson(files[i]));
-                        sb.AppendFormat("\"size\":{0}", fi.Length);
+                        sb.AppendFormat(CultureInfo.InvariantCulture, "\"name\":\"{0}\",", EscapeJson(fi.Name));
+                        sb.AppendFormat(CultureInfo.InvariantCulture, "\"path\":\"{0}\",", EscapeJson(files[i]));
+                        sb.AppendFormat(CultureInfo.InvariantCulture, "\"size\":{0}", fi.Length);
                         sb.Append('}');
                     }
                 }

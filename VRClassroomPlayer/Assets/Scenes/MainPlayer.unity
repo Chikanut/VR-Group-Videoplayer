@@ -793,6 +793,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::VRClassroom.ViewModeManager
   vrCamera: {fileID: 1256054558}
   videoShaderOverride: {fileID: 10752, guid: 0000000000000000f000000000000000, type: 0}
+  viewModeConfigs:
+  - {fileID: 11400000, guid: 488e248e02682e54f923c17063708729, type: 2}
 --- !u!4 &904553243
 Transform:
   m_ObjectHideFlags: 0

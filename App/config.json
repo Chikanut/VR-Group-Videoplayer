@@ -8,6 +8,13 @@
       "localPath": "C:\\Users\\eugen\\Desktop\\Working Files\\GSPP\\VR Videos\\Promo\\SkyFall training PROMO.mp4",
       "loop": false,
       "videoType": "2d"
+    },
+    {
+      "id": "50550c47-a082-4b1e-b3fb-97809f8f57b5",
+      "name": "First fight",
+      "localPath": "C:\\Users\\eugen\\Desktop\\Working Files\\GSPP\\VR Videos\\FIRST BATTLE\\First Battle short (8 min).mp4",
+      "loop": false,
+      "videoType": "360"
     }
   ],
   "batteryThreshold": 20,
