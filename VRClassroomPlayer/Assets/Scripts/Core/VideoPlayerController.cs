@@ -2,6 +2,9 @@ using System;
 using System.IO;
 using UnityEngine;
 using UnityEngine.Video;
+#if UNITY_ANDROID && !UNITY_EDITOR
+using UnityEngine.Android;
+#endif
 
 namespace VRClassroom
 {
@@ -49,6 +52,8 @@ namespace VRClassroom
         private void Awake()
         {
             Debug.Log("[VideoPlayerController] Awake: initializing...");
+            EnsureExternalVideoAccess();
+            LogVideoDirectoryState();
 
             _videoPlayer = GetComponent<VideoPlayer>();
             if (_videoPlayer == null)
@@ -81,6 +86,99 @@ namespace VRClassroom
             _videoPlayer.errorReceived += OnErrorReceived;
 
             Debug.Log($"[VideoPlayerController] VideoPlayer configured: source=Url, renderMode=RenderTexture, videoPath={PlayerConfig.VideoPath}");
+        }
+
+
+        private void EnsureExternalVideoAccess()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            bool hasReadExternalStorage = Permission.HasUserAuthorizedPermission(Permission.ExternalStorageRead);
+            bool hasReadMediaVideo = Permission.HasUserAuthorizedPermission("android.permission.READ_MEDIA_VIDEO");
+
+            Debug.Log($"[VideoPlayerController] Android storage permission state. READ_EXTERNAL_STORAGE={hasReadExternalStorage}, READ_MEDIA_VIDEO={hasReadMediaVideo}");
+
+            if (hasReadExternalStorage || hasReadMediaVideo)
+            {
+                Debug.Log("[VideoPlayerController] Storage read permission already granted.");
+                return;
+            }
+
+            var callbacks = new PermissionCallbacks();
+            callbacks.PermissionGranted += permission =>
+            {
+                Debug.Log($"[VideoPlayerController] Permission granted: {permission}");
+                LogVideoDirectoryState();
+            };
+            callbacks.PermissionDenied += permission =>
+            {
+                Debug.LogWarning($"[VideoPlayerController] Permission denied: {permission}. External videos may be inaccessible.");
+            };
+            callbacks.PermissionDeniedAndDontAskAgain += permission =>
+            {
+                Debug.LogError($"[VideoPlayerController] Permission denied with 'Don't ask again': {permission}. External videos will remain inaccessible until enabled in system settings.");
+            };
+
+            int sdkInt = 0;
+            using (var version = new AndroidJavaClass("android.os.Build$VERSION"))
+            {
+                sdkInt = version.GetStatic<int>("SDK_INT");
+            }
+
+            string permissionToRequest = sdkInt >= 33
+                ? "android.permission.READ_MEDIA_VIDEO"
+                : Permission.ExternalStorageRead;
+
+            Debug.Log($"[VideoPlayerController] Requesting storage permission: {permissionToRequest}, sdkInt={sdkInt}");
+            Permission.RequestUserPermission(permissionToRequest, callbacks);
+#else
+            Debug.Log("[VideoPlayerController] External storage permission request is Android-only; skipping on this platform.");
+#endif
+        }
+
+        private void LogVideoDirectoryState()
+        {
+            string videoDirectory = PlayerConfig.VideoPath;
+            Debug.Log($"[VideoPlayerController] Video directory diagnostics start. path={videoDirectory}, platform={Application.platform}, persistentDataPath={Application.persistentDataPath}");
+
+            try
+            {
+                if (!Directory.Exists(videoDirectory))
+                {
+                    Debug.LogError($"[VideoPlayerController] Video directory does not exist or is inaccessible: {videoDirectory}");
+                    return;
+                }
+
+                string[] files = Directory.GetFiles(videoDirectory);
+                Debug.Log($"[VideoPlayerController] Video directory is accessible. File count={files.Length}");
+
+                if (files.Length == 0)
+                {
+                    Debug.LogWarning($"[VideoPlayerController] Video directory is empty: {videoDirectory}");
+                    return;
+                }
+
+                foreach (string file in files)
+                {
+                    FileInfo fileInfo = new FileInfo(file);
+                    Debug.Log($"[VideoPlayerController] Found file: name={fileInfo.Name}, sizeBytes={fileInfo.Length}, modifiedUtc={fileInfo.LastWriteTimeUtc:O}");
+                }
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError($"[VideoPlayerController] Failed to inspect video directory '{videoDirectory}'. Exception={exception.GetType().Name}, message={exception.Message}");
+            }
+        }
+
+
+        private bool HasExternalVideoReadPermission()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            bool hasReadExternalStorage = Permission.HasUserAuthorizedPermission(Permission.ExternalStorageRead);
+            bool hasReadMediaVideo = Permission.HasUserAuthorizedPermission("android.permission.READ_MEDIA_VIDEO");
+            return hasReadExternalStorage || hasReadMediaVideo;
+#else
+            return true;
+#endif
         }
 
         private void OnDestroy()
@@ -118,6 +216,11 @@ namespace VRClassroom
 
             string fullPath = PlayerConfig.VideoPath + filename;
             Debug.Log($"[VideoPlayerController] Full path: {fullPath}");
+
+            if (!HasExternalVideoReadPermission())
+            {
+                Debug.LogWarning("[VideoPlayerController] Read permission for external video storage is not granted. File access may fail.");
+            }
 
             if (!File.Exists(fullPath))
             {
