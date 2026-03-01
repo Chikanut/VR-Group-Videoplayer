@@ -133,7 +133,7 @@ class DeviceManager:
                 async with self._lock:
                     devices = [
                         d for d in self._devices.values()
-                        if d.online and (d.player_connected or d.adb_connected)
+                        if d.online and d.player_connected
                     ]
 
                 if devices:
