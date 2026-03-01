@@ -1,0 +1,22 @@
+{
+  "apkPath": "D:\\UnityProjects\\VRGroupViewer\\VR Group Videoplayer\\VRClassroomPlayer\\Builds\\VRClassroomVideoPlayer.apk",
+  "packageId": "com.vrclass.player",
+  "requirementVideos": [
+    {
+      "id": "01dad1df-b686-4e9a-810d-94e44a0400ce",
+      "name": "Lesson 1",
+      "localPath": "C:\\Users\\eugen\\Desktop\\Working Files\\GSPP\\VR Videos\\Promo\\SkyFall training PROMO.mp4",
+      "loop": false,
+      "videoType": "2d"
+    }
+  ],
+  "batteryThreshold": 20,
+  "scanInterval": 30,
+  "networkSubnet": "",
+  "serverPort": 8000,
+  "playerPort": 8080,
+  "deviceOfflineTimeout": 30,
+  "statusPollInterval": 5,
+  "updateConcurrency": 5,
+  "ignoreRequirements": true
+}
