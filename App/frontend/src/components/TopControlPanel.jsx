@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useState } from 'react';
+import React, { useRef, useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useDeviceStore from '../store/deviceStore';
 import { playbackCommand, updateAllDevices, getUsbDevices, updateUsbDevice, launchPlayer } from '../api';
@@ -15,6 +15,13 @@ export default function TopControlPanel({ onPlayAll }) {
   const adbNoPlayer = onlineDevices.filter((d) => d.adbConnected && !d.playerConnected);
   const debounceRef = useRef({});
   const [usbScanning, setUsbScanning] = useState(false);
+  const [usbMenuOpen, setUsbMenuOpen] = useState(false);
+  const [usbOptions, setUsbOptions] = useState({
+    enableWirelessAdb: true,
+    updateApp: true,
+    updateContent: true,
+  });
+  const usbMenuRef = useRef(null);
 
   const debounce = useCallback((key, fn) => {
     if (debounceRef.current[key]) return;
@@ -23,12 +30,31 @@ export default function TopControlPanel({ onPlayAll }) {
     setTimeout(() => { debounceRef.current[key] = false; }, 1000);
   }, []);
 
+  // Close menu on outside click
+  useEffect(() => {
+    if (!usbMenuOpen) return;
+    const handleClick = (e) => {
+      if (usbMenuRef.current && !usbMenuRef.current.contains(e.target)) {
+        setUsbMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [usbMenuOpen]);
+
   const needsUpdate = onlineDevices.filter(
     (d) => d.adbConnected && d.requirementsMet === false
   );
 
   const handleUsbInit = async () => {
+    const hasAnySelected = usbOptions.enableWirelessAdb || usbOptions.updateApp || usbOptions.updateContent;
+    if (!hasAnySelected) {
+      alert('Select at least one initialization option.');
+      return;
+    }
+
     setUsbScanning(true);
+    setUsbMenuOpen(false);
     try {
       const data = await getUsbDevices();
       const serials = data.devices || [];
@@ -36,7 +62,7 @@ export default function TopControlPanel({ onPlayAll }) {
         alert('No USB devices found. Connect a Quest headset via USB cable.');
       } else {
         for (const serial of serials) {
-          await updateUsbDevice(serial);
+          await updateUsbDevice(serial, usbOptions);
         }
         alert(`Started initialization for ${serials.length} USB device(s). Check progress below.`);
       }
@@ -44,6 +70,10 @@ export default function TopControlPanel({ onPlayAll }) {
       alert('Failed to scan USB devices');
     }
     setUsbScanning(false);
+  };
+
+  const toggleOption = (key) => {
+    setUsbOptions((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   return (
@@ -75,13 +105,49 @@ export default function TopControlPanel({ onPlayAll }) {
         >
           Update All {needsUpdate.length > 0 && `(${needsUpdate.length})`}
         </button>
-        <button
-          className="btn"
-          onClick={handleUsbInit}
-          disabled={usbScanning}
-        >
-          {usbScanning ? 'Scanning USB...' : 'USB Init'}
-        </button>
+        <div className="usb-init-wrapper" ref={usbMenuRef}>
+          <button
+            className="btn"
+            onClick={() => !usbScanning && setUsbMenuOpen(!usbMenuOpen)}
+            disabled={usbScanning}
+          >
+            {usbScanning ? 'Scanning USB...' : 'USB Init'}
+          </button>
+          {usbMenuOpen && (
+            <div className="usb-init-menu">
+              <label className="usb-init-option">
+                <input
+                  type="checkbox"
+                  checked={usbOptions.enableWirelessAdb}
+                  onChange={() => toggleOption('enableWirelessAdb')}
+                />
+                <span>Wireless ADB</span>
+              </label>
+              <label className="usb-init-option">
+                <input
+                  type="checkbox"
+                  checked={usbOptions.updateApp}
+                  onChange={() => toggleOption('updateApp')}
+                />
+                <span>Update App</span>
+              </label>
+              <label className="usb-init-option">
+                <input
+                  type="checkbox"
+                  checked={usbOptions.updateContent}
+                  onChange={() => toggleOption('updateContent')}
+                />
+                <span>Update Content</span>
+              </label>
+              <button
+                className="btn btn-primary usb-init-start"
+                onClick={handleUsbInit}
+              >
+                Start
+              </button>
+            </div>
+          )}
+        </div>
         <button
           className="btn"
           disabled={!hasAdbDevices}

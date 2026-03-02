@@ -56,7 +56,7 @@ export default function DeviceTile({ device, onClick }) {
             {device.adbConnected ? (
               <span className="badge badge-ok">ADB</span>
             ) : (
-              <span className="badge badge-warn" title="ADB not connected. Install/Push unavailable">
+              <span className="badge badge-warn" title="ADB not connected. Update/Launch unavailable. Connect via USB Init to enable.">
                 No ADB
               </span>
             )}
@@ -64,6 +64,11 @@ export default function DeviceTile({ device, onClick }) {
               <span className="badge badge-ok">Player</span>
             ) : (
               <span className="badge badge-warn">No Player</span>
+            )}
+            {!device.adbConnected && device.playerConnected && (
+              <span className="badge badge-info" title="Connected via HTTP only. Playback available, but update/launch requires ADB.">
+                HTTP
+              </span>
             )}
           </>
         ) : (

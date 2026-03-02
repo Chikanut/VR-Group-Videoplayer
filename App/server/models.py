@@ -106,3 +106,9 @@ class OpenCommand(BaseModel):
 
 class DeviceNameUpdate(BaseModel):
     name: str
+
+
+class UsbInitOptions(BaseModel):
+    enableWirelessAdb: bool = True
+    updateApp: bool = True
+    updateContent: bool = True

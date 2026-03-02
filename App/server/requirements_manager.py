@@ -300,8 +300,14 @@ async def run_update(device_id: str) -> dict[str, Any]:
         return results
 
 
-async def run_usb_update(serial: str) -> dict[str, Any]:
-    """Run full initialization for a USB-connected device."""
+async def run_usb_update(
+    serial: str,
+    *,
+    enable_wireless_adb: bool = True,
+    update_app: bool = True,
+    update_content: bool = True,
+) -> dict[str, Any]:
+    """Run initialization for a USB-connected device with selectable stages."""
     config = get_config()
     videos = config.get("requirementVideos", [])
     package_id = config.get("packageId", "com.vrclassroom.player")
@@ -323,84 +329,104 @@ async def run_usb_update(serial: str) -> dict[str, Any]:
         }
         await ws_manager.broadcast(data)
 
-    await broadcast_usb("starting", 0, f"Initializing USB device {serial}...")
+    stages = []
+    if update_app:
+        stages.append("Update App")
+    if update_content:
+        stages.append("Update Content")
+    if enable_wireless_adb:
+        stages.append("Wireless ADB")
+    await broadcast_usb("starting", 0, f"Initializing USB device {serial} ({', '.join(stages)})...")
 
     try:
-        # Step 1: Install APK
-        if apk_path and os.path.isfile(apk_path):
-            await broadcast_usb("install_apk", 0, f"Installing {package_id}...")
-            success, output = await adb_executor.install_apk_usb(serial, apk_path)
-            if success:
-                results["installed_apk"] = True
-                await broadcast_usb("install_apk", 100, "APK installed successfully")
-            else:
-                results["errors"].append(f"APK install failed: {output}")
-                await broadcast_usb("install_apk_failed", 0, f"APK install failed: {output}")
+        # Step 1: Install APK (if selected)
+        if update_app:
+            if apk_path and os.path.isfile(apk_path):
+                await broadcast_usb("install_apk", 0, f"Installing {package_id}...")
+                success, output = await adb_executor.install_apk_usb(serial, apk_path)
+                if success:
+                    results["installed_apk"] = True
+                    await broadcast_usb("install_apk", 100, "APK installed successfully")
+                else:
+                    results["errors"].append(f"APK install failed: {output}")
+                    await broadcast_usb("install_apk_failed", 0, f"APK install failed: {output}")
+            elif apk_path:
+                results["errors"].append(f"APK file not found: {apk_path}")
+                await broadcast_usb("install_apk_failed", 0, f"APK file not found: {apk_path}")
 
-        # Step 2: Push videos
-        total_videos = len(videos)
-        for idx, video in enumerate(videos):
-            local_path = video.get("localPath", "")
-            video_name = video.get("name", os.path.basename(local_path))
-            if not local_path:
-                continue
+        # Step 2: Push videos (if selected)
+        if update_content:
+            total_videos = len(videos)
+            for idx, video in enumerate(videos):
+                local_path = video.get("localPath", "")
+                video_name = video.get("name", os.path.basename(local_path))
+                if not local_path:
+                    continue
 
-            device_path = get_device_video_path(local_path)
+                device_path = get_device_video_path(local_path)
 
-            if not os.path.isfile(local_path):
-                results["errors"].append(f"Local file not found: {local_path}")
-                await broadcast_usb("push_video_failed", 0, f"File not found: {local_path}",
-                                    file=video_name, video_index=idx, total=total_videos)
-                continue
+                if not os.path.isfile(local_path):
+                    results["errors"].append(f"Local file not found: {local_path}")
+                    await broadcast_usb("push_video_failed", 0, f"File not found: {local_path}",
+                                        file=video_name, video_index=idx, total=total_videos)
+                    continue
 
-            # Ensure directory
-            await adb_executor.run_on_serial(serial, ["shell", "mkdir", "-p", DEVICE_VIDEO_DIR])
+                # Ensure directory
+                await adb_executor.run_on_serial(serial, ["shell", "mkdir", "-p", DEVICE_VIDEO_DIR])
 
-            file_size = os.path.getsize(local_path)
-            file_size_mb = file_size / (1024 * 1024)
+                file_size = os.path.getsize(local_path)
+                file_size_mb = file_size / (1024 * 1024)
 
-            async def progress_cb(pct, text, _name=video_name, _idx=idx):
-                await broadcast_usb("push_video", pct,
-                                    f"[{_idx + 1}/{total_videos}] Pushing {_name}... {pct}%",
-                                    file=_name, video_index=_idx, total=total_videos)
+                async def progress_cb(pct, text, _name=video_name, _idx=idx):
+                    await broadcast_usb("push_video", pct,
+                                        f"[{_idx + 1}/{total_videos}] Pushing {_name}... {pct}%",
+                                        file=_name, video_index=_idx, total=total_videos)
 
-            await broadcast_usb("push_video", 0,
-                                f"[{idx + 1}/{total_videos}] Pushing {video_name} ({file_size_mb:.0f}MB)...",
-                                file=video_name, video_index=idx, total=total_videos)
-
-            success, output = await adb_executor.push_file_usb_with_progress(
-                serial, local_path, device_path, progress_cb,
-            )
-
-            if success:
-                results["pushed_videos"].append(video_name)
-                await adb_executor.scan_media_file_usb(serial, device_path)
-                await broadcast_usb("push_video", 100,
-                                    f"[{idx + 1}/{total_videos}] {video_name} pushed successfully",
-                                    file=video_name, video_index=idx, total=total_videos)
-            else:
-                results["errors"].append(f"Push {video_name} failed: {output}")
-                await broadcast_usb("push_video_failed", 0,
-                                    f"[{idx + 1}/{total_videos}] Push failed: {output}",
+                await broadcast_usb("push_video", 0,
+                                    f"[{idx + 1}/{total_videos}] Pushing {video_name} ({file_size_mb:.0f}MB)...",
                                     file=video_name, video_index=idx, total=total_videos)
 
-        # Step 3: Enable wireless ADB
-        await broadcast_usb("enabling_wifi", 50, "Enabling wireless ADB...")
-        await adb_executor.enable_tcpip(serial)
-        await asyncio.sleep(2)
+                success, output = await adb_executor.push_file_usb_with_progress(
+                    serial, local_path, device_path, progress_cb,
+                )
 
-        ip = await adb_executor.get_usb_device_ip(serial)
-        results["ip"] = ip
-        if ip:
-            connected = await adb_executor.connect(ip)
-            if connected:
-                await broadcast_usb("enabling_wifi", 100, f"Wireless ADB enabled ({ip})")
-            else:
-                await broadcast_usb("enabling_wifi", 100, f"Got IP {ip} but wireless connect pending")
+                if success:
+                    results["pushed_videos"].append(video_name)
+                    await adb_executor.scan_media_file_usb(serial, device_path)
+                    await broadcast_usb("push_video", 100,
+                                        f"[{idx + 1}/{total_videos}] {video_name} pushed successfully",
+                                        file=video_name, video_index=idx, total=total_videos)
+                else:
+                    results["errors"].append(f"Push {video_name} failed: {output}")
+                    await broadcast_usb("push_video_failed", 0,
+                                        f"[{idx + 1}/{total_videos}] Push failed: {output}",
+                                        file=video_name, video_index=idx, total=total_videos)
+
+        # Step 3: Enable wireless ADB (if selected)
+        if enable_wireless_adb:
+            await broadcast_usb("enabling_wifi", 50, "Enabling wireless ADB...")
+            await adb_executor.enable_tcpip(serial)
+            await asyncio.sleep(2)
+
+            ip = await adb_executor.get_usb_device_ip(serial)
+            results["ip"] = ip
+            if ip:
+                connected = await adb_executor.connect(ip)
+                if connected:
+                    await broadcast_usb("enabling_wifi", 100, f"Wireless ADB enabled ({ip})")
+                else:
+                    await broadcast_usb("enabling_wifi", 100, f"Got IP {ip} but wireless connect pending")
 
         status = "completed" if not results["errors"] else "completed_with_errors"
-        await broadcast_usb(status, 100,
-                            f"USB setup {status}. Pushed {len(results['pushed_videos'])} video(s).")
+        summary_parts = []
+        if update_app and results["installed_apk"]:
+            summary_parts.append("APK installed")
+        if update_content:
+            summary_parts.append(f"{len(results['pushed_videos'])} video(s) pushed")
+        if enable_wireless_adb and results.get("ip"):
+            summary_parts.append(f"WiFi ADB on {results['ip']}")
+        summary = ", ".join(summary_parts) if summary_parts else "No actions performed"
+        await broadcast_usb(status, 100, f"USB setup {status}. {summary}.")
 
     except Exception as e:
         logger.error("USB update failed for %s: %s", serial, e)

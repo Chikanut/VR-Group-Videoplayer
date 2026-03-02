@@ -223,6 +223,50 @@ body {
   color: var(--text);
 }
 
+/* ─── USB Init Menu ────────────────────────────────────────────────────────── */
+.usb-init-wrapper {
+  position: relative;
+}
+
+.usb-init-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 6px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 150;
+  min-width: 180px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.usb-init-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 4px 0;
+  color: var(--text);
+}
+
+.usb-init-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.usb-init-start {
+  margin-top: 4px;
+  width: 100%;
+}
+
 /* ─── Loading & Empty State ─────────────────────────────────────────────────── */
 .loading-state,
 .empty-state {
@@ -391,6 +435,11 @@ body {
 .badge-offline {
   background: rgba(85, 85, 85, 0.3);
   color: var(--offline);
+}
+
+.badge-info {
+  background: rgba(90, 200, 250, 0.2);
+  color: var(--info);
 }
 
 .tile-requirements {
