@@ -115,6 +115,7 @@ namespace VRClassroom
             int battery = GetBatteryPercent();
             bool charging = GetBatteryCharging();
             string deviceId = GetDeviceId();
+            string deviceName = GetDeviceName();
             string ip = GetLocalIPAddress();
             int uptimeMinutes = Mathf.FloorToInt(Time.realtimeSinceStartup / 60f);
 
@@ -122,6 +123,8 @@ namespace VRClassroom
             var sb = new StringBuilder(512);
             sb.Append('{');
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"deviceId\":\"{0}\",", EscapeJson(deviceId));
+            if (!string.IsNullOrEmpty(deviceName))
+                sb.AppendFormat(CultureInfo.InvariantCulture, "\"deviceName\":\"{0}\",", EscapeJson(deviceName));
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"ip\":\"{0}\",", EscapeJson(ip));
             sb.Append("\"online\":true,");
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"state\":\"{0}\",", EscapeJson(state));
@@ -155,12 +158,15 @@ namespace VRClassroom
                 url = $"http://{server}:8000/api/devices/register";
 
             string deviceId = GetDeviceId();
+            string deviceName = GetDeviceName();
             string ip = GetLocalIPAddress();
             int battery = GetBatteryPercent();
 
             var sb = new StringBuilder(256);
             sb.Append('{');
             sb.AppendFormat("\"deviceId\":\"{0}\",", EscapeJson(deviceId));
+            if (!string.IsNullOrEmpty(deviceName))
+                sb.AppendFormat("\"deviceName\":\"{0}\",", EscapeJson(deviceName));
             sb.AppendFormat("\"ip\":\"{0}\",", EscapeJson(ip));
             sb.AppendFormat("\"battery\":{0},", battery);
             sb.AppendFormat("\"playerVersion\":\"{0}\",", EscapeJson(PlayerVersion));
@@ -201,11 +207,39 @@ namespace VRClassroom
             string saved = PlayerPrefs.GetString("device_id", string.Empty);
             if (!string.IsNullOrEmpty(saved)) return saved;
 
+            // Use full SystemInfo.deviceUniqueIdentifier for stable, collision-free ID.
+            // Save to PlayerPrefs so it never changes for this device.
             string uid = SystemInfo.deviceUniqueIdentifier;
-            if (!string.IsNullOrEmpty(uid) && uid.Length >= 4)
-                return uid.Substring(uid.Length - 4);
+            if (!string.IsNullOrEmpty(uid) && uid != SystemInfo.unsupportedIdentifier)
+            {
+                PlayerPrefs.SetString("device_id", uid);
+                PlayerPrefs.Save();
+                return uid;
+            }
 
-            return SystemInfo.deviceName;
+            // Fallback: use device model + name as pseudo-unique ID
+            string fallback = $"{SystemInfo.deviceModel}_{SystemInfo.deviceName}";
+            PlayerPrefs.SetString("device_id", fallback);
+            PlayerPrefs.Save();
+            return fallback;
+        }
+
+        /// <summary>
+        /// Returns the custom device name stored in PlayerPrefs, or empty if not set.
+        /// </summary>
+        public static string GetDeviceName()
+        {
+            return PlayerPrefs.GetString("device_name", string.Empty);
+        }
+
+        /// <summary>
+        /// Saves a custom device name to PlayerPrefs so it persists across sessions.
+        /// </summary>
+        public static void SetDeviceName(string name)
+        {
+            PlayerPrefs.SetString("device_name", name ?? string.Empty);
+            PlayerPrefs.Save();
+            Debug.Log($"[StatusReporter] Device name saved: {name}");
         }
 
         public static string GetLocalIPAddress()

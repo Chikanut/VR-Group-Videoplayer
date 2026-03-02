@@ -33,6 +33,7 @@ class DeviceRegistration(BaseModel):
     deviceId: str
     ip: str
     battery: int = -1
+    deviceName: str = ""
     playerVersion: str = ""
     installedPackages: list[str] = []
 
