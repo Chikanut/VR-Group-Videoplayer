@@ -1,5 +1,8 @@
 using UnityEngine;
 using UnityEngine.UI;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace VRClassroom
 {
@@ -17,6 +20,17 @@ namespace VRClassroom
         private const float CanvasScale = 0.005f;
         private const int MaxFilenameLength = 30;
 
+#if UNITY_EDITOR
+        // Editor-only controls state
+        private string _editorVideoPath = "";
+        private int _editorModeIndex; // 0 = 360, 1 = 2D
+        private bool _editorLoop;
+        private readonly string[] _editorModeNames = { "360", "2D" };
+        private VideoPlayerController _editorVideoPlayer;
+        private ViewModeManager _editorViewModeManager;
+        private OrientationManager _editorOrientationManager;
+#endif
+
         private void Awake()
         {
             if (vrCamera == null)
@@ -24,6 +38,13 @@ namespace VRClassroom
 
             CreateCanvas();
             CreateUI();
+
+#if UNITY_EDITOR
+            // Auto-find controllers for editor playback
+            _editorVideoPlayer = FindFirstObjectByTypeCompat<VideoPlayerController>();
+            _editorViewModeManager = FindFirstObjectByTypeCompat<ViewModeManager>();
+            _editorOrientationManager = FindFirstObjectByTypeCompat<OrientationManager>();
+#endif
         }
 
         private void Start()
@@ -118,6 +139,116 @@ namespace VRClassroom
             string ip = StatusReporter.GetLocalIPAddress();
             _ipText.text = ip == "0.0.0.0" ? "No Network" : ip;
         }
+
+#if UNITY_EDITOR
+        private void OnGUI()
+        {
+            float panelWidth = 360f;
+            float panelX = Screen.width - panelWidth - 10f;
+            float y = 10f;
+            float lineH = 24f;
+            float spacing = 4f;
+
+            // Background
+            GUI.Box(new Rect(panelX - 5f, y - 5f, panelWidth + 10f, 230f), "");
+
+            // Title
+            GUI.Label(new Rect(panelX, y, panelWidth, lineH), "<b>Editor Playback Controls</b>",
+                new GUIStyle(GUI.skin.label) { richText = true, fontSize = 14 });
+            y += lineH + spacing;
+
+            // State display
+            var stateManager = PlayerStateManager.Instance;
+            string currentState = stateManager != null ? stateManager.State.ToString() : "N/A";
+            GUI.Label(new Rect(panelX, y, panelWidth, lineH), $"State: {currentState}");
+            y += lineH + spacing;
+
+            // File path + Browse
+            GUI.Label(new Rect(panelX, y, 70f, lineH), "Video:");
+            _editorVideoPath = GUI.TextField(new Rect(panelX + 70f, y, panelWidth - 145f, lineH), _editorVideoPath);
+            if (GUI.Button(new Rect(panelX + panelWidth - 70f, y, 70f, lineH), "Browse"))
+            {
+                string path = EditorUtility.OpenFilePanel("Select Video", "", "mp4,webm,mkv,avi,mov");
+                if (!string.IsNullOrEmpty(path))
+                    _editorVideoPath = path;
+            }
+            y += lineH + spacing;
+
+            // Video type + Loop
+            GUI.Label(new Rect(panelX, y, 50f, lineH), "Type:");
+            _editorModeIndex = GUI.SelectionGrid(
+                new Rect(panelX + 50f, y, 120f, lineH),
+                _editorModeIndex, _editorModeNames, 2);
+            _editorLoop = GUI.Toggle(new Rect(panelX + 185f, y, 80f, lineH), _editorLoop, "Loop");
+            y += lineH + spacing + 4f;
+
+            // Open button
+            bool canOpen = !string.IsNullOrEmpty(_editorVideoPath) && _editorVideoPlayer != null;
+            GUI.enabled = canOpen;
+            if (GUI.Button(new Rect(panelX, y, panelWidth, lineH + 4f), "Open Video"))
+            {
+                EditorOpenVideo();
+            }
+            GUI.enabled = true;
+            y += lineH + spacing + 6f;
+
+            // Playback buttons row
+            float btnW = (panelWidth - spacing * 3f) / 4f;
+            bool hasPlayer = _editorVideoPlayer != null;
+
+            GUI.enabled = hasPlayer && stateManager != null &&
+                          (stateManager.State == PlayerState.Ready ||
+                           stateManager.State == PlayerState.Paused ||
+                           stateManager.State == PlayerState.Completed);
+            if (GUI.Button(new Rect(panelX, y, btnW, lineH + 4f), "Play"))
+                _editorVideoPlayer.Play();
+
+            GUI.enabled = hasPlayer && stateManager != null &&
+                          stateManager.State == PlayerState.Playing;
+            if (GUI.Button(new Rect(panelX + btnW + spacing, y, btnW, lineH + 4f), "Pause"))
+                _editorVideoPlayer.Pause();
+
+            GUI.enabled = hasPlayer && stateManager != null &&
+                          stateManager.State != PlayerState.Idle;
+            if (GUI.Button(new Rect(panelX + (btnW + spacing) * 2f, y, btnW, lineH + 4f), "Stop"))
+                _editorVideoPlayer.Stop();
+
+            GUI.enabled = _editorOrientationManager != null;
+            if (GUI.Button(new Rect(panelX + (btnW + spacing) * 3f, y, btnW, lineH + 4f), "Recenter"))
+                _editorOrientationManager.Recenter();
+
+            GUI.enabled = true;
+        }
+
+        private void EditorOpenVideo()
+        {
+            if (_editorVideoPlayer == null || string.IsNullOrEmpty(_editorVideoPath))
+                return;
+
+            // Set mode
+            if (_editorViewModeManager != null)
+            {
+                ViewMode mode = _editorModeIndex == 0 ? ViewMode.Sphere360 : ViewMode.Flat2D;
+                _editorViewModeManager.SetMode(mode);
+            }
+
+            // Set loop
+            _editorVideoPlayer.IsLooping = _editorLoop;
+
+            // Open video — use full path directly since we're on PC
+            Debug.Log($"[PlayerHUD] Editor: opening video path={_editorVideoPath}, mode={_editorModeNames[_editorModeIndex]}, loop={_editorLoop}");
+            _editorVideoPlayer.Open(_editorVideoPath);
+        }
+
+        private static T FindFirstObjectByTypeCompat<T>() where T : UnityEngine.Object
+        {
+#if UNITY_6000_0_OR_NEWER
+            return FindFirstObjectByType<T>();
+#else
+            return FindObjectOfType<T>();
+#endif
+        }
+#endif
 
         private void CreateCanvas()
         {
