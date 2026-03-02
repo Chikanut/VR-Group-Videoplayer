@@ -121,10 +121,11 @@ async def discovery_loop():
             for ip in discovered_ips:
                 connected = await adb_executor.connect(ip)
                 if connected:
+                    # Get MAC as fallback device_id
                     success, mac_output = await adb_executor.shell(
                         ip, "cat /sys/class/net/wlan0/address"
                     )
-                    device_id = mac_output.strip().replace(":", "") if success and mac_output.strip() else ip
+                    fallback_id = mac_output.strip().replace(":", "") if success and mac_output.strip() else ip
 
                     battery, charging = await _get_battery_info(ip)
 
@@ -132,23 +133,26 @@ async def discovery_loop():
                     package_id = config.get("packageId", "com.vrclassroom.player")
                     player_installed = package_id in packages
 
-                    await device_manager.add_or_update(
-                        device_id,
-                        ip,
-                        adb_connected=True,
-                        battery=battery,
-                        battery_charging=charging,
-                        installed_packages=packages,
-                    )
+                    # Use fallback_id initially; will be replaced by player-reported ID if available
+                    device_id = fallback_id
 
                     # Try to connect to player HTTP with retries
                     if player_installed:
                         player_port = config.get("playerPort", 8080)
                         data = await _check_player_http(ip, player_port)
                         if data:
+                            # Prefer player-reported deviceId over MAC — it's stable across networks
+                            player_reported_id = data.get("deviceId", "")
+                            if player_reported_id:
+                                device_id = player_reported_id
+
                             await device_manager.add_or_update(
                                 device_id,
                                 ip,
+                                adb_connected=True,
+                                battery=battery,
+                                battery_charging=charging,
+                                installed_packages=packages,
                                 player_connected=True,
                                 player_version=data.get("playerVersion", data.get("version", "")),
                                 playback_state=data.get("state", "idle"),
@@ -160,7 +164,21 @@ async def discovery_loop():
                                 locked=data.get("locked", False),
                                 uptime_minutes=data.get("uptimeMinutes", 0),
                             )
+
+                            # If player reports a custom name, use it as fallback
+                            device_name = data.get("deviceName", "")
+                            if device_name:
+                                await device_manager.apply_device_name_from_device(device_id, device_name)
                         else:
+                            await device_manager.add_or_update(
+                                device_id,
+                                ip,
+                                adb_connected=True,
+                                battery=battery,
+                                battery_charging=charging,
+                                installed_packages=packages,
+                            )
+
                             # Player installed but HTTP not responding.
                             # Check if the process is already running — if so, do NOT relaunch.
                             proc_ok, pid_output = await adb_executor.shell(ip, f"pidof {package_id}")
@@ -181,6 +199,9 @@ async def discovery_loop():
                                 await asyncio.sleep(5)
                                 data = await _check_player_http(ip, player_port, max_retries=3)
                                 if data:
+                                    player_reported_id = data.get("deviceId", "")
+                                    if player_reported_id:
+                                        device_id = player_reported_id
                                     await device_manager.add_or_update(
                                         device_id,
                                         ip,
@@ -195,10 +216,22 @@ async def discovery_loop():
                                         locked=data.get("locked", False),
                                         uptime_minutes=data.get("uptimeMinutes", 0),
                                     )
+                                    device_name = data.get("deviceName", "")
+                                    if device_name:
+                                        await device_manager.apply_device_name_from_device(device_id, device_name)
                                 else:
                                     logger.warning("Player on %s launched but HTTP still not responding", ip)
                             else:
                                 logger.debug("Player not running on %s, already attempted launch this cycle", ip)
+                    else:
+                        await device_manager.add_or_update(
+                            device_id,
+                            ip,
+                            adb_connected=True,
+                            battery=battery,
+                            battery_charging=charging,
+                            installed_packages=packages,
+                        )
                 else:
                     logger.debug("ADB port open on %s but connect failed", ip)
 
@@ -250,6 +283,11 @@ async def handle_self_registration(data: dict):
         player_version=data.get("playerVersion", ""),
         installed_packages=data.get("installedPackages", []),
     )
+
+    # If device reports a custom name, use it (unless server already has one)
+    device_name = data.get("deviceName", "")
+    if device_name:
+        await device_manager.apply_device_name_from_device(device_id, device_name)
 
     device = await device_manager.get(device_id)
     if device and not device.adb_connected:

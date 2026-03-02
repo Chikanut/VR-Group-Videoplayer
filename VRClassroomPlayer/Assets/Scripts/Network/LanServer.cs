@@ -169,6 +169,9 @@ namespace VRClassroom
                         case "/status":
                             HandleGetStatus(response);
                             return;
+                        case "/device-info":
+                            HandleGetDeviceInfo(response);
+                            return;
                         case "/battery":
                             HandleGetBattery(response);
                             return;
@@ -177,6 +180,26 @@ namespace VRClassroom
                             return;
                         case "/debug":
                             HandleGetDebugToggle(response);
+                            return;
+                    }
+                }
+
+                // PUT endpoints
+                if (method == "PUT")
+                {
+                    string putBody = null;
+                    if (request.HasEntityBody)
+                    {
+                        using (var reader = new StreamReader(request.InputStream, request.ContentEncoding))
+                        {
+                            putBody = reader.ReadToEnd();
+                        }
+                    }
+
+                    switch (path)
+                    {
+                        case "/name":
+                            HandlePutName(response, putBody);
                             return;
                     }
                 }
@@ -489,6 +512,68 @@ namespace VRClassroom
             {
                 Debug.LogWarning($"[LanServer] Ping sound failed: {e.Message}");
             }
+        }
+
+        private void HandleGetDeviceInfo(HttpListenerResponse response)
+        {
+            string deviceName = StatusReporter.GetDeviceName();
+
+            // Use the same ID as StatusReporter (saved in PlayerPrefs)
+            string deviceId = PlayerPrefs.GetString("device_id", string.Empty);
+            if (string.IsNullOrEmpty(deviceId))
+            {
+                deviceId = SystemInfo.deviceUniqueIdentifier;
+            }
+
+            var sb = new StringBuilder(256);
+            sb.Append('{');
+            sb.AppendFormat("\"deviceId\":\"{0}\"", EscapeJson(deviceId));
+            if (!string.IsNullOrEmpty(deviceName))
+                sb.AppendFormat(",\"deviceName\":\"{0}\"", EscapeJson(deviceName));
+            sb.AppendFormat(",\"ip\":\"{0}\"", EscapeJson(StatusReporter.GetLocalIPAddress()));
+            sb.Append('}');
+
+            SendJson(response, 200, sb.ToString());
+        }
+
+        private void HandlePutName(HttpListenerResponse response, string body)
+        {
+            if (string.IsNullOrEmpty(body))
+            {
+                SendJson(response, 400, "{\"error\":\"missing body\"}");
+                return;
+            }
+
+            try
+            {
+                var data = JsonUtility.FromJson<NameRequest>(body);
+                if (data.name == null)
+                {
+                    SendJson(response, 400, "{\"error\":\"missing name field\"}");
+                    return;
+                }
+
+                Debug.Log($"[LanServer] PUT /name: setting device name to '{data.name}'");
+
+                // Save name to PlayerPrefs on the main thread
+                QueueCommand(() =>
+                {
+                    StatusReporter.SetDeviceName(data.name);
+                });
+
+                SendJson(response, 200, "{\"ok\":true}");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LanServer] PUT /name: invalid json: {e.Message}");
+                SendJson(response, 400, $"{{\"error\":\"{EscapeJson(e.Message)}\"}}");
+            }
+        }
+
+        [Serializable]
+        private class NameRequest
+        {
+            public string name;
         }
 
         [Serializable]
