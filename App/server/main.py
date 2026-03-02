@@ -22,7 +22,7 @@ from .models import (
     OpenCommand,
     PlaybackCommand,
 )
-from .playback_controller import launch_player, open_video, ping_device, send_command
+from .playback_controller import launch_player, open_video, ping_device, send_command, toggle_debug
 from .requirements_manager import check_requirements, run_update, run_usb_update
 from .websocket_manager import ws_manager
 
@@ -120,6 +120,13 @@ async def register_device(reg: DeviceRegistration):
 @app.post("/api/devices/{device_id}/ping")
 async def device_ping(device_id: str):
     result = await ping_device(device_id)
+    return result
+
+
+@app.post("/api/devices/{device_id}/debug")
+async def device_debug_toggle(device_id: str):
+    """Toggle debug panel on a specific device."""
+    result = await toggle_debug(device_id)
     return result
 
 

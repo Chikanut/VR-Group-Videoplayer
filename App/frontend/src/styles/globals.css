@@ -194,6 +194,15 @@ body {
   cursor: not-allowed;
 }
 
+.btn-dim {
+  opacity: 0.5;
+  font-size: 0.8rem;
+}
+
+.btn-dim:hover:not(:disabled) {
+  opacity: 1;
+}
+
 .btn-update {
   margin-left: 6px;
   background: var(--primary);

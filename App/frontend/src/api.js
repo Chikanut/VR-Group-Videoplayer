@@ -93,3 +93,7 @@ export async function launchPlayer(deviceIds = []) {
 export async function launchPlayerSingle(deviceId) {
   return request(`/devices/${deviceId}/launch-player`, { method: 'POST' });
 }
+
+export async function toggleDeviceDebug(deviceId) {
+  return request(`/devices/${deviceId}/debug`, { method: 'POST' });
+}

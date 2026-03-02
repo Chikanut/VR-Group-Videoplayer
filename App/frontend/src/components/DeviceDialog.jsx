@@ -7,6 +7,7 @@ import {
   getRequirements,
   playbackCommand,
   launchPlayerSingle,
+  toggleDeviceDebug,
 } from '../api';
 import UpdateProgress from './UpdateProgress';
 
@@ -218,6 +219,14 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
               onClick={() => pingDevice(deviceId)}
             >
               Ping
+            </button>
+            <button
+              className="btn btn-dim"
+              disabled={!device.online || (!device.playerConnected && !device.adbConnected)}
+              onClick={() => toggleDeviceDebug(deviceId)}
+              title="Toggle debug panel on this device"
+            >
+              Debug
             </button>
           </div>
           {device.playbackState !== 'idle' && (
