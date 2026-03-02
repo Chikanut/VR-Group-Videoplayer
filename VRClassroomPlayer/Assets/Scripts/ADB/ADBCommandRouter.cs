@@ -83,7 +83,8 @@ namespace VRClassroom
                     if (!_videoPlayerMissing)
                     {
                         Debug.Log("[ADBCommandRouter] Dispatching: Stop()");
-                        videoPlayer.Stop();
+                        videoPlayer?.Stop();
+                        viewModeManager?.SetMode(ViewMode.None);
                     }
                     break;
                 case "RESTART":

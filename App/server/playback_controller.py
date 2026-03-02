@@ -283,3 +283,20 @@ async def ping_device(device_id: str) -> dict[str, Any]:
         return await _send_via_adb(device.ip, "ping")
 
     return {"error": "Neither player nor ADB connected"}
+
+
+async def toggle_debug(device_id: str) -> dict[str, Any]:
+    """Toggle debug panel on a single device."""
+    device = await device_manager.get(device_id)
+    if not device:
+        return {"error": "Device not found"}
+
+    if device.player_connected:
+        result = await _send_to_player(device.ip, "POST", "/debug")
+        if result.get("success"):
+            return result
+
+    if device.adb_connected:
+        return await _send_via_adb(device.ip, "DEBUG")
+
+    return {"error": "Neither player nor ADB connected"}

@@ -12,6 +12,10 @@ from .device_manager import device_manager
 
 logger = logging.getLogger("vrclassroom.discovery")
 
+# Track IPs where we already attempted a player launch this scan cycle,
+# so we don't keep restarting the app every 30s.
+_launch_attempted: set[str] = set()
+
 
 def detect_subnet() -> str:
     """Try to detect the local subnet for scanning."""
@@ -111,6 +115,9 @@ async def discovery_loop():
 
             discovered_ips = await scan_subnet(subnet)
 
+            # Reset launch tracker each scan cycle
+            _launch_attempted.clear()
+
             for ip in discovered_ips:
                 connected = await adb_executor.connect(ip)
                 if connected:
@@ -154,52 +161,44 @@ async def discovery_loop():
                                 uptime_minutes=data.get("uptimeMinutes", 0),
                             )
                         else:
-                            # Player installed but HTTP not responding
-                            # Check if the player process is actually running
+                            # Player installed but HTTP not responding.
+                            # Check if the process is already running — if so, do NOT relaunch.
                             proc_ok, pid_output = await adb_executor.shell(ip, f"pidof {package_id}")
                             if proc_ok and pid_output.strip():
-                                logger.warning(
-                                    "Player process IS running on %s (PID: %s) but HTTP port %d not responding. "
-                                    "Possible causes: player HTTP server not started, port blocked, or player in bad state.",
+                                logger.info(
+                                    "Player process running on %s (PID: %s) but HTTP port %d not responding yet. "
+                                    "Will not relaunch — player_recheck_loop will detect it when ready.",
                                     ip, pid_output.strip(), player_port
                                 )
-                            else:
+                            elif ip not in _launch_attempted:
+                                # Process not running and we haven't tried launching this scan cycle
                                 logger.info("Player installed but not running on %s, attempting launch", ip)
-
-                            # Try launching it
-                            await adb_executor.shell(
-                                ip,
-                                f"monkey -p {package_id} -c android.intent.category.LAUNCHER 1"
-                            )
-                            # Wait for app to start and retry
-                            await asyncio.sleep(5)
-                            data = await _check_player_http(ip, player_port, max_retries=3)
-                            if data:
-                                await device_manager.add_or_update(
-                                    device_id,
+                                _launch_attempted.add(ip)
+                                await adb_executor.shell(
                                     ip,
-                                    player_connected=True,
-                                    player_version=data.get("playerVersion", data.get("version", "")),
-                                    playback_state=data.get("state", "idle"),
-                                    current_video=data.get("file", ""),
-                                    current_mode=data.get("mode", "360"),
-                                    playback_time=data.get("time", 0.0),
-                                    playback_duration=data.get("duration", 0.0),
-                                    loop=data.get("loop", False),
-                                    locked=data.get("locked", False),
-                                    uptime_minutes=data.get("uptimeMinutes", 0),
+                                    f"monkey -p {package_id} -c android.intent.category.LAUNCHER 1"
                                 )
-                            else:
-                                # Check again if process is running after launch
-                                proc_ok2, pid2 = await adb_executor.shell(ip, f"pidof {package_id}")
-                                if proc_ok2 and pid2.strip():
-                                    logger.warning(
-                                        "Player on %s launched (PID: %s) but HTTP port %d still not responding. "
-                                        "The player_recheck_loop will keep trying to detect it.",
-                                        ip, pid2.strip(), config.get("playerPort", 8080)
+                                await asyncio.sleep(5)
+                                data = await _check_player_http(ip, player_port, max_retries=3)
+                                if data:
+                                    await device_manager.add_or_update(
+                                        device_id,
+                                        ip,
+                                        player_connected=True,
+                                        player_version=data.get("playerVersion", data.get("version", "")),
+                                        playback_state=data.get("state", "idle"),
+                                        current_video=data.get("file", ""),
+                                        current_mode=data.get("mode", "360"),
+                                        playback_time=data.get("time", 0.0),
+                                        playback_duration=data.get("duration", 0.0),
+                                        loop=data.get("loop", False),
+                                        locked=data.get("locked", False),
+                                        uptime_minutes=data.get("uptimeMinutes", 0),
                                     )
                                 else:
-                                    logger.warning("Player on %s failed to start after launch attempt", ip)
+                                    logger.warning("Player on %s launched but HTTP still not responding", ip)
+                            else:
+                                logger.debug("Player not running on %s, already attempted launch this cycle", ip)
                 else:
                     logger.debug("ADB port open on %s but connect failed", ip)
 

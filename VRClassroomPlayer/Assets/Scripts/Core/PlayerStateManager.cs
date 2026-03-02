@@ -56,6 +56,7 @@ namespace VRClassroom
                 videoPlayerController.OnStateChanged += HandleStateChanged;
                 videoPlayerController.OnVideoLoaded += HandleVideoLoaded;
                 videoPlayerController.OnVideoCompleted += HandleVideoCompleted;
+                videoPlayerController.OnRenderTextureResized += HandleRenderTextureResized;
                 Debug.Log("[PlayerStateManager] Subscribed to VideoPlayerController events.");
             }
             else
@@ -96,6 +97,7 @@ namespace VRClassroom
                 videoPlayerController.OnStateChanged -= HandleStateChanged;
                 videoPlayerController.OnVideoLoaded -= HandleVideoLoaded;
                 videoPlayerController.OnVideoCompleted -= HandleVideoCompleted;
+                videoPlayerController.OnRenderTextureResized -= HandleRenderTextureResized;
             }
 
             if (viewModeManager != null)
@@ -142,6 +144,15 @@ namespace VRClassroom
             Debug.Log($"[PlayerStateManager] View mode changed: {CurrentMode} -> {mode}");
             CurrentMode = mode;
             OnPlayerStateUpdated?.Invoke();
+        }
+
+        private void HandleRenderTextureResized(RenderTexture newTexture)
+        {
+            if (viewModeManager != null && newTexture != null)
+            {
+                viewModeManager.SetRenderTexture(newTexture);
+                Debug.Log($"[PlayerStateManager] Forwarded resized RenderTexture ({newTexture.width}x{newTexture.height}) to ViewModeManager.");
+            }
         }
     }
 }

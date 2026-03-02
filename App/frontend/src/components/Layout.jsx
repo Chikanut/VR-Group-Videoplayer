@@ -4,6 +4,7 @@ import TopControlPanel from './TopControlPanel';
 import DeviceGrid from './DeviceGrid';
 import DeviceDialog from './DeviceDialog';
 import VideoSelector from './VideoSelector';
+import ConnectionButton from './ConnectionButton';
 
 export default function Layout() {
   const { connected, loading } = useDeviceStore();
@@ -56,6 +57,7 @@ export default function Layout() {
           onClose={() => setVideoSelectorOpen(false)}
         />
       )}
+      <ConnectionButton />
     </div>
   );
 }

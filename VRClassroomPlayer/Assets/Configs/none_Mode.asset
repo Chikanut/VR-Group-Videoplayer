@@ -10,9 +10,9 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: d1b9f49fe827d67409251b50f6806406, type: 3}
-  m_Name: 360_Mode
+  m_Name: none_Mode
   m_EditorClassIdentifier: Assembly-CSharp::VRClassroom.ViewModeConfig
-  viewMode: 1
+  viewMode: 2
   meshOverride: {fileID: 0}
   materialOverride: {fileID: 2100000, guid: 63853b0f48ad61640bc82a1ec83e455f, type: 2}
   shaderOverride: {fileID: 0}
@@ -20,7 +20,7 @@ MonoBehaviour:
   brightness: 1
   textureTiling: {x: 1, y: 1}
   textureOffset: {x: 0, y: 0}
-  localPosition: {x: 0, y: 0, z: 0}
-  localRotation: {x: 0, y: -90, z: 0}
-  localScale: {x: 25, y: 25, z: 25}
+  localPosition: {x: 0, y: 0, z: 10.52245}
+  localRotation: {x: 0, y: 0, z: 0}
+  localScale: {x: 1, y: 1, z: 1}
   parentToCamera: 0

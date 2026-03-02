@@ -226,6 +226,7 @@ namespace VRClassroom
                             {
                                 Debug.Log("[LanServer] Executing: stop");
                                 videoPlayer?.Stop();
+                                viewModeManager?.SetMode(ViewMode.None);
                             });
                             SendJson(response, 200, "{\"ok\":true}");
                             return;

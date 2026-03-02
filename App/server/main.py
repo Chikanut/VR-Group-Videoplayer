@@ -22,7 +22,7 @@ from .models import (
     OpenCommand,
     PlaybackCommand,
 )
-from .playback_controller import launch_player, open_video, ping_device, send_command
+from .playback_controller import launch_player, open_video, ping_device, send_command, toggle_debug
 from .requirements_manager import check_requirements, run_update, run_usb_update
 from .websocket_manager import ws_manager
 
@@ -120,6 +120,13 @@ async def register_device(reg: DeviceRegistration):
 @app.post("/api/devices/{device_id}/ping")
 async def device_ping(device_id: str):
     result = await ping_device(device_id)
+    return result
+
+
+@app.post("/api/devices/{device_id}/debug")
+async def device_debug_toggle(device_id: str):
+    """Toggle debug panel on a specific device."""
+    result = await toggle_debug(device_id)
     return result
 
 
@@ -330,6 +337,41 @@ async def websocket_endpoint(ws: WebSocket):
                 break
     finally:
         await ws_manager.disconnect(ws)
+
+
+# ─── Server info endpoint ─────────────────────────────────────────────────────
+
+
+@app.get("/api/server-info")
+async def get_server_info():
+    """Return server IP and port for QR code connection."""
+    ip = _get_local_ip()
+    config = get_config()
+    port = config.get("serverPort", 8000)
+    return {"ip": ip, "port": port, "url": f"http://{ip}:{port}"}
+
+
+def _get_local_ip() -> str:
+    """Get the local network IP address of this machine."""
+    import socket
+
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.1)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        pass
+    try:
+        hostname = socket.gethostname()
+        ip = socket.gethostbyname(hostname)
+        if ip and not ip.startswith("127."):
+            return ip
+    except Exception:
+        pass
+    return "127.0.0.1"
 
 
 # ─── Static files (frontend) ─────────────────────────────────────────────────

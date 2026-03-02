@@ -1,10 +1,19 @@
 # ninja log v5
 31	1703	7940613717561326	GameActivity/CMakeFiles/game.dir/UGAEntry.cpp.o	93b47fee96f5a027
 39	1715	7940613717652151	GameActivity/CMakeFiles/game.dir/UGAInputKeyEvent.cpp.o	70f7636d1567f8c2
-8	1733	7940613717860124	GameActivity/CMakeFiles/game.dir/UGAConfiguration.cpp.o	1313cab6170a9745
-47	1746	7940613717984673	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	8bcf2d7b7b37af7e
-15	1819	7940613718595631	GameActivity/CMakeFiles/game.dir/UGADebug.cpp.o	1fe31e8132385bc6
 56	1968	7940613720199126	GameActivity/CMakeFiles/game.dir/UGASoftKeyboard.cpp.o	f60d40cb949c4c78
+8	1733	7940613717860124	GameActivity/CMakeFiles/game.dir/UGAConfiguration.cpp.o	1313cab6170a9745
+15	1819	7940613718595631	GameActivity/CMakeFiles/game.dir/UGADebug.cpp.o	1fe31e8132385bc6
+47	1746	7940613717984673	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	8bcf2d7b7b37af7e
 24	1995	7940613720444474	GameActivity/CMakeFiles/game.dir/UGAInput.cpp.o	69b639c6ea336e68
 0	2093	7940613721393986	GameActivity/CMakeFiles/game.dir/UGAApplication.cpp.o	a1d8a4b95e8114d6
 2098	2286	7940613723398987	D:/UnityProjects/VRGroupViewer/VR Group Videoplayer/VRClassroomPlayer/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/3i223153/obj/arm64-v8a/libgame.so	35a203dca2ccccf2
+18	1866	7941314554533670	GameActivity/CMakeFiles/game.dir/UGAEntry.cpp.o	93b47fee96f5a027
+60	1870	7941314554523584	GameActivity/CMakeFiles/game.dir/UGAInputKeyEvent.cpp.o	70f7636d1567f8c2
+23	1881	7941314554712141	GameActivity/CMakeFiles/game.dir/UGAConfiguration.cpp.o	1313cab6170a9745
+49	1895	7941314554819636	GameActivity/CMakeFiles/game.dir/UGAInputMotionEvent.cpp.o	8bcf2d7b7b37af7e
+30	1951	7941314555381940	GameActivity/CMakeFiles/game.dir/UGADebug.cpp.o	1fe31e8132385bc6
+38	2129	7941314557151781	GameActivity/CMakeFiles/game.dir/UGAInput.cpp.o	69b639c6ea336e68
+11	2195	7941314557756353	GameActivity/CMakeFiles/game.dir/UGAApplication.cpp.o	a1d8a4b95e8114d6
+71	2417	7941314560027958	GameActivity/CMakeFiles/game.dir/UGASoftKeyboard.cpp.o	f60d40cb949c4c78
+2417	2606	7941314562010750	D:/UnityProjects/VRGroupViewer/VR Group Videoplayer/VRClassroomPlayer/Library/Bee/Android/Prj/IL2CPP/Gradle/unityLibrary/build/intermediates/cxx/RelWithDebInfo/3i223153/obj/arm64-v8a/libgame.so	35a203dca2ccccf2

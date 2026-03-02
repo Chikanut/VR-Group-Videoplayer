@@ -11,6 +11,7 @@ namespace VRClassroom
         public ViewMode CurrentMode { get; private set; }
 
         [SerializeField] private Transform vrCamera;
+        [SerializeField] GameObject logoObject;
         [SerializeField] private Shader videoShaderOverride;
 
         [Header("View Mode Configs (optional — override material, mesh, transform per mode)")]
@@ -42,6 +43,7 @@ namespace VRClassroom
             Debug.Log("[ViewModeManager] Creating display geometry...");
             CreateDisplay(ViewMode.Sphere360);
             CreateDisplay(ViewMode.Flat2D);
+            CreateDisplay(ViewMode.None);
 
             Debug.Log($"[ViewModeManager] Setting default mode: {PlayerConfig.DefaultViewMode}");
             SetMode(PlayerConfig.DefaultViewMode);
@@ -124,7 +126,11 @@ namespace VRClassroom
                 obj.AddComponent<MeshRenderer>();
                 Debug.Log($"[ViewModeManager] Using mesh override for {mode}: {config.meshOverride.name}");
             }
-            else
+            else if(mode == ViewMode.None)
+            {
+                obj = logoObject;
+                Debug.Log($"[ViewModeManager] Created empty GameObject for {mode} mode.");
+            }else
             {
                 // Default primitives
                 var primitiveType = mode == ViewMode.Sphere360
@@ -181,7 +187,7 @@ namespace VRClassroom
             }
 
             var renderer = obj.GetComponent<Renderer>();
-            if (material != null)
+            if (material != null && renderer != null)
             {
                 renderer.material = material;
             }
