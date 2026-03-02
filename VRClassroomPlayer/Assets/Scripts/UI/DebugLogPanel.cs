@@ -15,6 +15,9 @@ namespace VRClassroom
     {
         [SerializeField] private Transform vrCamera;
 
+        [SerializeField] private bool startVisible = true;
+        [SerializeField] List<GameObject> additionalLogObjects; // Optional: other objects to show/hide with the panel (e.g. HUD)
+
         private Canvas _canvas;
         private Text _logText;
         private Text _headerText;
@@ -47,6 +50,8 @@ namespace VRClassroom
             _panelRoot.SetActive(true);
 
             AddPanelInfo("Panel initialized");
+
+            SetVisible(startVisible);
         }
 
         private void OnEnable()
@@ -100,6 +105,11 @@ namespace VRClassroom
         public void SetVisible(bool visible)
         {
             _panelRoot.SetActive(visible);
+            foreach (var obj in additionalLogObjects)
+            {
+                if (obj != null)
+                    obj.SetActive(visible);
+            }
             if (visible)
             {
                 _dirty = true;

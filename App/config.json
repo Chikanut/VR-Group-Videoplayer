@@ -7,7 +7,7 @@
       "name": "Lesson 1",
       "localPath": "C:\\Users\\eugen\\Desktop\\Working Files\\GSPP\\VR Videos\\Promo\\SkyFall training PROMO.mp4",
       "loop": false,
-      "videoType": "2d"
+      "videoType": "360"
     },
     {
       "id": "50550c47-a082-4b1e-b3fb-97809f8f57b5",
@@ -18,12 +18,12 @@
     }
   ],
   "batteryThreshold": 20,
-  "scanInterval": 30,
+  "scanInterval": 10,
   "networkSubnet": "",
   "serverPort": 8000,
   "playerPort": 8080,
-  "deviceOfflineTimeout": 30,
-  "statusPollInterval": 5,
+  "deviceOfflineTimeout": 15,
+  "statusPollInterval": 3,
   "updateConcurrency": 5,
   "ignoreRequirements": true
 }

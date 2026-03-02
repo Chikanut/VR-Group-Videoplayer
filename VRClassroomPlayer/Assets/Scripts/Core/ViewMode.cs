@@ -3,6 +3,7 @@ namespace VRClassroom
     public enum ViewMode
     {
         Flat2D,
-        Sphere360
+        Sphere360,
+        None
     }
 }
