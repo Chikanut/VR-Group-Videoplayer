@@ -20,6 +20,7 @@ namespace VRClassroom
         private readonly Dictionary<ViewMode, GameObject> _displayObjects = new Dictionary<ViewMode, GameObject>();
         private readonly Dictionary<ViewMode, Material> _materials = new Dictionary<ViewMode, Material>();
         private readonly Dictionary<ViewMode, ViewModeConfig> _configLookup = new Dictionary<ViewMode, ViewModeConfig>();
+        private readonly Dictionary<ViewMode, VideoAdvancedSettings> _runtimeOverrides = new Dictionary<ViewMode, VideoAdvancedSettings>();
 
         private void Awake()
         {
@@ -29,7 +30,6 @@ namespace VRClassroom
                 Debug.Log($"[ViewModeManager] VR camera auto-resolved to: {vrCamera.name}");
             }
 
-            // Build config lookup
             if (viewModeConfigs != null)
             {
                 foreach (var cfg in viewModeConfigs)
@@ -112,11 +112,24 @@ namespace VRClassroom
             }
         }
 
+        public void ApplyAdvancedSettingsOverride(ViewMode mode, VideoAdvancedSettings advancedSettings)
+        {
+            if (advancedSettings != null)
+            {
+                _runtimeOverrides[mode] = advancedSettings;
+            }
+            else
+            {
+                _runtimeOverrides.Remove(mode);
+            }
+
+            ApplyResolvedSettings(mode);
+        }
+
         private void CreateDisplay(ViewMode mode)
         {
             _configLookup.TryGetValue(mode, out ViewModeConfig config);
 
-            // --- Geometry ---
             GameObject obj;
             if (config != null && config.meshOverride != null)
             {
@@ -126,13 +139,13 @@ namespace VRClassroom
                 obj.AddComponent<MeshRenderer>();
                 Debug.Log($"[ViewModeManager] Using mesh override for {mode}: {config.meshOverride.name}");
             }
-            else if(mode == ViewMode.None)
+            else if (mode == ViewMode.None)
             {
                 obj = logoObject;
                 Debug.Log($"[ViewModeManager] Created empty GameObject for {mode} mode.");
-            }else
+            }
+            else
             {
-                // Default primitives
                 var primitiveType = mode == ViewMode.Sphere360
                     ? PrimitiveType.Sphere
                     : PrimitiveType.Quad;
@@ -140,40 +153,10 @@ namespace VRClassroom
                 obj.name = mode == ViewMode.Sphere360 ? "VideoSphere360" : "VideoQuad2D";
             }
 
-            // Remove collider — not needed and avoids physics conflicts
             var collider = obj.GetComponent<Collider>();
             if (collider != null) Destroy(collider);
             obj.layer = 0;
 
-            // --- Transform ---
-            if (config != null)
-            {
-                bool parentToCam = config.parentToCamera;
-                obj.transform.SetParent(parentToCam ? vrCamera : transform);
-                obj.transform.localPosition = config.localPosition;
-                obj.transform.localRotation = Quaternion.Euler(config.localRotation);
-                obj.transform.localScale = config.localScale;
-                Debug.Log($"[ViewModeManager] Config transform for {mode}: pos={config.localPosition}, rot={config.localRotation}, scale={config.localScale}, parentToCam={parentToCam}");
-            }
-            else
-            {
-                // Defaults matching original behaviour
-                if (mode == ViewMode.Sphere360)
-                {
-                    obj.transform.SetParent(transform);
-                    obj.transform.localPosition = Vector3.zero;
-                    obj.transform.localScale = new Vector3(-100f, 100f, 100f);
-                }
-                else
-                {
-                    obj.transform.SetParent(vrCamera);
-                    obj.transform.localPosition = new Vector3(0f, 0f, 10f);
-                    obj.transform.localRotation = Quaternion.identity;
-                    obj.transform.localScale = new Vector3(16f, 9f, 1f);
-                }
-            }
-
-            // --- Material ---
             Material material;
             if (config != null)
             {
@@ -201,7 +184,103 @@ namespace VRClassroom
             _displayObjects[mode] = obj;
             _materials[mode] = material;
 
+            ApplyResolvedSettings(mode);
             Debug.Log($"[ViewModeManager] {mode} display created.");
+        }
+
+        private void ApplyResolvedSettings(ViewMode mode)
+        {
+            if (!_displayObjects.TryGetValue(mode, out var obj) || obj == null)
+            {
+                return;
+            }
+
+            _configLookup.TryGetValue(mode, out ViewModeConfig config);
+            _runtimeOverrides.TryGetValue(mode, out VideoAdvancedSettings overrideSettings);
+
+            ApplyTransformSettings(mode, obj, config, overrideSettings);
+            ApplyMaterialSettings(mode, config, overrideSettings);
+        }
+
+        private void ApplyTransformSettings(ViewMode mode, GameObject obj, ViewModeConfig config, VideoAdvancedSettings overrideSettings)
+        {
+            Vector3 localPosition;
+            Vector3 localRotation;
+            Vector3 localScale;
+            bool parentToCam;
+
+            if (config != null)
+            {
+                localPosition = config.localPosition;
+                localRotation = config.localRotation;
+                localScale = config.localScale;
+                parentToCam = config.parentToCamera;
+            }
+            else if (mode == ViewMode.Sphere360)
+            {
+                localPosition = Vector3.zero;
+                localRotation = Vector3.zero;
+                localScale = new Vector3(-100f, 100f, 100f);
+                parentToCam = false;
+            }
+            else
+            {
+                localPosition = new Vector3(0f, 0f, 10f);
+                localRotation = Vector3.zero;
+                localScale = new Vector3(16f, 9f, 1f);
+                parentToCam = true;
+            }
+
+            if (overrideSettings != null && overrideSettings.overrideTransformSettings && overrideSettings.transformSettings != null)
+            {
+                localPosition = overrideSettings.transformSettings.localPosition;
+                localRotation = overrideSettings.transformSettings.localRotation;
+                localScale = overrideSettings.transformSettings.localScale;
+            }
+
+            obj.transform.SetParent(parentToCam ? vrCamera : transform);
+            obj.transform.localPosition = localPosition;
+            obj.transform.localRotation = Quaternion.Euler(localRotation);
+            obj.transform.localScale = localScale;
+        }
+
+        private void ApplyMaterialSettings(ViewMode mode, ViewModeConfig config, VideoAdvancedSettings overrideSettings)
+        {
+            if (!_materials.TryGetValue(mode, out var material) || material == null)
+            {
+                return;
+            }
+
+            Color tint = config != null ? config.tint : Color.white;
+            float brightness = config != null ? config.brightness : 1f;
+            Vector2 tiling = config != null ? config.textureTiling : Vector2.one;
+            Vector2 offset = config != null ? config.textureOffset : Vector2.zero;
+
+            if (overrideSettings != null && overrideSettings.overrideMaterialSettings && overrideSettings.materialSettings != null)
+            {
+                tint = overrideSettings.materialSettings.tint;
+                brightness = overrideSettings.materialSettings.brightness;
+                tiling = overrideSettings.materialSettings.textureTiling;
+                offset = overrideSettings.materialSettings.textureOffset;
+            }
+
+            if (material.HasProperty("_Color"))
+                material.SetColor("_Color", tint);
+
+            if (material.HasProperty("_Brightness"))
+                material.SetFloat("_Brightness", brightness);
+
+            if (material.HasProperty("_Tilling"))
+                material.SetVector("_Tilling", tiling);
+
+            if (material.HasProperty("_Offset"))
+                material.SetVector("_Offset", offset);
+
+            if (material.HasProperty("_BaseMap"))
+            {
+                material.SetTextureScale("_BaseMap", tiling);
+                material.SetTextureOffset("_BaseMap", offset);
+            }
         }
     }
 }
