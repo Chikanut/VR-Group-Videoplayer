@@ -154,6 +154,16 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
           </div>
         )}
 
+        {device.online && !device.adbConnected && device.playerConnected && (
+          <div className="dialog-section">
+            <h3>HTTP-Only Mode</h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--info)' }}>
+              This device is connected via HTTP only (no ADB). Playback commands work normally.
+              To enable app updates and content push, connect the device via USB and run USB Init with Wireless ADB enabled.
+            </p>
+          </div>
+        )}
+
         {device.online && device.adbConnected && !device.playerConnected && (
           <div className="dialog-section">
             <h3>Player</h3>

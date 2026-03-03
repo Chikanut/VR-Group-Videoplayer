@@ -21,6 +21,7 @@ from .models import (
     DeviceRegistration,
     OpenCommand,
     PlaybackCommand,
+    UsbInitOptions,
 )
 from .playback_controller import launch_player, open_video, ping_device, send_command, toggle_debug
 from .requirements_manager import check_requirements, run_update, run_usb_update
@@ -196,11 +197,17 @@ async def get_usb_devices():
 
 
 @app.post("/api/usb-devices/{serial}/update")
-async def update_usb_device(serial: str):
+async def update_usb_device(serial: str, options: UsbInitOptions | None = None):
     serials = await adb_executor.list_usb_devices()
     if serial not in serials:
         return JSONResponse(status_code=404, content={"error": "USB device not found"})
-    asyncio.create_task(run_usb_update(serial))
+    opts = options or UsbInitOptions()
+    asyncio.create_task(run_usb_update(
+        serial,
+        enable_wireless_adb=opts.enableWirelessAdb,
+        update_app=opts.updateApp,
+        update_content=opts.updateContent,
+    ))
     return {"ok": True, "message": f"USB update started for {serial}"}
 
 
