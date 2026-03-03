@@ -312,6 +312,9 @@ namespace VRClassroom
                             });
                             SendJson(response, 200, "{\"ok\":true}");
                             return;
+                        case "/volume":
+                            HandlePostVolume(response, body);
+                            return;
                         case "/debug":
                             HandlePostDebugToggle(response, body);
                             return;
@@ -454,6 +457,33 @@ namespace VRClassroom
             });
 
             SendJson(response, 200, "{\"ok\":true}");
+        }
+
+        private void HandlePostVolume(HttpListenerResponse response, string body)
+        {
+            if (string.IsNullOrEmpty(body))
+            {
+                SendJson(response, 400, "{\"error\":\"missing body\"}");
+                return;
+            }
+
+            try
+            {
+                var data = JsonUtility.FromJson<VolumeRequest>(body);
+                float globalVolume = data.globalVolume;
+                float personalVolume = data.personalVolume;
+
+                QueueCommand(() =>
+                {
+                    videoPlayer?.SetVolume(globalVolume, personalVolume);
+                });
+
+                SendJson(response, 200, "{\"ok\":true}");
+            }
+            catch (Exception e)
+            {
+                SendJson(response, 400, "{\"error\":\"invalid json: " + EscapeJson(e.Message) + "\"}");
+            }
         }
 
         private void QueueCommand(Action action)
@@ -754,6 +784,13 @@ namespace VRClassroom
             public string mode;
             public bool loop;
             public VideoAdvancedSettings advancedSettings;
+        }
+
+        [Serializable]
+        private class VolumeRequest
+        {
+            public float globalVolume = 1f;
+            public float personalVolume = 1f;
         }
 
         [Serializable]

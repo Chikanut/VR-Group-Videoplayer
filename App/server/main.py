@@ -23,8 +23,18 @@ from .models import (
     PlaybackCommand,
     RequirementVideo,
     UsbInitOptions,
+    VolumeUpdate,
 )
-from .playback_controller import launch_player, open_video, ping_device, send_command, toggle_debug
+from .playback_controller import (
+    get_global_volume,
+    launch_player,
+    open_video,
+    ping_device,
+    send_command,
+    set_device_volume,
+    set_global_volume,
+    toggle_debug,
+)
 from .requirements_manager import check_requirements, run_update, run_usb_update
 from .websocket_manager import ws_manager
 
@@ -367,6 +377,25 @@ async def playback_recenter(cmd: PlaybackCommand):
 
 # ─── WebSocket endpoint ──────────────────────────────────────────────────────
 
+
+
+
+@app.get("/api/playback/volume/global")
+async def playback_get_global_volume():
+    return {"globalVolume": get_global_volume()}
+
+
+@app.post("/api/playback/volume/global")
+async def playback_set_global_volume(body: VolumeUpdate):
+    return await set_global_volume(body.volume)
+
+
+@app.post("/api/devices/{device_id}/volume")
+async def playback_set_device_volume(device_id: str, body: VolumeUpdate):
+    result = await set_device_volume(device_id, body.volume)
+    if result.get("error") == "Device not found":
+        return JSONResponse(status_code=404, content=result)
+    return result
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):

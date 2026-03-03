@@ -114,6 +114,9 @@ namespace VRClassroom
                 case "SET_LOOP":
                     HandleSetLoop(extras);
                     break;
+                case "SET_VOLUME":
+                    HandleSetVolume(extras);
+                    break;
                 case "TOGGLE_DEBUG":
                     if (debugLogPanel != null)
                     {
@@ -180,6 +183,23 @@ namespace VRClassroom
             {
                 Debug.LogWarning("[ADBCommandRouter] SET_LOOP command missing 'loop' extra.");
             }
+        }
+
+
+        private void HandleSetVolume(Dictionary<string, string> extras)
+        {
+            if (_videoPlayerMissing) return;
+
+            float global = 1f;
+            float personal = 1f;
+
+            if (extras.TryGetValue("globalVolume", out string globalRaw))
+                float.TryParse(globalRaw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out global);
+
+            if (extras.TryGetValue("personalVolume", out string personalRaw))
+                float.TryParse(personalRaw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out personal);
+
+            videoPlayer.SetVolume(global, personal);
         }
 
         public static ViewMode ParseMode(string mode)

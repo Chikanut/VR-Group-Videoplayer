@@ -88,6 +88,8 @@ class DeviceState:
         self.update_in_progress: bool = False
         self.update_progress: dict | None = None
         self.usb_connected: bool = False
+        self.personal_volume: float = 1.0
+        self.effective_volume: float = 1.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -115,6 +117,8 @@ class DeviceState:
             "updateInProgress": self.update_in_progress,
             "updateProgress": self.update_progress,
             "usbConnected": self.usb_connected,
+            "personalVolume": self.personal_volume,
+            "effectiveVolume": self.effective_volume,
         }
 
 
@@ -135,3 +139,11 @@ class UsbInitOptions(BaseModel):
     enableWirelessAdb: bool = True
     updateApp: bool = True
     updateContent: bool = True
+
+
+class VolumeUpdate(BaseModel):
+    volume: float = Field(ge=0.0, le=1.0)
+
+
+class DeviceVolumeUpdate(VolumeUpdate):
+    deviceId: str

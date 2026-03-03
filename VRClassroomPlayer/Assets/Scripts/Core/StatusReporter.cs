@@ -91,6 +91,9 @@ namespace VRClassroom
             float duration = 0f;
             bool loop = false;
             bool locked = false;
+            float globalVolume = 1f;
+            float personalVolume = 1f;
+            float effectiveVolume = 1f;
 
             if (videoPlayer != null)
             {
@@ -99,6 +102,9 @@ namespace VRClassroom
                 time = videoPlayer.CurrentTime;
                 duration = videoPlayer.Duration;
                 loop = videoPlayer.IsLooping;
+                globalVolume = videoPlayer.GlobalVolume;
+                personalVolume = videoPlayer.PersonalVolume;
+                effectiveVolume = videoPlayer.EffectiveVolume;
             }
 
             if (viewModeManager != null)
@@ -139,7 +145,10 @@ namespace VRClassroom
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"locked\":{0},", locked ? "true" : "false");
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"battery\":{0},", battery);
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"batteryCharging\":{0},", charging ? "true" : "false");
-            sb.AppendFormat(CultureInfo.InvariantCulture, "\"uptimeMinutes\":{0}", uptimeMinutes);
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"uptimeMinutes\":{0},", uptimeMinutes);
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"globalVolume\":{0:F2},", globalVolume);
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"personalVolume\":{0:F2},", personalVolume);
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"effectiveVolume\":{0:F2}", effectiveVolume);
             sb.Append('}');
 
             return sb.ToString();

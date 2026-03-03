@@ -100,3 +100,22 @@ export async function launchPlayerSingle(deviceId) {
 export async function toggleDeviceDebug(deviceId) {
   return request(`/devices/${deviceId}/debug`, { method: 'POST' });
 }
+
+
+export async function getGlobalVolume() {
+  return request('/playback/volume/global');
+}
+
+export async function setGlobalVolume(volume) {
+  return request('/playback/volume/global', {
+    method: 'POST',
+    body: JSON.stringify({ volume }),
+  });
+}
+
+export async function setDeviceVolume(deviceId, volume) {
+  return request(`/devices/${deviceId}/volume`, {
+    method: 'POST',
+    body: JSON.stringify({ volume }),
+  });
+}

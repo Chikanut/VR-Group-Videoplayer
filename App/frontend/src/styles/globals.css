@@ -116,6 +116,24 @@ body {
   flex-wrap: wrap;
 }
 
+
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 220px;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+.volume-control input[type="range"] {
+  flex: 1;
+}
+
+.global-volume-control {
+  margin-left: 6px;
+}
+
 /* ─── Buttons ───────────────────────────────────────────────────────────────── */
 .btn {
   padding: 6px 14px;

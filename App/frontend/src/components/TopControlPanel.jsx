@@ -1,7 +1,7 @@
 import React, { useRef, useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useDeviceStore from '../store/deviceStore';
-import { playbackCommand, updateAllDevices, getUsbDevices, updateUsbDevice, launchPlayer } from '../api';
+import { playbackCommand, updateAllDevices, getUsbDevices, updateUsbDevice, launchPlayer, getGlobalVolume, setGlobalVolume } from '../api';
 
 export default function TopControlPanel({ onPlayAll }) {
   const navigate = useNavigate();
@@ -22,6 +22,8 @@ export default function TopControlPanel({ onPlayAll }) {
     updateContent: true,
   });
   const usbMenuRef = useRef(null);
+  const volumeDebounceRef = useRef(null);
+  const [globalVolume, setGlobalVolumeValue] = useState(1);
 
   const debounce = useCallback((key, fn) => {
     if (debounceRef.current[key]) return;
@@ -41,6 +43,19 @@ export default function TopControlPanel({ onPlayAll }) {
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [usbMenuOpen]);
+
+
+  useEffect(() => {
+    const loadGlobalVolume = async () => {
+      try {
+        const data = await getGlobalVolume();
+        if (typeof data.globalVolume === 'number') {
+          setGlobalVolumeValue(data.globalVolume);
+        }
+      } catch {}
+    };
+    loadGlobalVolume();
+  }, []);
 
   const needsUpdate = onlineDevices.filter(
     (d) => d.adbConnected && d.requirementsMet === false
@@ -192,6 +207,24 @@ export default function TopControlPanel({ onPlayAll }) {
         >
           Recenter All
         </button>
+        <div className="volume-control global-volume-control">
+          <label htmlFor="global-volume-slider">Global volume</label>
+          <input
+            id="global-volume-slider"
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={globalVolume}
+            onChange={(e) => {
+              const value = Number(e.target.value);
+              setGlobalVolumeValue(value);
+              if (volumeDebounceRef.current) clearTimeout(volumeDebounceRef.current);
+              volumeDebounceRef.current = setTimeout(() => setGlobalVolume(value), 150);
+            }}
+          />
+          <span>{Math.round(globalVolume * 100)}%</span>
+        </div>
         <button
           className="btn btn-secondary"
           onClick={() => navigate('/settings')}
