@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import useDeviceStore from '../store/deviceStore';
 import {
   setDeviceName,
@@ -8,6 +8,7 @@ import {
   playbackCommand,
   launchPlayerSingle,
   toggleDeviceDebug,
+  setDeviceVolume,
 } from '../api';
 import UpdateProgress from './UpdateProgress';
 
@@ -17,13 +18,23 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
   const [editingName, setEditingName] = useState(false);
   const [requirements, setRequirements] = useState(null);
   const [loadingReqs, setLoadingReqs] = useState(false);
+  const [personalVolume, setPersonalVolume] = useState(1);
+  const volumeDebounceRef = useRef(null);
 
   useEffect(() => {
     if (device) {
       setEditName(device.name || device.deviceId);
+      setPersonalVolume(typeof device.personalVolume === 'number' ? device.personalVolume : 1);
       loadRequirements();
     }
   }, [deviceId]);
+
+
+  useEffect(() => {
+    if (device && typeof device.personalVolume === 'number') {
+      setPersonalVolume(device.personalVolume);
+    }
+  }, [device?.personalVolume]);
 
   const loadRequirements = async () => {
     setLoadingReqs(true);
@@ -184,6 +195,30 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
             </button>
           </div>
         )}
+
+        <div className="dialog-section">
+          <h3>Audio</h3>
+          <div className="volume-control">
+            <label htmlFor="personal-volume-slider">Device volume</label>
+            <input
+              id="personal-volume-slider"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={personalVolume}
+              disabled={!device.online}
+              onChange={(e) => {
+                const value = Number(e.target.value);
+                setPersonalVolume(value);
+                if (volumeDebounceRef.current) clearTimeout(volumeDebounceRef.current);
+                volumeDebounceRef.current = setTimeout(() => setDeviceVolume(deviceId, value), 150);
+              }}
+            />
+            <span>{Math.round(personalVolume * 100)}%</span>
+          </div>
+          <p className="dialog-playback-info">Effective volume: <strong>{Math.round((device.effectiveVolume ?? personalVolume) * 100)}%</strong></p>
+        </div>
 
         <div className="dialog-section">
           <h3>Playback Controls</h3>

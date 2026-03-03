@@ -231,6 +231,8 @@ class DeviceManager:
                                 loop=data.get("loop", False),
                                 locked=data.get("locked", False),
                                 uptime_minutes=data.get("uptimeMinutes", 0),
+                                personal_volume=data.get("personalVolume", device.personal_volume),
+                                effective_volume=data.get("effectiveVolume", device.effective_volume),
                                 last_player_response=time.time(),
                                 player_connected=True,
                             )

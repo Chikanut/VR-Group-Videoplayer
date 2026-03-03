@@ -19,6 +19,9 @@ namespace VRClassroom
         public PlayerState CurrentState { get; private set; } = PlayerState.Idle;
         public string CurrentFile { get; private set; } = string.Empty;
         public RenderTexture TargetTexture { get; private set; }
+        public float GlobalVolume { get; private set; } = 1f;
+        public float PersonalVolume { get; private set; } = 1f;
+        public float EffectiveVolume => Mathf.Clamp01(GlobalVolume * PersonalVolume);
 
         public float CurrentTime
         {
@@ -81,6 +84,10 @@ namespace VRClassroom
             _videoPlayer.targetTexture = TargetTexture;
             _videoPlayer.playOnAwake = false;
             _videoPlayer.skipOnDrop = true;
+            _videoPlayer.audioOutputMode = VideoAudioOutputMode.Direct;
+            _videoPlayer.EnableAudioTrack(0, true);
+
+            ApplyEffectiveVolume();
 
             _videoPlayer.prepareCompleted += OnPrepareCompleted;
             _videoPlayer.loopPointReached += OnLoopPointReached;
@@ -332,12 +339,35 @@ namespace VRClassroom
             SetState(PlayerState.Idle);
         }
 
+
+        public void SetVolume(float globalVolume, float personalVolume)
+        {
+            GlobalVolume = Mathf.Clamp01(globalVolume);
+            PersonalVolume = Mathf.Clamp01(personalVolume);
+            ApplyEffectiveVolume();
+            Debug.Log($"[VideoPlayerController] Volume updated: global={GlobalVolume:F2}, personal={PersonalVolume:F2}, effective={EffectiveVolume:F2}");
+        }
+
+        private void ApplyEffectiveVolume()
+        {
+            if (_videoPlayer == null) return;
+
+            float volume = EffectiveVolume;
+            if (_videoPlayer.audioTrackCount > 0)
+            {
+                _videoPlayer.SetDirectAudioVolume(0, volume);
+            }
+            AudioListener.volume = volume;
+        }
+
         private void OnPrepareCompleted(VideoPlayer source)
         {
             Debug.Log($"[VideoPlayerController] Prepare completed for: {CurrentFile}, " +
                       $"width={source.width}, height={source.height}, " +
                       $"frameCount={source.frameCount}, frameRate={source.frameRate:F1}, " +
                       $"canSetTime={source.canSetTime}, audioTrackCount={source.audioTrackCount}");
+
+            ApplyEffectiveVolume();
 
             // Resize RenderTexture to match video resolution
             ResizeRenderTexture((int)source.width, (int)source.height);

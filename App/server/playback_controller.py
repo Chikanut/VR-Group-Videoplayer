@@ -12,6 +12,7 @@ from .device_manager import device_manager
 logger = logging.getLogger("vrclassroom.playback")
 
 REQUEST_TIMEOUT = 5
+global_volume = 1.0
 
 
 async def _send_to_player(ip: str, method: str, path: str, json_body: dict | None = None) -> dict[str, Any]:
@@ -100,8 +101,10 @@ async def _send_command_to_device(device, command: str, path: str, payload: dict
                     extra += f" --ez {k} {str(v).lower()}"
                 elif isinstance(v, str):
                     extra += f" --es {k} '{v}'"
-                elif isinstance(v, (int, float)):
+                elif isinstance(v, int):
                     extra += f" --ei {k} {v}"
+                elif isinstance(v, float):
+                    extra += f" --ef {k} {v}"
         return await _send_via_adb(device.ip, command, extra)
 
     return {"success": False, "error": "Neither player nor ADB connected"}
@@ -304,3 +307,74 @@ async def toggle_debug(device_id: str) -> dict[str, Any]:
         return await _send_via_adb(device.ip, "DEBUG")
 
     return {"error": "Neither player nor ADB connected"}
+
+
+def get_global_volume() -> float:
+    return global_volume
+
+
+async def set_global_volume(volume: float) -> dict[str, Any]:
+    global global_volume
+    clamped = max(0.0, min(1.0, float(volume)))
+    global_volume = clamped
+
+    async with device_manager._lock:
+        all_devices = list(device_manager._devices.values())
+
+    tasks = []
+    for device in all_devices:
+        personal = max(0.0, min(1.0, float(device.personal_volume)))
+        effective = clamped * personal
+        await device_manager.add_or_update(device.device_id, device.ip, effective_volume=effective)
+        if not device.online or (not device.player_connected and not device.adb_connected):
+            continue
+        tasks.append((device, _send_command_to_device(
+            device,
+            "set_volume",
+            "/volume",
+            {"globalVolume": clamped, "personalVolume": personal},
+        )))
+
+    results = await asyncio.gather(*[t[1] for t in tasks], return_exceptions=True) if tasks else []
+    success, failed = [], []
+    for (device, _), result in zip(tasks, results):
+        if isinstance(result, Exception):
+            failed.append({"deviceId": device.device_id, "error": str(result)})
+        elif result.get("success"):
+            success.append({"deviceId": device.device_id})
+        else:
+            failed.append({"deviceId": device.device_id, "error": result.get("error", "Unknown error")})
+
+    return {"globalVolume": clamped, "success": success, "failed": failed}
+
+
+async def set_device_volume(device_id: str, volume: float) -> dict[str, Any]:
+    device = await device_manager.get(device_id)
+    if not device:
+        return {"error": "Device not found"}
+
+    personal = max(0.0, min(1.0, float(volume)))
+    effective = get_global_volume() * personal
+    await device_manager.add_or_update(device.device_id, device.ip, personal_volume=personal, effective_volume=effective)
+
+    if not device.online or (not device.player_connected and not device.adb_connected):
+        return {
+            "deviceId": device.device_id,
+            "personalVolume": personal,
+            "effectiveVolume": effective,
+            "warning": "Volume saved, but device is offline or unreachable",
+        }
+
+    result = await _send_command_to_device(
+        device,
+        "set_volume",
+        "/volume",
+        {"globalVolume": get_global_volume(), "personalVolume": personal},
+    )
+    return {
+        "deviceId": device.device_id,
+        "personalVolume": personal,
+        "effectiveVolume": effective,
+        "sent": result.get("success", False),
+        "error": result.get("error"),
+    }
