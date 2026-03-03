@@ -21,6 +21,7 @@ from .models import (
     DeviceRegistration,
     OpenCommand,
     PlaybackCommand,
+    RequirementVideo,
     UsbInitOptions,
 )
 from .playback_controller import launch_player, open_video, ping_device, send_command, toggle_debug
@@ -78,6 +79,50 @@ async def update_config_endpoint(config: ConfigModel):
     new_config = update_config(config.model_dump())
     await ws_manager.broadcast({"type": "config_updated", "config": new_config})
     return new_config
+
+
+@app.get("/api/video-profiles")
+async def get_video_profiles():
+    config = get_config()
+    return config.get("requirementVideos", [])
+
+
+@app.get("/api/video-profiles/{video_id}")
+async def get_video_profile(video_id: str):
+    config = get_config()
+    for video in config.get("requirementVideos", []):
+        if video.get("id") == video_id:
+            return video
+    return JSONResponse(status_code=404, content={"error": "Video profile not found"})
+
+
+@app.put("/api/video-profiles/{video_id}")
+async def update_video_profile(video_id: str, profile: RequirementVideo):
+    config = get_config()
+    videos = config.get("requirementVideos", [])
+
+    updated = False
+    profile_data = profile.model_dump()
+    profile_data["id"] = video_id
+
+    for index, video in enumerate(videos):
+        if video.get("id") == video_id:
+            videos[index] = profile_data
+            updated = True
+            break
+
+    if not updated:
+        return JSONResponse(status_code=404, content={"error": "Video profile not found"})
+
+    config["requirementVideos"] = videos
+    new_config = update_config(config)
+    await ws_manager.broadcast({"type": "config_updated", "config": new_config})
+
+    for video in new_config.get("requirementVideos", []):
+        if video.get("id") == video_id:
+            return video
+
+    return JSONResponse(status_code=500, content={"error": "Failed to save video profile"})
 
 
 # ─── Device endpoints ─────────────────────────────────────────────────────────

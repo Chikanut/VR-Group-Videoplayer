@@ -7,6 +7,24 @@ function generateId() {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 }
 
+function createDefaultAdvancedSettings() {
+  return {
+    overrideTransformSettings: false,
+    overrideMaterialSettings: false,
+    transformSettings: {
+      localPosition: { x: 0, y: 0, z: 0 },
+      localRotation: { x: 0, y: 0, z: 0 },
+      localScale: { x: 1, y: 1, z: 1 },
+    },
+    materialSettings: {
+      tint: { r: 1, g: 1, b: 1, a: 1 },
+      brightness: 1,
+      textureTiling: { x: 1, y: 1 },
+      textureOffset: { x: 0, y: 0 },
+    },
+  };
+}
+
 export default function SettingsPage() {
   const navigate = useNavigate();
   const [config, setConfig] = useState(null);
@@ -65,6 +83,7 @@ export default function SettingsPage() {
       localPath: '',
       loop: false,
       videoType: '360',
+      advancedSettings: createDefaultAdvancedSettings(),
     });
     updateField('requirementVideos', videos);
   };
@@ -81,6 +100,58 @@ export default function SettingsPage() {
     updateField('requirementVideos', videos);
   };
 
+  const updateVideoAdvancedSetting = (index, path, value) => {
+    const videos = [...(config.requirementVideos || [])];
+    const video = { ...videos[index] };
+    const advancedSettings = {
+      ...createDefaultAdvancedSettings(),
+      ...(video.advancedSettings || {}),
+      transformSettings: {
+        ...createDefaultAdvancedSettings().transformSettings,
+        ...(video.advancedSettings?.transformSettings || {}),
+        localPosition: {
+          ...createDefaultAdvancedSettings().transformSettings.localPosition,
+          ...(video.advancedSettings?.transformSettings?.localPosition || {}),
+        },
+        localRotation: {
+          ...createDefaultAdvancedSettings().transformSettings.localRotation,
+          ...(video.advancedSettings?.transformSettings?.localRotation || {}),
+        },
+        localScale: {
+          ...createDefaultAdvancedSettings().transformSettings.localScale,
+          ...(video.advancedSettings?.transformSettings?.localScale || {}),
+        },
+      },
+      materialSettings: {
+        ...createDefaultAdvancedSettings().materialSettings,
+        ...(video.advancedSettings?.materialSettings || {}),
+        tint: {
+          ...createDefaultAdvancedSettings().materialSettings.tint,
+          ...(video.advancedSettings?.materialSettings?.tint || {}),
+        },
+        textureTiling: {
+          ...createDefaultAdvancedSettings().materialSettings.textureTiling,
+          ...(video.advancedSettings?.materialSettings?.textureTiling || {}),
+        },
+        textureOffset: {
+          ...createDefaultAdvancedSettings().materialSettings.textureOffset,
+          ...(video.advancedSettings?.materialSettings?.textureOffset || {}),
+        },
+      },
+    };
+
+    let node = advancedSettings;
+    for (let i = 0; i < path.length - 1; i += 1) {
+      node[path[i]] = { ...node[path[i]] };
+      node = node[path[i]];
+    }
+    node[path[path.length - 1]] = value;
+
+    video.advancedSettings = advancedSettings;
+    videos[index] = video;
+    updateField('requirementVideos', videos);
+  };
+
   const openFilePicker = (target, filter, title) => {
     setFilePicker({ target, filter, title });
   };
@@ -92,7 +163,6 @@ export default function SettingsPage() {
     } else if (target.startsWith('video_')) {
       const idx = parseInt(target.split('_')[1]);
       updateVideo(idx, 'localPath', path);
-      // Auto-fill name from filename if empty
       const videos = config.requirementVideos || [];
       if (videos[idx] && !videos[idx].name) {
         const name = path.split(/[/\\]/).pop().replace(/\.[^.]+$/, '');
@@ -161,62 +231,315 @@ export default function SettingsPage() {
           Videos are automatically saved to /sdcard/Movies/ on the device.
         </p>
         <div className="video-requirements-list">
-          {(config.requirementVideos || []).map((video, idx) => (
-            <div key={video.id || idx} className="video-requirement-row">
-              <div className="video-req-fields">
-                <div className="form-group">
-                  <label>Name</label>
-                  <input
-                    type="text"
-                    value={video.name || ''}
-                    onChange={(e) => updateVideo(idx, 'name', e.target.value)}
-                    placeholder="Lesson 01"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Source File (on server PC)</label>
-                  <div className="input-with-button">
+          {(config.requirementVideos || []).map((video, idx) => {
+            const advancedSettings = {
+              ...createDefaultAdvancedSettings(),
+              ...(video.advancedSettings || {}),
+              transformSettings: {
+                ...createDefaultAdvancedSettings().transformSettings,
+                ...(video.advancedSettings?.transformSettings || {}),
+                localPosition: {
+                  ...createDefaultAdvancedSettings().transformSettings.localPosition,
+                  ...(video.advancedSettings?.transformSettings?.localPosition || {}),
+                },
+                localRotation: {
+                  ...createDefaultAdvancedSettings().transformSettings.localRotation,
+                  ...(video.advancedSettings?.transformSettings?.localRotation || {}),
+                },
+                localScale: {
+                  ...createDefaultAdvancedSettings().transformSettings.localScale,
+                  ...(video.advancedSettings?.transformSettings?.localScale || {}),
+                },
+              },
+              materialSettings: {
+                ...createDefaultAdvancedSettings().materialSettings,
+                ...(video.advancedSettings?.materialSettings || {}),
+                tint: {
+                  ...createDefaultAdvancedSettings().materialSettings.tint,
+                  ...(video.advancedSettings?.materialSettings?.tint || {}),
+                },
+                textureTiling: {
+                  ...createDefaultAdvancedSettings().materialSettings.textureTiling,
+                  ...(video.advancedSettings?.materialSettings?.textureTiling || {}),
+                },
+                textureOffset: {
+                  ...createDefaultAdvancedSettings().materialSettings.textureOffset,
+                  ...(video.advancedSettings?.materialSettings?.textureOffset || {}),
+                },
+              },
+            };
+
+            return (
+              <div key={video.id || idx} className="video-requirement-row">
+                <div className="video-req-fields">
+                  <div className="form-group">
+                    <label>Name</label>
                     <input
                       type="text"
-                      value={video.localPath || ''}
-                      readOnly
-                      placeholder="Click Browse to select video"
+                      value={video.name || ''}
+                      onChange={(e) => updateVideo(idx, 'name', e.target.value)}
+                      placeholder="Lesson 01"
                     />
-                    <button
-                      className="btn btn-small"
-                      onClick={() => openFilePicker(`video_${idx}`, '.mp4,.mkv,.avi,.mov,.webm', 'Select Video File')}
-                    >
-                      Browse
-                    </button>
                   </div>
+                  <div className="form-group">
+                    <label>Source File (on server PC)</label>
+                    <div className="input-with-button">
+                      <input
+                        type="text"
+                        value={video.localPath || ''}
+                        readOnly
+                        placeholder="Click Browse to select video"
+                      />
+                      <button
+                        className="btn btn-small"
+                        onClick={() => openFilePicker(`video_${idx}`, '.mp4,.mkv,.avi,.mov,.webm', 'Select Video File')}
+                      >
+                        Browse
+                      </button>
+                    </div>
+                  </div>
+                  <div className="form-group form-group-small">
+                    <label>Type</label>
+                    <select
+                      value={video.videoType || '360'}
+                      onChange={(e) => updateVideo(idx, 'videoType', e.target.value)}
+                    >
+                      <option value="360">360</option>
+                      <option value="2d">2D</option>
+                    </select>
+                  </div>
+                  <div className="form-group form-group-small">
+                    <label>Loop</label>
+                    <input
+                      type="checkbox"
+                      checked={video.loop || false}
+                      onChange={(e) => updateVideo(idx, 'loop', e.target.checked)}
+                    />
+                  </div>
+
+                  <details className="form-group" style={{ width: '100%' }}>
+                    <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Advanced Settings</summary>
+
+                    <div className="form-group" style={{ marginTop: 12 }}>
+                      <label className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={advancedSettings.overrideTransformSettings}
+                          onChange={(e) =>
+                            updateVideoAdvancedSetting(idx, ['overrideTransformSettings'], e.target.checked)
+                          }
+                        />
+                        <span>Override Transform Settings</span>
+                      </label>
+                    </div>
+
+                    {advancedSettings.overrideTransformSettings && (
+                      <>
+                        <div className="settings-grid">
+                          <div className="form-group">
+                            <label>Position X</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={advancedSettings.transformSettings.localPosition.x}
+                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localPosition', 'x'], parseFloat(e.target.value) || 0)}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label>Position Y</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={advancedSettings.transformSettings.localPosition.y}
+                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localPosition', 'y'], parseFloat(e.target.value) || 0)}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label>Position Z</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={advancedSettings.transformSettings.localPosition.z}
+                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localPosition', 'z'], parseFloat(e.target.value) || 0)}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label>Rotation X</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={advancedSettings.transformSettings.localRotation.x}
+                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localRotation', 'x'], parseFloat(e.target.value) || 0)}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label>Rotation Y</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={advancedSettings.transformSettings.localRotation.y}
+                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localRotation', 'y'], parseFloat(e.target.value) || 0)}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label>Rotation Z</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={advancedSettings.transformSettings.localRotation.z}
+                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localRotation', 'z'], parseFloat(e.target.value) || 0)}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label>Scale X</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={advancedSettings.transformSettings.localScale.x}
+                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localScale', 'x'], parseFloat(e.target.value) || 1)}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label>Scale Y</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={advancedSettings.transformSettings.localScale.y}
+                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localScale', 'y'], parseFloat(e.target.value) || 1)}
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label>Scale Z</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={advancedSettings.transformSettings.localScale.z}
+                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localScale', 'z'], parseFloat(e.target.value) || 1)}
+                            />
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    <div className="form-group" style={{ marginTop: 12 }}>
+                      <label className="checkbox-label">
+                        <input
+                          type="checkbox"
+                          checked={advancedSettings.overrideMaterialSettings}
+                          onChange={(e) =>
+                            updateVideoAdvancedSetting(idx, ['overrideMaterialSettings'], e.target.checked)
+                          }
+                        />
+                        <span>Override Material Settings</span>
+                      </label>
+                    </div>
+
+                    {advancedSettings.overrideMaterialSettings && (
+                      <div className="settings-grid">
+                        <div className="form-group">
+                          <label>Tint R</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={advancedSettings.materialSettings.tint.r}
+                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'tint', 'r'], parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Tint G</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={advancedSettings.materialSettings.tint.g}
+                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'tint', 'g'], parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Tint B</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={advancedSettings.materialSettings.tint.b}
+                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'tint', 'b'], parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Tint A</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="1"
+                            step="0.01"
+                            value={advancedSettings.materialSettings.tint.a}
+                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'tint', 'a'], parseFloat(e.target.value) || 1)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Brightness</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="2"
+                            step="0.01"
+                            value={advancedSettings.materialSettings.brightness}
+                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'brightness'], parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Tiling X</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={advancedSettings.materialSettings.textureTiling.x}
+                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'textureTiling', 'x'], parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Tiling Y</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={advancedSettings.materialSettings.textureTiling.y}
+                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'textureTiling', 'y'], parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Offset X</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={advancedSettings.materialSettings.textureOffset.x}
+                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'textureOffset', 'x'], parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Offset Y</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={advancedSettings.materialSettings.textureOffset.y}
+                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'textureOffset', 'y'], parseFloat(e.target.value) || 0)}
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </details>
                 </div>
-                <div className="form-group form-group-small">
-                  <label>Type</label>
-                  <select
-                    value={video.videoType || '360'}
-                    onChange={(e) => updateVideo(idx, 'videoType', e.target.value)}
-                  >
-                    <option value="360">360</option>
-                    <option value="2d">2D</option>
-                  </select>
-                </div>
-                <div className="form-group form-group-small">
-                  <label>Loop</label>
-                  <input
-                    type="checkbox"
-                    checked={video.loop || false}
-                    onChange={(e) => updateVideo(idx, 'loop', e.target.checked)}
-                  />
-                </div>
+                <button
+                  className="btn btn-danger btn-small"
+                  onClick={() => removeVideo(idx)}
+                >
+                  Remove
+                </button>
               </div>
-              <button
-                className="btn btn-danger btn-small"
-                onClick={() => removeVideo(idx)}
-              >
-                Remove
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <button className="btn" onClick={addVideo}>
           + Add Video

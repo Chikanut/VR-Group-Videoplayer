@@ -140,6 +140,10 @@ async def open_video(video_id: str, device_ids: list[str]) -> dict[str, Any]:
         "loop": loop,
     }
 
+    advanced_settings = video.get("advancedSettings")
+    if advanced_settings is not None:
+        payload["advancedSettings"] = advanced_settings
+
     success_list = []
     failed_list = []
     missing_list = []

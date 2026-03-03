@@ -6,12 +6,35 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+
+
+class VideoTransformSettings(BaseModel):
+    localPosition: dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.0, "z": 0.0})
+    localRotation: dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.0, "z": 0.0})
+    localScale: dict[str, float] = Field(default_factory=lambda: {"x": 1.0, "y": 1.0, "z": 1.0})
+
+
+class VideoMaterialSettings(BaseModel):
+    tint: dict[str, float] = Field(default_factory=lambda: {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0})
+    brightness: float = 1.0
+    textureTiling: dict[str, float] = Field(default_factory=lambda: {"x": 1.0, "y": 1.0})
+    textureOffset: dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.0})
+
+
+class VideoAdvancedSettings(BaseModel):
+    overrideTransformSettings: bool = False
+    overrideMaterialSettings: bool = False
+    transformSettings: VideoTransformSettings = Field(default_factory=VideoTransformSettings)
+    materialSettings: VideoMaterialSettings = Field(default_factory=VideoMaterialSettings)
+
+
 class RequirementVideo(BaseModel):
     id: str = ""
     name: str = ""
     localPath: str = ""
     loop: bool = False
     videoType: str = "360"
+    advancedSettings: VideoAdvancedSettings | None = None
 
 
 class ConfigModel(BaseModel):

@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading;
 using UnityEngine;
 using System.Globalization;
+using System.Linq;
 
 namespace VRClassroom
 {
@@ -28,6 +29,10 @@ namespace VRClassroom
 
         private const int MaxRetries = 3;
         private const int RetryDelayMs = 5000;
+        private const string VideoSettingsPrefsKey = "lan_server_video_advanced_settings_v1";
+
+        private readonly Dictionary<string, VideoAdvancedSettings> _videoAdvancedSettingsByFile =
+            new Dictionary<string, VideoAdvancedSettings>(StringComparer.OrdinalIgnoreCase);
 
         private void Start()
         {
@@ -37,6 +42,7 @@ namespace VRClassroom
             if (orientationManager == null) Debug.LogError("[LanServer] OrientationManager reference is NOT assigned!");
             if (statusReporter == null) Debug.LogError("[LanServer] StatusReporter reference is NOT assigned!");
             if (debugLogPanel == null) Debug.LogWarning("[LanServer] DebugLogPanel reference is not assigned (debug toggle will not work).");
+            LoadVideoAdvancedSettings();
             StartServer();
         }
 
@@ -178,6 +184,9 @@ namespace VRClassroom
                         case "/files":
                             HandleGetFiles(response);
                             return;
+                        case "/video-settings":
+                            HandleGetVideoSettings(request, response);
+                            return;
                         case "/debug":
                             HandleGetDebugToggle(response);
                             return;
@@ -200,6 +209,9 @@ namespace VRClassroom
                     {
                         case "/name":
                             HandlePutName(response, putBody);
+                            return;
+                        case "/video-settings":
+                            HandlePutVideoSettings(response, putBody);
                             return;
                     }
                 }
@@ -343,16 +355,29 @@ namespace VRClassroom
                 string file = data.file;
                 string mode = data.mode;
                 bool loop = data.loop;
+                VideoAdvancedSettings advancedSettings = data.advancedSettings;
+                if (advancedSettings == null)
+                {
+                    advancedSettings = GetVideoAdvancedSettings(file);
+                }
 
-                Debug.Log($"[LanServer] POST /open: file={file}, mode={mode ?? "(default)"}, loop={loop}");
+                Debug.Log($"[LanServer] POST /open: file={file}, mode={mode ?? "(default)"}, loop={loop}, advancedSettings={(advancedSettings != null ? "provided" : "none")}");
 
                 QueueCommand(() =>
                 {
                     Debug.Log($"[LanServer] Executing: open file={file} mode={mode ?? "(default)"} loop={loop}");
+                    ViewMode targetMode = viewModeManager != null ? viewModeManager.CurrentMode : PlayerConfig.DefaultViewMode;
                     if (!string.IsNullOrEmpty(mode) && viewModeManager != null)
                     {
-                        viewModeManager.SetMode(ADBCommandRouter.ParseMode(mode));
+                        targetMode = ADBCommandRouter.ParseMode(mode);
+                        viewModeManager.SetMode(targetMode);
                     }
+
+                    if (viewModeManager != null)
+                    {
+                        viewModeManager.ApplyAdvancedSettingsOverride(targetMode, advancedSettings);
+                    }
+
                     if (videoPlayer != null)
                     {
                         videoPlayer.IsLooping = loop;
@@ -471,6 +496,8 @@ namespace VRClassroom
                         sb.AppendFormat(CultureInfo.InvariantCulture, "\"name\":\"{0}\",", EscapeJson(fi.Name));
                         sb.AppendFormat(CultureInfo.InvariantCulture, "\"path\":\"{0}\",", EscapeJson(files[i]));
                         sb.AppendFormat(CultureInfo.InvariantCulture, "\"size\":{0}", fi.Length);
+                        bool hasAdvancedSettings = HasVideoAdvancedSettings(fi.Name);
+                        sb.AppendFormat(CultureInfo.InvariantCulture, ",\"hasAdvancedSettings\":{0}", hasAdvancedSettings ? "true" : "false");
                         sb.Append('}');
                     }
                 }
@@ -483,6 +510,150 @@ namespace VRClassroom
                 Debug.LogError($"[LanServer] Error listing files: {e.Message}");
                 SendJson(response, 500, $"{{\"error\":\"{EscapeJson(e.Message)}\"}}");
             }
+        }
+
+        private void HandleGetVideoSettings(HttpListenerRequest request, HttpListenerResponse response)
+        {
+            string file = request.QueryString["file"];
+            if (string.IsNullOrEmpty(file))
+            {
+                SendJson(response, 400, "{\"error\":\"missing file query parameter\"}");
+                return;
+            }
+
+            VideoAdvancedSettings advancedSettings = GetVideoAdvancedSettings(file);
+            if (advancedSettings == null)
+            {
+                SendJson(response, 200, "{\"file\":\"" + EscapeJson(Path.GetFileName(file)) + "\",\"advancedSettings\":null}");
+                return;
+            }
+
+            string settingsJson = JsonUtility.ToJson(advancedSettings);
+            string json = "{\"file\":\"" + EscapeJson(Path.GetFileName(file)) + "\",\"advancedSettings\":" + settingsJson + "}";
+            SendJson(response, 200, json);
+        }
+
+        private void HandlePutVideoSettings(HttpListenerResponse response, string body)
+        {
+            if (string.IsNullOrEmpty(body))
+            {
+                SendJson(response, 400, "{\"error\":\"missing body\"}");
+                return;
+            }
+
+            try
+            {
+                var data = JsonUtility.FromJson<VideoSettingsRequest>(body);
+                if (string.IsNullOrEmpty(data.file))
+                {
+                    SendJson(response, 400, "{\"error\":\"missing file field\"}");
+                    return;
+                }
+
+                if (data.advancedSettings == null)
+                {
+                    RemoveVideoAdvancedSettings(data.file);
+                }
+                else
+                {
+                    SetVideoAdvancedSettings(data.file, data.advancedSettings);
+                }
+
+                SendJson(response, 200, "{\"ok\":true}");
+            }
+            catch (Exception e)
+            {
+                SendJson(response, 400, "{\"error\":\"invalid json: " + EscapeJson(e.Message) + "\"}");
+            }
+        }
+
+        private void LoadVideoAdvancedSettings()
+        {
+            _videoAdvancedSettingsByFile.Clear();
+            string raw = PlayerPrefs.GetString(VideoSettingsPrefsKey, string.Empty);
+            if (string.IsNullOrEmpty(raw))
+            {
+                return;
+            }
+
+            try
+            {
+                var wrapper = JsonUtility.FromJson<VideoSettingsStorage>(raw);
+                if (wrapper?.items == null)
+                {
+                    return;
+                }
+
+                foreach (var item in wrapper.items.Where(i => i != null && !string.IsNullOrEmpty(i.file)))
+                {
+                    _videoAdvancedSettingsByFile[NormalizeFileKey(item.file)] = CloneAdvancedSettings(item.advancedSettings);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[LanServer] Failed to load saved video settings: {e.Message}");
+            }
+        }
+
+        private void SaveVideoAdvancedSettings()
+        {
+            var storage = new VideoSettingsStorage
+            {
+                items = _videoAdvancedSettingsByFile
+                    .Select(kvp => new VideoSettingsItem
+                    {
+                        file = kvp.Key,
+                        advancedSettings = CloneAdvancedSettings(kvp.Value)
+                    })
+                    .ToArray()
+            };
+
+            PlayerPrefs.SetString(VideoSettingsPrefsKey, JsonUtility.ToJson(storage));
+            PlayerPrefs.Save();
+        }
+
+        private void SetVideoAdvancedSettings(string file, VideoAdvancedSettings advancedSettings)
+        {
+            _videoAdvancedSettingsByFile[NormalizeFileKey(file)] = CloneAdvancedSettings(advancedSettings);
+            SaveVideoAdvancedSettings();
+        }
+
+        private void RemoveVideoAdvancedSettings(string file)
+        {
+            if (_videoAdvancedSettingsByFile.Remove(NormalizeFileKey(file)))
+            {
+                SaveVideoAdvancedSettings();
+            }
+        }
+
+        private bool HasVideoAdvancedSettings(string file)
+        {
+            return _videoAdvancedSettingsByFile.ContainsKey(NormalizeFileKey(file));
+        }
+
+        private VideoAdvancedSettings GetVideoAdvancedSettings(string file)
+        {
+            if (_videoAdvancedSettingsByFile.TryGetValue(NormalizeFileKey(file), out var settings))
+            {
+                return CloneAdvancedSettings(settings);
+            }
+
+            return null;
+        }
+
+        private static string NormalizeFileKey(string file)
+        {
+            return Path.GetFileName(file ?? string.Empty).Trim();
+        }
+
+        private static VideoAdvancedSettings CloneAdvancedSettings(VideoAdvancedSettings source)
+        {
+            if (source == null)
+            {
+                return null;
+            }
+
+            return JsonUtility.FromJson<VideoAdvancedSettings>(JsonUtility.ToJson(source));
         }
 
         private void PlayPingSound()
@@ -582,6 +753,27 @@ namespace VRClassroom
             public string file;
             public string mode;
             public bool loop;
+            public VideoAdvancedSettings advancedSettings;
+        }
+
+        [Serializable]
+        private class VideoSettingsRequest
+        {
+            public string file;
+            public VideoAdvancedSettings advancedSettings;
+        }
+
+        [Serializable]
+        private class VideoSettingsStorage
+        {
+            public VideoSettingsItem[] items;
+        }
+
+        [Serializable]
+        private class VideoSettingsItem
+        {
+            public string file;
+            public VideoAdvancedSettings advancedSettings;
         }
 
         private class PendingResponse
