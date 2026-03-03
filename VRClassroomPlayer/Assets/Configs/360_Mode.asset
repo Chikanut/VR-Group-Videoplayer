@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: 360_Mode
   m_EditorClassIdentifier: Assembly-CSharp::VRClassroom.ViewModeConfig
   viewMode: 1
-  meshOverride: {fileID: 0}
+  meshOverride: {fileID: 4711208715938537054, guid: c856dad4711ad5e4abdbae73437d8f27, type: 3}
   materialOverride: {fileID: 2100000, guid: 63853b0f48ad61640bc82a1ec83e455f, type: 2}
   shaderOverride: {fileID: 0}
   tint: {r: 1, g: 1, b: 1, a: 1}
@@ -21,6 +21,6 @@ MonoBehaviour:
   textureTiling: {x: 1, y: 1}
   textureOffset: {x: 0, y: 0}
   localPosition: {x: 0, y: 0, z: 0}
-  localRotation: {x: 0, y: -90, z: 0}
-  localScale: {x: 25, y: 25, z: 25}
+  localRotation: {x: -90, y: 90, z: 0}
+  localScale: {x: 100, y: 100, z: 100}
   parentToCamera: 0

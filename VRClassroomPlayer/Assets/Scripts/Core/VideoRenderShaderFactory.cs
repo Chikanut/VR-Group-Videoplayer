@@ -45,6 +45,7 @@ namespace VRClassroom
                     name = config.materialOverride.name + " (Clone)"
                 };
                 Debug.Log($"[VideoRenderShaderFactory] Using material override: {config.materialOverride.name} for {config.viewMode}");
+                ApplyConfigProperties(mat, config);
                 return mat;
             }
 
@@ -122,11 +123,17 @@ namespace VRClassroom
 
             material.color = Color.white;
 
-            if (material.HasProperty("_MainTex"))
-            {
-                material.SetTextureScale("_MainTex", Vector2.one);
-                material.SetTextureOffset("_MainTex", Vector2.zero);
-            }
+            if (material.HasProperty("_Tilling"))
+                material.SetVector("_Tilling", Vector2.one);
+
+            if (material.HasProperty("_Offset"))
+                material.SetVector("_Offset", Vector2.zero);
+
+            if (material.HasProperty("_Color"))
+                material.SetColor("_Color", Color.white);
+
+            if (material.HasProperty("_Brightness"))
+                material.SetFloat("_Brightness", 1f);
 
             if (material.HasProperty("_BaseMap"))
             {
@@ -161,11 +168,11 @@ namespace VRClassroom
             if (material.HasProperty("_Brightness"))
                 material.SetFloat("_Brightness", config.brightness);
 
-            if (material.HasProperty("_MainTex"))
-            {
-                material.SetTextureScale("_MainTex", config.textureTiling);
-                material.SetTextureOffset("_MainTex", config.textureOffset);
-            }
+            if (material.HasProperty("_Tilling"))
+                material.SetVector("_Tilling", config.textureTiling);
+
+            if (material.HasProperty("_Offset"))
+                material.SetVector("_Offset", config.textureOffset);
 
             if (material.HasProperty("_BaseMap"))
             {
