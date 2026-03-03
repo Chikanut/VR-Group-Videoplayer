@@ -7,14 +7,90 @@
       "name": "Lesson 1",
       "localPath": "C:\\Users\\eugen\\Desktop\\Working Files\\GSPP\\VR Videos\\Promo\\SkyFall training PROMO.mp4",
       "loop": false,
-      "videoType": "360"
+      "videoType": "360",
+      "advancedSettings": {
+        "overrideTransformSettings": false,
+        "overrideMaterialSettings": false,
+        "transformSettings": {
+          "localPosition": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "localRotation": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "localScale": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 1.0
+          }
+        },
+        "materialSettings": {
+          "tint": {
+            "r": 1.0,
+            "g": 1.0,
+            "b": 1.0,
+            "a": 1.0
+          },
+          "brightness": 1.0,
+          "textureTiling": {
+            "x": 1.0,
+            "y": 1.0
+          },
+          "textureOffset": {
+            "x": 0.0,
+            "y": 0.0
+          }
+        }
+      }
     },
     {
       "id": "50550c47-a082-4b1e-b3fb-97809f8f57b5",
       "name": "First fight",
       "localPath": "C:\\Users\\eugen\\Desktop\\Working Files\\GSPP\\VR Videos\\FIRST BATTLE\\First Battle short (8 min).mp4",
       "loop": false,
-      "videoType": "360"
+      "videoType": "360",
+      "advancedSettings": {
+        "overrideTransformSettings": true,
+        "overrideMaterialSettings": true,
+        "transformSettings": {
+          "localPosition": {
+            "x": 0.0,
+            "y": 2.0,
+            "z": 0.0
+          },
+          "localRotation": {
+            "x": -90.0,
+            "y": 0.0,
+            "z": 90.0
+          },
+          "localScale": {
+            "x": 1000.0,
+            "y": 1000.0,
+            "z": 1000.0
+          }
+        },
+        "materialSettings": {
+          "tint": {
+            "r": 1.0,
+            "g": 1.0,
+            "b": 1.0,
+            "a": 1.0
+          },
+          "brightness": 1.0,
+          "textureTiling": {
+            "x": 1.0,
+            "y": 0.5
+          },
+          "textureOffset": {
+            "x": 0.0,
+            "y": 0.25
+          }
+        }
+      }
     }
   ],
   "batteryThreshold": 20,
