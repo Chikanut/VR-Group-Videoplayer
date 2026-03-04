@@ -358,13 +358,14 @@ namespace VRClassroom
                 string file = data.file;
                 string mode = data.mode;
                 bool loop = data.loop;
+                bool autoRecenterOnOpen = data.autoRecenterOnOpen;
                 VideoAdvancedSettings advancedSettings = data.advancedSettings;
                 if (advancedSettings == null)
                 {
                     advancedSettings = GetVideoAdvancedSettings(file);
                 }
 
-                Debug.Log($"[LanServer] POST /open: file={file}, mode={mode ?? "(default)"}, loop={loop}, advancedSettings={(advancedSettings != null ? "provided" : "none")}");
+                Debug.Log($"[LanServer] POST /open: file={file}, mode={mode ?? "(default)"}, loop={loop}, autoRecenterOnOpen={autoRecenterOnOpen}, advancedSettings={(advancedSettings != null ? "provided" : "none")}");
 
                 QueueCommand(() =>
                 {
@@ -385,6 +386,12 @@ namespace VRClassroom
                     {
                         videoPlayer.IsLooping = loop;
                     }
+
+                    if (autoRecenterOnOpen)
+                    {
+                        orientationManager?.Recenter();
+                    }
+
                     videoPlayer?.Open(file);
                 });
 
@@ -783,6 +790,7 @@ namespace VRClassroom
             public string file;
             public string mode;
             public bool loop;
+            public bool autoRecenterOnOpen = true;
             public VideoAdvancedSettings advancedSettings;
         }
 
