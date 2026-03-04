@@ -18,6 +18,11 @@ namespace VRClassroom
         public const float StatusInterval = 2f;
 
         /// <summary>
+        /// Forces immediate status/registration sync when app regains focus.
+        /// </summary>
+        public const bool FastResyncOnFocus = true;
+
+        /// <summary>
         /// Default view mode when none is specified.
         /// </summary>
         public const ViewMode DefaultViewMode = ViewMode.None;
