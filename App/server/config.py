@@ -13,7 +13,8 @@ DEVICE_NAMES_PATH = Path(__file__).parent.parent / "device_names.json"
 
 DEFAULT_CONFIG = {
     "apkPath": "",
-    "packageId": "com.vrclassroom.player",
+    "packageId": "com.vrclass.player",
+    "adbActionPrefix": "com.vrclass.player",
     "requirementVideos": [],
     "batteryThreshold": 20,
     "scanInterval": 30,
@@ -22,8 +23,10 @@ DEFAULT_CONFIG = {
     "playerPort": 8080,
     "deviceOfflineTimeout": 30,
     "statusPollInterval": 5,
+    "requirementsPollInterval": 15,
     "updateConcurrency": 5,
     "ignoreRequirements": False,
+    "fastResyncOnFocus": True,
 }
 
 DEVICE_VIDEO_DIR = "/sdcard/Movies"

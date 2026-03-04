@@ -9,6 +9,7 @@ export function useWebSocket() {
   const reconnectTimer = useRef(null);
 
   const {
+    config,
     setConnected,
     setLoading,
     handleSnapshot,
@@ -19,6 +20,8 @@ export function useWebSocket() {
   } = useDeviceStore();
 
   useEffect(() => {
+    const isFastResyncEnabled = () => (config?.fastResyncOnFocus ?? true);
+
     function connect() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const host = window.location.host;
@@ -73,11 +76,50 @@ export function useWebSocket() {
       reconnectTimer.current = setTimeout(connect, delay);
     }
 
+    function reconnectNow() {
+      if (!isFastResyncEnabled()) return;
+
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+        reconnectTimer.current = null;
+      }
+
+      reconnectAttempt.current = 0;
+
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+
+      setLoading(true);
+      connect();
+    }
+
+    function onFocusOrVisible() {
+      if (document.visibilityState === 'visible') {
+        reconnectNow();
+      }
+    }
+
     connect();
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+    window.addEventListener('focus', onFocusOrVisible);
 
     return () => {
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+      window.removeEventListener('focus', onFocusOrVisible);
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       if (wsRef.current) wsRef.current.close();
     };
-  }, []);
+  }, [
+    config?.fastResyncOnFocus,
+    setConnected,
+    setLoading,
+    handleSnapshot,
+    handleDeviceUpdate,
+    handleDeviceRemoved,
+    handleConfigUpdated,
+    handleUpdateProgress,
+  ]);
 }

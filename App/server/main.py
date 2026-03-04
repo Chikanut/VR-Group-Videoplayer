@@ -13,9 +13,11 @@ from fastapi.staticfiles import StaticFiles
 
 from .adb_executor import adb_executor
 from .config import get_config, load_config, update_config
-from .device_discovery import discovery_loop, handle_self_registration
+from .device_discovery import battery_poll_loop, discovery_loop, handle_self_registration
 from .device_manager import device_manager
 from .models import (
+    AutostartUpdate,
+    BulkAutostartUpdate,
     ConfigModel,
     DeviceNameUpdate,
     DeviceRegistration,
@@ -30,12 +32,20 @@ from .playback_controller import (
     launch_player,
     open_video,
     ping_device,
+    refresh_device_autostart_state,
     send_command,
+    set_autostart_bulk,
+    set_device_autostart,
     set_device_volume,
     set_global_volume,
     toggle_debug,
 )
-from .requirements_manager import check_requirements, run_update, run_usb_update
+from .requirements_manager import (
+    check_requirements,
+    requirements_refresh_loop,
+    run_update,
+    run_usb_update,
+)
 from .websocket_manager import ws_manager
 
 logging.basicConfig(
@@ -45,11 +55,13 @@ logging.basicConfig(
 logger = logging.getLogger("vrclassroom")
 
 _discovery_task: asyncio.Task | None = None
+_battery_poll_task: asyncio.Task | None = None
+_requirements_refresh_task: asyncio.Task | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _discovery_task
+    global _discovery_task, _battery_poll_task, _requirements_refresh_task
     # Startup
     load_config()
     has_adb = await adb_executor.check_adb()
@@ -57,11 +69,17 @@ async def lifespan(app: FastAPI):
         logger.warning("ADB not found in PATH. ADB-dependent features will not work.")
     await device_manager.start()
     _discovery_task = asyncio.create_task(discovery_loop())
+    _battery_poll_task = asyncio.create_task(battery_poll_loop())
+    _requirements_refresh_task = asyncio.create_task(requirements_refresh_loop())
     logger.info("VR Classroom server started")
     yield
     # Shutdown
     if _discovery_task:
         _discovery_task.cancel()
+    if _battery_poll_task:
+        _battery_poll_task.cancel()
+    if _requirements_refresh_task:
+        _requirements_refresh_task.cancel()
     await device_manager.stop()
     logger.info("VR Classroom server stopped")
 
@@ -344,6 +362,31 @@ async def launch_player_single(device_id: str):
     if not device.adb_connected:
         return JSONResponse(status_code=400, content={"error": "ADB not connected"})
     return await launch_player([device_id])
+
+
+@app.post("/api/devices/{device_id}/autostart")
+async def set_device_autostart_endpoint(device_id: str, body: AutostartUpdate):
+    result = await set_device_autostart(device_id, body.enabled)
+    if result.get("error") == "Device not found":
+        return JSONResponse(status_code=404, content=result)
+    if result.get("error") == "ADB not connected":
+        return JSONResponse(status_code=400, content=result)
+    if result.get("error"):
+        return JSONResponse(status_code=500, content=result)
+    return result
+
+
+@app.post("/api/devices/autostart")
+async def set_bulk_autostart_endpoint(body: BulkAutostartUpdate):
+    return await set_autostart_bulk(body.enabled, body.deviceIds)
+
+
+@app.get("/api/devices/{device_id}/autostart")
+async def get_device_autostart_endpoint(device_id: str):
+    result = await refresh_device_autostart_state(device_id)
+    if result.get("error") == "Device not found":
+        return JSONResponse(status_code=404, content=result)
+    return result
 
 
 # ─── Playback endpoints ──────────────────────────────────────────────────────

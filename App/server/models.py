@@ -39,7 +39,8 @@ class RequirementVideo(BaseModel):
 
 class ConfigModel(BaseModel):
     apkPath: str = ""
-    packageId: str = "com.vrclassroom.player"
+    packageId: str = "com.vrclass.player"
+    adbActionPrefix: str = "com.vrclass.player"
     requirementVideos: list[RequirementVideo] = []
     batteryThreshold: int = 20
     scanInterval: int = 30
@@ -48,8 +49,10 @@ class ConfigModel(BaseModel):
     playerPort: int = 8080
     deviceOfflineTimeout: int = 30
     statusPollInterval: int = 5
+    requirementsPollInterval: int = 15
     updateConcurrency: int = 5
     ignoreRequirements: bool = False
+    fastResyncOnFocus: bool = True
 
 
 class DeviceRegistration(BaseModel):
@@ -64,6 +67,8 @@ class DeviceRegistration(BaseModel):
 class DeviceState:
     def __init__(self, device_id: str, ip: str):
         self.device_id: str = device_id
+        self.stable_device_id: str = device_id
+        self.id_source: str = "ip"
         self.ip: str = ip
         self.name: str = ""
         self.battery: int = -1
@@ -90,10 +95,13 @@ class DeviceState:
         self.usb_connected: bool = False
         self.personal_volume: float = 1.0
         self.effective_volume: float = 1.0
+        self.autostart_enabled: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "deviceId": self.device_id,
+            "stableDeviceId": self.stable_device_id,
+            "idSource": self.id_source,
             "ip": self.ip,
             "name": self.name or self.device_id,
             "battery": self.battery,
@@ -119,6 +127,7 @@ class DeviceState:
             "usbConnected": self.usb_connected,
             "personalVolume": self.personal_volume,
             "effectiveVolume": self.effective_volume,
+            "autostartEnabled": self.autostart_enabled,
         }
 
 
@@ -147,3 +156,12 @@ class VolumeUpdate(BaseModel):
 
 class DeviceVolumeUpdate(VolumeUpdate):
     deviceId: str
+
+
+class AutostartUpdate(BaseModel):
+    enabled: bool
+
+
+class BulkAutostartUpdate(BaseModel):
+    enabled: bool
+    deviceIds: list[str] = []

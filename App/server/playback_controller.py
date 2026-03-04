@@ -13,6 +13,30 @@ logger = logging.getLogger("vrclassroom.playback")
 
 REQUEST_TIMEOUT = 5
 global_volume = 1.0
+BOOT_RECEIVER_CLASS = ".BootCompletedReceiver"
+COMMAND_RECEIVER_CLASS = ".CommandReceiver"
+
+
+def _adb_action_prefix() -> str:
+    config = get_config()
+    return config.get("adbActionPrefix", "com.vrclass.player")
+
+
+def _adb_action(command: str) -> str:
+    prefix = _adb_action_prefix().rstrip(".")
+    return f"{prefix}.{command.upper()}"
+
+
+def _boot_receiver_component() -> str:
+    config = get_config()
+    package_id = config.get("packageId", "com.vrclass.player")
+    return f"{package_id}/{BOOT_RECEIVER_CLASS}"
+
+
+def _command_receiver_component() -> str:
+    config = get_config()
+    package_id = config.get("packageId", "com.vrclass.player")
+    return f"{package_id}/{COMMAND_RECEIVER_CLASS}"
 
 
 async def _send_to_player(ip: str, method: str, path: str, json_body: dict | None = None) -> dict[str, Any]:
@@ -45,11 +69,9 @@ async def _send_to_player(ip: str, method: str, path: str, json_body: dict | Non
 async def _send_via_adb(ip: str, command: str, intent_extra: str = "") -> dict[str, Any]:
     """Send a command to device via ADB intent as fallback."""
     config = get_config()
-    package_id = config.get("packageId", "com.vrclassroom.player")
-    cmd = (
-        f"am broadcast -a {package_id}.{command} "
-        f"-n {package_id}/.CommandReceiver"
-    )
+    action = _adb_action(command)
+    component = _command_receiver_component()
+    cmd = f"am broadcast -a {action} -n {component}"
     if intent_extra:
         cmd += f" {intent_extra}"
     success, output = await adb_executor.shell(ip, cmd)
@@ -211,7 +233,7 @@ async def send_command(command: str, device_ids: list[str]) -> dict[str, Any]:
 async def launch_player(device_ids: list[str]) -> dict[str, Any]:
     """Launch the player app on target devices via ADB."""
     config = get_config()
-    package_id = config.get("packageId", "com.vrclassroom.player")
+    package_id = config.get("packageId", "com.vrclass.player")
     player_port = config.get("playerPort", 8080)
 
     # Resolve to online ADB-connected devices
@@ -378,3 +400,76 @@ async def set_device_volume(device_id: str, volume: float) -> dict[str, Any]:
         "sent": result.get("success", False),
         "error": result.get("error"),
     }
+
+
+async def refresh_device_autostart_state(device_id: str) -> dict[str, Any]:
+    device = await device_manager.get(device_id)
+    if not device:
+        return {"error": "Device not found"}
+    if not device.adb_connected:
+        await device_manager.add_or_update(device.device_id, device.ip, autostart_enabled=None)
+        return {"deviceId": device.device_id, "autostartEnabled": None, "warning": "ADB not connected"}
+
+    component = _boot_receiver_component()
+    state = await adb_executor.get_component_enabled(device.ip, component)
+    await device_manager.add_or_update(device.device_id, device.ip, autostart_enabled=state)
+    return {"deviceId": device.device_id, "autostartEnabled": state}
+
+
+async def set_device_autostart(device_id: str, enabled: bool) -> dict[str, Any]:
+    device = await device_manager.get(device_id)
+    if not device:
+        return {"error": "Device not found"}
+    if not device.adb_connected:
+        return {"error": "ADB not connected"}
+
+    component = _boot_receiver_component()
+    success, output = await adb_executor.set_component_enabled(device.ip, component, enabled)
+    if not success:
+        return {"error": output or "Failed to change autostart component state"}
+
+    # Trust the operation result immediately and then re-read to normalize unknown OEM output differences.
+    await device_manager.add_or_update(device.device_id, device.ip, autostart_enabled=enabled)
+    verified = await adb_executor.get_component_enabled(device.ip, component)
+    final_state = enabled if verified is None else verified
+    await device_manager.add_or_update(device.device_id, device.ip, autostart_enabled=final_state)
+
+    return {
+        "deviceId": device.device_id,
+        "autostartEnabled": final_state,
+        "requested": enabled,
+        "output": output,
+    }
+
+
+async def set_autostart_bulk(enabled: bool, device_ids: list[str] | None = None) -> dict[str, Any]:
+    target_ids = device_ids or []
+    if target_ids:
+        devices = []
+        for did in target_ids:
+            d = await device_manager.get(did)
+            if d and d.online and d.adb_connected:
+                devices.append(d)
+    else:
+        devices = await device_manager.get_online_adb_devices()
+
+    if not devices:
+        return {"success": [], "failed": [], "message": "No online ADB-connected devices available"}
+
+    tasks = [set_device_autostart(d.device_id, enabled) for d in devices]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    success_list = []
+    failed_list = []
+    for device, result in zip(devices, results):
+        if isinstance(result, Exception):
+            failed_list.append({"deviceId": device.device_id, "error": str(result)})
+        elif result.get("error"):
+            failed_list.append({"deviceId": device.device_id, "error": result.get("error")})
+        else:
+            success_list.append({
+                "deviceId": device.device_id,
+                "autostartEnabled": result.get("autostartEnabled"),
+            })
+
+    return {"success": success_list, "failed": failed_list, "enabled": enabled}

@@ -607,6 +607,16 @@ export default function SettingsPage() {
             />
           </div>
           <div className="form-group">
+            <label>Requirements Poll Interval (seconds)</label>
+            <input
+              type="number"
+              min="5"
+              max="120"
+              value={config.requirementsPollInterval || 15}
+              onChange={(e) => updateField('requirementsPollInterval', parseInt(e.target.value) || 15)}
+            />
+          </div>
+          <div className="form-group">
             <label>Update Concurrency</label>
             <input
               type="number"
@@ -616,6 +626,20 @@ export default function SettingsPage() {
               onChange={(e) => updateField('updateConcurrency', parseInt(e.target.value) || 5)}
             />
           </div>
+          <div className="form-group">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={config.fastResyncOnFocus ?? true}
+                onChange={(e) => updateField('fastResyncOnFocus', e.target.checked)}
+              />
+              <span>Fast Resync on Focus</span>
+            </label>
+            <span className="form-hint">
+              Reconnect UI updates and force a quick device status sync when app/tab regains focus
+            </span>
+          </div>
+
           <div className="form-group">
             <label className="checkbox-label">
               <input

@@ -13,24 +13,42 @@ import org.json.JSONObject;
 
 public class ADBBridge {
     private static final String TAG = "ADBBridge";
-    private static final String ACTION_PREFIX = "com.vrclass.player.";
+    private static final String ACTION_PREFIX = "com.vrclass.player";
+    private static final String LEGACY_ACTION_PREFIX = "com.vrclassroom.player";
     private static final String UNITY_OBJECT = "ADBReceiver";
     private static final String UNITY_METHOD = "OnBroadcastReceived";
 
     private static BroadcastReceiver receiver;
 
-    private static final String[] ACTIONS = {
-        ACTION_PREFIX + "OPEN",
-        ACTION_PREFIX + "PLAY",
-        ACTION_PREFIX + "PAUSE",
-        ACTION_PREFIX + "STOP",
-        ACTION_PREFIX + "RESTART",
-        ACTION_PREFIX + "RECENTER",
-        ACTION_PREFIX + "SET_MODE",
-        ACTION_PREFIX + "GET_STATUS",
-        ACTION_PREFIX + "SET_LOOP",
-        ACTION_PREFIX + "TOGGLE_DEBUG"
+    private static final String[] COMMANDS = {
+        "OPEN",
+        "PLAY",
+        "PAUSE",
+        "STOP",
+        "RESTART",
+        "RECENTER",
+        "SET_MODE",
+        "GET_STATUS",
+        "SET_LOOP",
+        "TOGGLE_DEBUG"
     };
+
+    private static String actionWithPrefix(String prefix, String command) {
+        return prefix + "." + command;
+    }
+
+    private static String commandFromAction(String fullAction) {
+        String primary = ACTION_PREFIX + ".";
+        String legacy = LEGACY_ACTION_PREFIX + ".";
+
+        if (fullAction.startsWith(primary)) {
+            return fullAction.substring(primary.length());
+        }
+        if (fullAction.startsWith(legacy)) {
+            return fullAction.substring(legacy.length());
+        }
+        return null;
+    }
 
     public static void initialize() {
         if (receiver != null) {
@@ -49,9 +67,10 @@ public class ADBBridge {
             public void onReceive(Context ctx, Intent intent) {
                 try {
                     String fullAction = intent.getAction();
-                    if (fullAction == null || !fullAction.startsWith(ACTION_PREFIX)) return;
+                    if (fullAction == null) return;
 
-                    String action = fullAction.substring(ACTION_PREFIX.length());
+                    String action = commandFromAction(fullAction);
+                    if (action == null) return;
 
                     JSONObject json = new JSONObject();
                     json.put("action", action);
@@ -79,8 +98,9 @@ public class ADBBridge {
         };
 
         IntentFilter filter = new IntentFilter();
-        for (String action : ACTIONS) {
-            filter.addAction(action);
+        for (String command : COMMANDS) {
+            filter.addAction(actionWithPrefix(ACTION_PREFIX, command));
+            filter.addAction(actionWithPrefix(LEGACY_ACTION_PREFIX, command));
         }
 
         context.registerReceiver(receiver, filter);

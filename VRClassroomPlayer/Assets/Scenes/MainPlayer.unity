@@ -689,6 +689,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::VRClassroom.OrientationManager
   vrCamera: {fileID: 1256054558}
   viewModeManager: {fileID: 904553242}
+  recenterDebounceSeconds: 1
 --- !u!1 &596640676
 GameObject:
   m_ObjectHideFlags: 0
@@ -719,7 +720,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VRClassroom.DebugLogPanel
   vrCamera: {fileID: 1256054558}
-  startVisible: 1
+  startVisible: 0
   additionalLogObjects:
   - {fileID: 92920377}
 --- !u!4 &596640678
@@ -1229,6 +1230,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::VRClassroom.StatusReporter
   videoPlayer: {fileID: 2000580081}
   viewModeManager: {fileID: 904553242}
+  fastResyncOnFocus: 1
 --- !u!1 &1135317051
 GameObject:
   m_ObjectHideFlags: 0

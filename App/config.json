@@ -1,52 +1,8 @@
 {
   "apkPath": "D:\\UnityProjects\\VRGroupViewer\\VR Group Videoplayer\\VRClassroomPlayer\\Builds\\VRClassroomVideoPlayer.apk",
   "packageId": "com.vrclass.player",
+  "adbActionPrefix": "com.vrclass.player",
   "requirementVideos": [
-    {
-      "id": "01dad1df-b686-4e9a-810d-94e44a0400ce",
-      "name": "Lesson 1",
-      "localPath": "C:\\Users\\eugen\\Desktop\\Working Files\\GSPP\\VR Videos\\Promo\\SkyFall training PROMO.mp4",
-      "loop": false,
-      "videoType": "360",
-      "advancedSettings": {
-        "overrideTransformSettings": false,
-        "overrideMaterialSettings": false,
-        "transformSettings": {
-          "localPosition": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "localRotation": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          },
-          "localScale": {
-            "x": 1.0,
-            "y": 1.0,
-            "z": 1.0
-          }
-        },
-        "materialSettings": {
-          "tint": {
-            "r": 1.0,
-            "g": 1.0,
-            "b": 1.0,
-            "a": 1.0
-          },
-          "brightness": 1.0,
-          "textureTiling": {
-            "x": 1.0,
-            "y": 1.0
-          },
-          "textureOffset": {
-            "x": 0.0,
-            "y": 0.0
-          }
-        }
-      }
-    },
     {
       "id": "50550c47-a082-4b1e-b3fb-97809f8f57b5",
       "name": "First fight",
@@ -94,12 +50,14 @@
     }
   ],
   "batteryThreshold": 20,
-  "scanInterval": 10,
+  "scanInterval": 3,
   "networkSubnet": "",
   "serverPort": 8000,
   "playerPort": 8080,
-  "deviceOfflineTimeout": 15,
-  "statusPollInterval": 3,
+  "deviceOfflineTimeout": 3,
+  "statusPollInterval": 1,
+  "requirementsPollInterval": 3,
   "updateConcurrency": 5,
-  "ignoreRequirements": true
+  "ignoreRequirements": true,
+  "fastResyncOnFocus": true
 }

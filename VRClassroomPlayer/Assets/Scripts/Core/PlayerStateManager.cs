@@ -136,6 +136,19 @@ namespace VRClassroom
         private void HandleVideoCompleted()
         {
             Debug.Log($"[PlayerStateManager] Video completed: {CurrentFile}");
+
+            bool isLooping = videoPlayerController != null && videoPlayerController.IsLooping;
+            if (!isLooping)
+            {
+                CurrentFile = string.Empty;
+                viewModeManager?.SetMode(ViewMode.None);
+                Debug.Log("[PlayerStateManager] Non-looping playback completed, cleared current file and switched to ViewMode.None.");
+            }
+            else
+            {
+                Debug.Log("[PlayerStateManager] Looping playback reached loop point, keeping current file and view mode.");
+            }
+
             OnPlayerStateUpdated?.Invoke();
         }
 

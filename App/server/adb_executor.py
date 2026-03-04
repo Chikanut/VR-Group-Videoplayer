@@ -206,6 +206,37 @@ class ADBExecutor:
     async def shell(self, ip: str, command: str) -> tuple[bool, str]:
         return await self._run(ip, ["shell"] + shlex.split(command))
 
+    async def set_component_enabled(self, ip: str, component: str, enabled: bool) -> tuple[bool, str]:
+        cmd = "pm enable" if enabled else "pm disable"
+        quoted_component = shlex.quote(component)
+        return await self.shell(ip, f"{cmd} {quoted_component}")
+
+    async def get_component_enabled(self, ip: str, component: str) -> bool | None:
+        quoted_component = shlex.quote(component)
+        # Prefer compact state from `cmd package list components`, then fallback to dumpsys.
+        success, output = await self.shell(
+            ip,
+            f"cmd package list components --user 0 {quoted_component}",
+        )
+        if success and output:
+            lowered = output.lower()
+            if "enabled" in lowered and "disabled" not in lowered:
+                return True
+            if "disabled" in lowered:
+                return False
+
+        success, output = await self.shell(
+            ip,
+            f"dumpsys package | grep -F {quoted_component}",
+        )
+        if success and output:
+            lowered = output.lower()
+            if "enabled" in lowered and "disabled" not in lowered:
+                return True
+            if "disabled" in lowered:
+                return False
+        return None
+
     async def ensure_directory(self, ip: str, device_path: str) -> bool:
         import os
         dir_path = os.path.dirname(device_path)
