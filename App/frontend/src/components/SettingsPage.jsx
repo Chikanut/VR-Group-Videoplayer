@@ -630,6 +630,20 @@ export default function SettingsPage() {
             <label className="checkbox-label">
               <input
                 type="checkbox"
+                checked={config.fastResyncOnFocus ?? true}
+                onChange={(e) => updateField('fastResyncOnFocus', e.target.checked)}
+              />
+              <span>Fast Resync on Focus</span>
+            </label>
+            <span className="form-hint">
+              Reconnect UI updates and force a quick device status sync when app/tab regains focus
+            </span>
+          </div>
+
+          <div className="form-group">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
                 checked={config.ignoreRequirements || false}
                 onChange={(e) => updateField('ignoreRequirements', e.target.checked)}
               />

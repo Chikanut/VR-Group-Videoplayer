@@ -101,5 +101,6 @@
   "deviceOfflineTimeout": 15,
   "statusPollInterval": 3,
   "updateConcurrency": 5,
-  "ignoreRequirements": true
+  "ignoreRequirements": true,
+  "fastResyncOnFocus": true
 }

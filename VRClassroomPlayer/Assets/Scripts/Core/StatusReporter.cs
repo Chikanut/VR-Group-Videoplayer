@@ -13,6 +13,7 @@ namespace VRClassroom
     {
         [SerializeField] private VideoPlayerController videoPlayer;
         [SerializeField] private ViewModeManager viewModeManager;
+        [SerializeField] private bool fastResyncOnFocus = PlayerConfig.FastResyncOnFocus;
 
         private float _lastReportTime;
         private float _lastRegistrationTime;
@@ -42,6 +43,8 @@ namespace VRClassroom
 
         private void Update()
         {
+            _pushEndpoint = PlayerPrefs.GetString("instructor_ip", string.Empty);
+
             if (Time.time - _lastReportTime >= PlayerConfig.StatusInterval)
             {
                 _lastReportTime = Time.time;
@@ -59,6 +62,39 @@ namespace VRClassroom
                 _lastRegistrationTime = Time.time;
                 PushRegistration();
             }
+        }
+
+        private void OnApplicationFocus(bool hasFocus)
+        {
+            if (!hasFocus)
+            {
+                return;
+            }
+
+            TriggerFastResync();
+        }
+
+        private void OnApplicationPause(bool paused)
+        {
+            if (paused)
+            {
+                return;
+            }
+
+            TriggerFastResync();
+        }
+
+        private void TriggerFastResync()
+        {
+            if (!fastResyncOnFocus)
+            {
+                return;
+            }
+
+            _lastRegistrationTime = Time.time;
+            _lastReportTime = Time.time;
+            PushRegistration();
+            ReportNow();
         }
 
         public void ReportNow()

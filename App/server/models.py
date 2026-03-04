@@ -51,6 +51,7 @@ class ConfigModel(BaseModel):
     requirementsPollInterval: int = 15
     updateConcurrency: int = 5
     ignoreRequirements: bool = False
+    fastResyncOnFocus: bool = True
 
 
 class DeviceRegistration(BaseModel):

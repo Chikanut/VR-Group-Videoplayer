@@ -25,6 +25,7 @@ DEFAULT_CONFIG = {
     "requirementsPollInterval": 15,
     "updateConcurrency": 5,
     "ignoreRequirements": False,
+    "fastResyncOnFocus": True,
 }
 
 DEVICE_VIDEO_DIR = "/sdcard/Movies"
