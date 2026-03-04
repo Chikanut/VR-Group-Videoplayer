@@ -9,9 +9,10 @@ namespace VRClassroom
 
         [SerializeField] private Transform vrCamera;
         [SerializeField] private ViewModeManager viewModeManager;
+        [SerializeField] private float recenterDebounceSeconds = 1f;
 
         private float _lastRecenterTime = -1f;
-        private const float DebounceDuration = 1f;
+        private bool _isRecentering;
 
         private void Awake()
         {
@@ -27,53 +28,67 @@ namespace VRClassroom
 
         public void Recenter()
         {
-            if (Time.time - _lastRecenterTime < DebounceDuration)
+            if (_isRecentering)
+            {
+                Debug.Log("[OrientationManager] Recenter already in progress, ignoring duplicate request.");
+                return;
+            }
+
+            if (Time.time - _lastRecenterTime < recenterDebounceSeconds)
             {
                 Debug.Log("[OrientationManager] Recenter debounced, ignoring.");
                 return;
             }
 
+            _isRecentering = true;
             _lastRecenterTime = Time.time;
 
-            // Rotate content (sphere/plane) so the "front" aligns with viewer's current gaze.
-            // We capture the camera's Y rotation and apply it to the content parent.
-            RecenterContent();
-
-#if UNITY_ANDROID && !UNITY_EDITOR
             try
             {
-                var subsystems = new System.Collections.Generic.List<UnityEngine.XR.XRInputSubsystem>();
-                UnityEngine.SubsystemManager.GetSubsystems(subsystems);
-                bool recentered = false;
+                // Rotate content (sphere/plane) so the "front" aligns with viewer's current gaze.
+                // We capture the camera's Y rotation and apply it to the content parent.
+                RecenterContent();
 
-                foreach (var subsystem in subsystems)
+#if UNITY_ANDROID && !UNITY_EDITOR
+                try
                 {
-                    if (subsystem.running)
+                    var subsystems = new System.Collections.Generic.List<UnityEngine.XR.XRInputSubsystem>();
+                    UnityEngine.SubsystemManager.GetSubsystems(subsystems);
+                    bool recentered = false;
+
+                    foreach (var subsystem in subsystems)
                     {
-                        subsystem.TryRecenter();
-                        recentered = true;
-                        break;
+                        if (subsystem.running)
+                        {
+                            subsystem.TryRecenter();
+                            recentered = true;
+                            break;
+                        }
+                    }
+
+                    if (!recentered)
+                    {
+                        Debug.LogWarning("[OrientationManager] No running XR input subsystem found for recenter.");
+                    }
+                    else
+                    {
+                        Debug.Log("[OrientationManager] Recentered via XR InputSubsystem.");
                     }
                 }
-
-                if (!recentered)
+                catch (Exception e)
                 {
-                    Debug.LogWarning("[OrientationManager] No running XR input subsystem found for recenter.");
+                    Debug.LogError($"[OrientationManager] XR recenter failed: {e.Message}");
                 }
-                else
-                {
-                    Debug.Log("[OrientationManager] Recentered via XR InputSubsystem.");
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"[OrientationManager] XR recenter failed: {e.Message}");
-            }
 #else
-            Debug.Log("[OrientationManager] XR recenter not available in Editor; content rotation applied.");
+                Debug.Log("[OrientationManager] XR recenter not available in Editor; content rotation applied.");
 #endif
 
-            OnRecentered?.Invoke();
+                OnRecentered?.Invoke();
+            }
+            finally
+            {
+                _isRecentering = false;
+            }
         }
 
         private void RecenterContent()
