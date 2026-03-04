@@ -111,6 +111,12 @@ async def _resolve_identity(ip: str, player_data: dict | None = None) -> tuple[s
     return await _read_stable_id_from_adb(ip)
 
 
+
+
+async def _get_autostart_state(ip: str, package_id: str) -> bool | None:
+    component = f"{package_id}/.BootCompletedReceiver"
+    return await adb_executor.get_component_enabled(ip, component)
+
 async def _get_battery_info(ip: str) -> tuple[int, bool]:
     """Extract battery level and charging state from device."""
     battery = -1
@@ -162,6 +168,7 @@ async def discovery_loop():
                     packages = await adb_executor.list_packages(ip)
                     package_id = config.get("packageId", "com.vrclassroom.player")
                     player_installed = package_id in packages
+                    autostart_enabled = await _get_autostart_state(ip, package_id)
 
                     device_id = stable_device_id
 
@@ -191,6 +198,7 @@ async def discovery_loop():
                                 loop=data.get("loop", False),
                                 locked=data.get("locked", False),
                                 uptime_minutes=data.get("uptimeMinutes", 0),
+                                autostart_enabled=autostart_enabled,
                             )
 
                             # If player reports a custom name, use it as fallback
@@ -245,6 +253,7 @@ async def discovery_loop():
                                         loop=data.get("loop", False),
                                         locked=data.get("locked", False),
                                         uptime_minutes=data.get("uptimeMinutes", 0),
+                                        autostart_enabled=autostart_enabled,
                                     )
                                     device_name = data.get("deviceName", "")
                                     if device_name:
@@ -260,6 +269,7 @@ async def discovery_loop():
                             stable_device_id=stable_device_id,
                             id_source=id_source,
                             adb_connected=True,
+                            autostart_enabled=autostart_enabled,
                             battery=battery,
                             battery_charging=charging,
                             installed_packages=packages,
@@ -304,6 +314,11 @@ async def _scan_usb_devices():
 
             ip = await adb_executor.get_usb_device_ip(serial)
 
+            package_id = get_config().get("packageId", "com.vrclassroom.player")
+            autostart_enabled = None
+            if ip:
+                autostart_enabled = await _get_autostart_state(ip, package_id)
+
             await device_manager.add_or_update(
                 device_id,
                 ip or "USB",
@@ -311,6 +326,7 @@ async def _scan_usb_devices():
                 id_source=id_source,
                 adb_connected=True,
                 usb_connected=True,
+                autostart_enabled=autostart_enabled,
             )
     except Exception as e:
         logger.debug("USB scan error: %s", e)
@@ -361,12 +377,15 @@ async def handle_self_registration(data: dict):
         if device and not device.adb_connected:
             connected = await adb_executor.connect(ip)
             if connected:
+                package_id = get_config().get("packageId", "com.vrclassroom.player")
+                autostart_enabled = await _get_autostart_state(ip, package_id)
                 await device_manager.add_or_update(
                     device_id,
                     ip=ip,
                     stable_device_id=device_id,
                     id_source=id_source,
                     adb_connected=True,
+                    autostart_enabled=autostart_enabled,
                 )
     except Exception:
         logger.exception("Self-registration handling failed. payload=%s", data)

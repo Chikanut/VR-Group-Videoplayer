@@ -65,6 +65,14 @@ export default function DeviceTile({ device, onClick }) {
             ) : (
               <span className="badge badge-warn">No Player</span>
             )}
+            {device.adbConnected && (
+              <span
+                className={`badge ${device.autostartEnabled === true ? 'badge-ok' : 'badge-warn'}`}
+                title="App autostart after boot"
+              >
+                Auto: {device.autostartEnabled === true ? 'On' : device.autostartEnabled === false ? 'Off' : '?'}
+              </span>
+            )}
             {!device.adbConnected && device.playerConnected && (
               <span className="badge badge-info" title="Connected via HTTP only. Playback available, but update/launch requires ADB.">
                 HTTP

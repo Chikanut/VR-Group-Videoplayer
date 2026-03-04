@@ -9,6 +9,7 @@ import {
   launchPlayerSingle,
   toggleDeviceDebug,
   setDeviceVolume,
+  setDeviceAutostart,
 } from '../api';
 import UpdateProgress from './UpdateProgress';
 
@@ -19,6 +20,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
   const [requirements, setRequirements] = useState(null);
   const [loadingReqs, setLoadingReqs] = useState(false);
   const [personalVolume, setPersonalVolume] = useState(1);
+  const [updatingAutostart, setUpdatingAutostart] = useState(false);
   const volumeDebounceRef = useRef(null);
 
   useEffect(() => {
@@ -128,6 +130,12 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
                   {device.playerConnected ? `Connected (v${device.playerVersion})` : 'Not connected'}
                 </td>
               </tr>
+              <tr>
+                <td>Autostart</td>
+                <td className={device.autostartEnabled === true ? 'text-ok' : 'text-warn'}>
+                  {device.autostartEnabled === true ? 'Enabled' : device.autostartEnabled === false ? 'Disabled' : 'Unknown'}
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -178,6 +186,28 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
               This device is connected via HTTP only (no ADB). Playback commands work normally.
               To enable app updates and content push, connect the device via USB and run USB Init with Wireless ADB enabled.
             </p>
+          </div>
+        )}
+
+        {device.online && device.adbConnected && (
+          <div className="dialog-section">
+            <h3>Autostart</h3>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={device.autostartEnabled === true}
+                disabled={updatingAutostart}
+                onChange={async (e) => {
+                  setUpdatingAutostart(true);
+                  const result = await setDeviceAutostart(deviceId, e.target.checked);
+                  if (result.error) {
+                    alert(result.error);
+                  }
+                  setUpdatingAutostart(false);
+                }}
+              />
+              <span>Launch app automatically after device boot</span>
+            </label>
           </div>
         )}
 
