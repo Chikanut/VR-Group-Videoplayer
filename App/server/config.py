@@ -22,6 +22,7 @@ DEFAULT_CONFIG = {
     "playerPort": 8080,
     "deviceOfflineTimeout": 30,
     "statusPollInterval": 5,
+    "requirementsPollInterval": 15,
     "updateConcurrency": 5,
     "ignoreRequirements": False,
 }

@@ -26,6 +26,8 @@ const useDeviceStore = create((set, get) => ({
       const devices = { ...state.devices };
       if (data.isNew && data.device) {
         devices[data.deviceId] = data.device;
+      } else if (data.device) {
+        devices[data.deviceId] = data.device;
       } else if (data.changes && devices[data.deviceId]) {
         devices[data.deviceId] = { ...devices[data.deviceId], ...data.changes };
       }
