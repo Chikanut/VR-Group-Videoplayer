@@ -1,8 +1,6 @@
 import asyncio
 import logging
-import re
 import socket
-from typing import Callable
 
 import aiohttp
 
@@ -77,6 +75,41 @@ async def _check_player_http(ip: str, player_port: int, max_retries: int = 2) ->
     return None
 
 
+
+
+async def _read_stable_id_from_adb(ip: str) -> tuple[str, str]:
+    """Get the best available stable ID from Android via ADB."""
+    success, android_id = await adb_executor.shell(ip, "settings get secure android_id")
+    if success:
+        value = android_id.strip()
+        if value and value.lower() != "null":
+            return value, "android_id"
+
+    success, serial = await adb_executor.shell(ip, "getprop ro.serialno")
+    if success:
+        value = serial.strip()
+        if value and value.lower() != "unknown":
+            return value, "android_id"
+
+    success, mac_output = await adb_executor.shell(ip, "cat /sys/class/net/wlan0/address")
+    if success:
+        mac = mac_output.strip().replace(":", "")
+        if mac:
+            return mac, "mac"
+
+    return ip, "ip"
+
+
+async def _resolve_identity(ip: str, player_data: dict | None = None) -> tuple[str, str]:
+    """Resolve stable device identity with strict source priority."""
+    if player_data:
+        player_reported_id = str(player_data.get("deviceId", "")).strip()
+        if player_reported_id:
+            return player_reported_id, "player"
+
+    return await _read_stable_id_from_adb(ip)
+
+
 async def _get_battery_info(ip: str) -> tuple[int, bool]:
     """Extract battery level and charging state from device."""
     battery = -1
@@ -121,11 +154,7 @@ async def discovery_loop():
             for ip in discovered_ips:
                 connected = await adb_executor.connect(ip)
                 if connected:
-                    # Get MAC as fallback device_id
-                    success, mac_output = await adb_executor.shell(
-                        ip, "cat /sys/class/net/wlan0/address"
-                    )
-                    fallback_id = mac_output.strip().replace(":", "") if success and mac_output.strip() else ip
+                    stable_device_id, id_source = await _read_stable_id_from_adb(ip)
 
                     battery, charging = await _get_battery_info(ip)
 
@@ -133,22 +162,20 @@ async def discovery_loop():
                     package_id = config.get("packageId", "com.vrclassroom.player")
                     player_installed = package_id in packages
 
-                    # Use fallback_id initially; will be replaced by player-reported ID if available
-                    device_id = fallback_id
+                    device_id = stable_device_id
 
                     # Try to connect to player HTTP with retries
                     if player_installed:
                         player_port = config.get("playerPort", 8080)
                         data = await _check_player_http(ip, player_port)
                         if data:
-                            # Prefer player-reported deviceId over MAC — it's stable across networks
-                            player_reported_id = data.get("deviceId", "")
-                            if player_reported_id:
-                                device_id = player_reported_id
+                            device_id, id_source = await _resolve_identity(ip, data)
 
                             await device_manager.add_or_update(
                                 device_id,
                                 ip,
+                                stable_device_id=device_id,
+                                id_source=id_source,
                                 adb_connected=True,
                                 battery=battery,
                                 battery_charging=charging,
@@ -173,6 +200,8 @@ async def discovery_loop():
                             await device_manager.add_or_update(
                                 device_id,
                                 ip,
+                                stable_device_id=stable_device_id,
+                                id_source=id_source,
                                 adb_connected=True,
                                 battery=battery,
                                 battery_charging=charging,
@@ -199,12 +228,12 @@ async def discovery_loop():
                                 await asyncio.sleep(5)
                                 data = await _check_player_http(ip, player_port, max_retries=3)
                                 if data:
-                                    player_reported_id = data.get("deviceId", "")
-                                    if player_reported_id:
-                                        device_id = player_reported_id
+                                    device_id, id_source = await _resolve_identity(ip, data)
                                     await device_manager.add_or_update(
                                         device_id,
                                         ip,
+                                        stable_device_id=device_id,
+                                        id_source=id_source,
                                         player_connected=True,
                                         player_version=data.get("playerVersion", data.get("version", "")),
                                         playback_state=data.get("state", "idle"),
@@ -227,6 +256,8 @@ async def discovery_loop():
                         await device_manager.add_or_update(
                             device_id,
                             ip,
+                            stable_device_id=stable_device_id,
+                            id_source=id_source,
                             adb_connected=True,
                             battery=battery,
                             battery_charging=charging,
@@ -252,17 +283,31 @@ async def _scan_usb_devices():
     try:
         usb_serials = await adb_executor.list_usb_devices()
         for serial in usb_serials:
-            # Get MAC for device_id
-            success, mac_output = await adb_executor.run_on_serial(
-                serial, ["shell", "cat", "/sys/class/net/wlan0/address"]
+            success, android_id_output = await adb_executor.run_on_serial(
+                serial, ["shell", "settings", "get", "secure", "android_id"]
             )
-            device_id = mac_output.strip().replace(":", "") if success and mac_output.strip() else f"usb_{serial}"
+            android_id = android_id_output.strip() if success else ""
+            if android_id and android_id.lower() != "null":
+                device_id = android_id
+                id_source = "android_id"
+            else:
+                success, mac_output = await adb_executor.run_on_serial(
+                    serial, ["shell", "cat", "/sys/class/net/wlan0/address"]
+                )
+                if success and mac_output.strip():
+                    device_id = mac_output.strip().replace(":", "")
+                    id_source = "mac"
+                else:
+                    device_id = serial
+                    id_source = "android_id"
 
             ip = await adb_executor.get_usb_device_ip(serial)
 
             await device_manager.add_or_update(
                 device_id,
                 ip or "USB",
+                stable_device_id=device_id,
+                id_source=id_source,
                 adb_connected=True,
                 usb_connected=True,
             )
@@ -272,12 +317,14 @@ async def _scan_usb_devices():
 
 async def handle_self_registration(data: dict):
     """Handle self-registration from a player device."""
-    device_id = data["deviceId"]
     ip = data["ip"]
+    device_id, id_source = await _resolve_identity(ip, data)
 
     await device_manager.add_or_update(
         device_id,
         ip,
+        stable_device_id=device_id,
+        id_source=id_source,
         battery=data.get("battery", -1),
         player_connected=True,
         player_version=data.get("playerVersion", ""),
@@ -293,4 +340,4 @@ async def handle_self_registration(data: dict):
     if device and not device.adb_connected:
         connected = await adb_executor.connect(ip)
         if connected:
-            await device_manager.add_or_update(device_id, ip, adb_connected=True)
+            await device_manager.add_or_update(device_id, ip, stable_device_id=device_id, id_source=id_source, adb_connected=True)

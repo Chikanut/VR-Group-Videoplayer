@@ -15,6 +15,8 @@ logger = logging.getLogger("vrclassroom.devices")
 class DeviceManager:
     def __init__(self):
         self._devices: dict[str, DeviceState] = {}
+        self._device_identity_index: dict[str, str] = {}
+        self._ip_index: dict[str, str] = {}
         self._lock = asyncio.Lock()
         self._polling_task: asyncio.Task | None = None
         self._offline_task: asyncio.Task | None = None
@@ -34,26 +36,88 @@ class DeviceManager:
         if self._player_recheck_task:
             self._player_recheck_task.cancel()
 
+    def _remove_indexes_for_device(self, device_id: str):
+        stale_identity = [k for k, v in self._device_identity_index.items() if v == device_id]
+        for key in stale_identity:
+            del self._device_identity_index[key]
+        stale_ip = [k for k, v in self._ip_index.items() if v == device_id]
+        for key in stale_ip:
+            del self._ip_index[key]
+
     async def add_or_update(self, device_id: str, ip: str, **kwargs) -> DeviceState:
         push_saved_name = False
         saved_name_value = ""
+        device_removed_id: str | None = None
+        broadcast_full_update = False
+        stable_device_id_override = kwargs.pop("stable_device_id", None)
+        incoming_id_source_override = kwargs.pop("id_source", None)
+        stable_device_id = stable_device_id_override or device_id
+        incoming_id_source = incoming_id_source_override or "ip"
         async with self._lock:
-            is_new = device_id not in self._devices
+            resolved_id = self._device_identity_index.get(stable_device_id)
+            ip_matched_id = self._ip_index.get(ip)
+
+            if resolved_id and resolved_id not in self._devices:
+                self._remove_indexes_for_device(resolved_id)
+                resolved_id = None
+
+            if ip_matched_id and ip_matched_id not in self._devices:
+                self._remove_indexes_for_device(ip_matched_id)
+                ip_matched_id = None
+
+            if not resolved_id and device_id in self._devices:
+                resolved_id = device_id
+
+            # If stable identity is still unknown but this IP is already online, merge into it.
+            if not resolved_id and ip_matched_id:
+                ip_device = self._devices.get(ip_matched_id)
+                if ip_device and ip_device.online:
+                    resolved_id = ip_matched_id
+
+            is_new = resolved_id is None
+            canonical_id = resolved_id or device_id
+
             if is_new:
-                device = DeviceState(device_id, ip)
-                saved_name = get_device_name(device_id)
+                device = DeviceState(canonical_id, ip)
+                saved_name = get_device_name(canonical_id)
                 if saved_name:
                     device.name = saved_name
                     # Will push saved name to device so it stays in sync
                     push_saved_name = True
                     saved_name_value = saved_name
-                self._devices[device_id] = device
-                logger.info("New device discovered: %s (%s)", device_id, ip)
+                self._devices[canonical_id] = device
+                logger.info("New device discovered: %s (%s)", canonical_id, ip)
             else:
-                device = self._devices[device_id]
+                device = self._devices[canonical_id]
                 device.ip = ip  # Update IP in case of DHCP change
+                if not stable_device_id_override:
+                    stable_device_id = device.stable_device_id
+                if not incoming_id_source_override:
+                    incoming_id_source = device.id_source
 
+            # Promote temporary IDs (IP/MAC) to stronger stable IDs when available.
+            if canonical_id != device_id and incoming_id_source != "ip" and stable_device_id == device_id:
+                self._devices[device_id] = device
+                del self._devices[canonical_id]
+                self._remove_indexes_for_device(canonical_id)
+                device_removed_id = canonical_id
+                canonical_id = device_id
+                device.device_id = device_id
+                broadcast_full_update = True
+
+            old_id_source = device.id_source
             old_dict = device.to_dict()
+
+            device.stable_device_id = stable_device_id
+            device.id_source = incoming_id_source
+            if old_id_source != device.id_source:
+                logger.info(
+                    "Device %s idSource changed: %s -> %s",
+                    canonical_id,
+                    old_id_source,
+                    device.id_source,
+                )
+
             device.last_seen = time.time()
             device.online = True
 
@@ -61,23 +125,42 @@ class DeviceManager:
                 if hasattr(device, key):
                     setattr(device, key, value)
 
+            self._remove_indexes_for_device(canonical_id)
+            self._device_identity_index[stable_device_id] = canonical_id
+            self._ip_index[ip] = canonical_id
+
             new_dict = device.to_dict()
             player_connected = device.player_connected
 
         # Broadcast changes
+        if device_removed_id:
+            await ws_manager.broadcast({
+                "type": "device_removed",
+                "deviceId": device_removed_id,
+            })
+
         if is_new:
             await ws_manager.broadcast({
                 "type": "device_update",
-                "deviceId": device_id,
+                "deviceId": canonical_id,
                 "device": new_dict,
                 "isNew": True,
             })
         else:
+            if broadcast_full_update:
+                await ws_manager.broadcast({
+                    "type": "device_update",
+                    "deviceId": canonical_id,
+                    "device": new_dict,
+                    "isNew": False,
+                })
+                return device
+
             changes = {k: v for k, v in new_dict.items() if old_dict.get(k) != v}
             if changes:
                 await ws_manager.broadcast({
                     "type": "device_update",
-                    "deviceId": device_id,
+                    "deviceId": canonical_id,
                     "changes": changes,
                 })
 
@@ -102,14 +185,16 @@ class DeviceManager:
 
     async def remove(self, device_id: str) -> bool:
         async with self._lock:
-            if device_id in self._devices:
-                del self._devices[device_id]
-                await ws_manager.broadcast({
-                    "type": "device_removed",
-                    "deviceId": device_id,
-                })
-                return True
-            return False
+            if device_id not in self._devices:
+                return False
+            del self._devices[device_id]
+            self._remove_indexes_for_device(device_id)
+
+        await ws_manager.broadcast({
+            "type": "device_removed",
+            "deviceId": device_id,
+        })
+        return True
 
     async def update_name(self, device_id: str, name: str) -> bool:
         async with self._lock:

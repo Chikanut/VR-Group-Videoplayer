@@ -64,6 +64,8 @@ class DeviceRegistration(BaseModel):
 class DeviceState:
     def __init__(self, device_id: str, ip: str):
         self.device_id: str = device_id
+        self.stable_device_id: str = device_id
+        self.id_source: str = "ip"
         self.ip: str = ip
         self.name: str = ""
         self.battery: int = -1
@@ -94,6 +96,8 @@ class DeviceState:
     def to_dict(self) -> dict[str, Any]:
         return {
             "deviceId": self.device_id,
+            "stableDeviceId": self.stable_device_id,
+            "idSource": self.id_source,
             "ip": self.ip,
             "name": self.name or self.device_id,
             "battery": self.battery,
