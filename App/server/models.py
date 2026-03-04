@@ -94,6 +94,7 @@ class DeviceState:
         self.usb_connected: bool = False
         self.personal_volume: float = 1.0
         self.effective_volume: float = 1.0
+        self.autostart_enabled: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -125,6 +126,7 @@ class DeviceState:
             "usbConnected": self.usb_connected,
             "personalVolume": self.personal_volume,
             "effectiveVolume": self.effective_volume,
+            "autostartEnabled": self.autostart_enabled,
         }
 
 
@@ -153,3 +155,12 @@ class VolumeUpdate(BaseModel):
 
 class DeviceVolumeUpdate(VolumeUpdate):
     deviceId: str
+
+
+class AutostartUpdate(BaseModel):
+    enabled: bool
+
+
+class BulkAutostartUpdate(BaseModel):
+    enabled: bool
+    deviceIds: list[str] = []

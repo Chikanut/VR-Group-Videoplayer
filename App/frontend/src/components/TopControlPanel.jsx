@@ -1,7 +1,7 @@
 import React, { useRef, useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useDeviceStore from '../store/deviceStore';
-import { playbackCommand, updateAllDevices, getUsbDevices, updateUsbDevice, launchPlayer, getGlobalVolume, setGlobalVolume } from '../api';
+import { playbackCommand, updateAllDevices, getUsbDevices, updateUsbDevice, launchPlayer, getGlobalVolume, setGlobalVolume, setBulkAutostart } from '../api';
 
 export default function TopControlPanel({ onPlayAll }) {
   const navigate = useNavigate();
@@ -13,6 +13,9 @@ export default function TopControlPanel({ onPlayAll }) {
   const hasCommandTargets = onlineDevices.some((d) => d.playerConnected || (ignoreReq && d.adbConnected));
   const hasAdbDevices = onlineDevices.some((d) => d.adbConnected);
   const adbNoPlayer = onlineDevices.filter((d) => d.adbConnected && !d.playerConnected);
+  const onlineAdbDevices = onlineDevices.filter((d) => d.adbConnected);
+  const allAutostartEnabled = onlineAdbDevices.length > 0 && onlineAdbDevices.every((d) => d.autostartEnabled === true);
+  const hasKnownAutostartState = onlineAdbDevices.some((d) => typeof d.autostartEnabled === 'boolean');
   const debounceRef = useRef({});
   const [usbScanning, setUsbScanning] = useState(false);
   const [usbMenuOpen, setUsbMenuOpen] = useState(false);
@@ -163,6 +166,23 @@ export default function TopControlPanel({ onPlayAll }) {
             </div>
           )}
         </div>
+        <button
+          className="btn"
+          disabled={!hasAdbDevices}
+          title={allAutostartEnabled ? 'Disable autostart on all online ADB devices' : 'Enable autostart on all online ADB devices'}
+          onClick={() => debounce('bulkAutostart', async () => {
+            const nextEnabled = !allAutostartEnabled;
+            const result = await setBulkAutostart(nextEnabled);
+            const ok = result.success?.length || 0;
+            const failed = result.failed?.length || 0;
+            if (failed > 0) {
+              alert(`Autostart ${nextEnabled ? 'enable' : 'disable'}: ${ok} succeeded, ${failed} failed.`);
+            }
+          })}
+        >
+          {allAutostartEnabled ? 'Disable Autostart' : 'Enable Autostart'}
+          {hasKnownAutostartState && ` (${onlineAdbDevices.filter((d) => d.autostartEnabled === true).length}/${onlineAdbDevices.length})`}
+        </button>
         <button
           className="btn"
           disabled={!hasAdbDevices}
