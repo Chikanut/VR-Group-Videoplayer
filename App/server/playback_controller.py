@@ -14,12 +14,29 @@ logger = logging.getLogger("vrclassroom.playback")
 REQUEST_TIMEOUT = 5
 global_volume = 1.0
 BOOT_RECEIVER_CLASS = ".BootCompletedReceiver"
+COMMAND_RECEIVER_CLASS = ".CommandReceiver"
+
+
+def _adb_action_prefix() -> str:
+    config = get_config()
+    return config.get("adbActionPrefix", "com.vrclass.player")
+
+
+def _adb_action(command: str) -> str:
+    prefix = _adb_action_prefix().rstrip(".")
+    return f"{prefix}.{command.upper()}"
 
 
 def _boot_receiver_component() -> str:
     config = get_config()
-    package_id = config.get("packageId", "com.vrclassroom.player")
+    package_id = config.get("packageId", "com.vrclass.player")
     return f"{package_id}/{BOOT_RECEIVER_CLASS}"
+
+
+def _command_receiver_component() -> str:
+    config = get_config()
+    package_id = config.get("packageId", "com.vrclass.player")
+    return f"{package_id}/{COMMAND_RECEIVER_CLASS}"
 
 
 async def _send_to_player(ip: str, method: str, path: str, json_body: dict | None = None) -> dict[str, Any]:
@@ -52,11 +69,9 @@ async def _send_to_player(ip: str, method: str, path: str, json_body: dict | Non
 async def _send_via_adb(ip: str, command: str, intent_extra: str = "") -> dict[str, Any]:
     """Send a command to device via ADB intent as fallback."""
     config = get_config()
-    package_id = config.get("packageId", "com.vrclassroom.player")
-    cmd = (
-        f"am broadcast -a {package_id}.{command} "
-        f"-n {package_id}/.CommandReceiver"
-    )
+    action = _adb_action(command)
+    component = _command_receiver_component()
+    cmd = f"am broadcast -a {action} -n {component}"
     if intent_extra:
         cmd += f" {intent_extra}"
     success, output = await adb_executor.shell(ip, cmd)
@@ -218,7 +233,7 @@ async def send_command(command: str, device_ids: list[str]) -> dict[str, Any]:
 async def launch_player(device_ids: list[str]) -> dict[str, Any]:
     """Launch the player app on target devices via ADB."""
     config = get_config()
-    package_id = config.get("packageId", "com.vrclassroom.player")
+    package_id = config.get("packageId", "com.vrclass.player")
     player_port = config.get("playerPort", 8080)
 
     # Resolve to online ADB-connected devices

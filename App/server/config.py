@@ -13,7 +13,8 @@ DEVICE_NAMES_PATH = Path(__file__).parent.parent / "device_names.json"
 
 DEFAULT_CONFIG = {
     "apkPath": "",
-    "packageId": "com.vrclassroom.player",
+    "packageId": "com.vrclass.player",
+    "adbActionPrefix": "com.vrclass.player",
     "requirementVideos": [],
     "batteryThreshold": 20,
     "scanInterval": 30,

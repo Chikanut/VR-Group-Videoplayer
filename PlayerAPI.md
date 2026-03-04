@@ -6,6 +6,8 @@
 - **ADB Broadcast** — широкомовні інтенти через `adb shell am broadcast`
 
 Пакет додатку: `com.vrclass.player`
+ADB action-prefix (єдиний namespace для команд): `com.vrclass.player`
+Компонент receiver: `com.vrclass.player/.CommandReceiver`
 Відео шлях на пристрої: `/sdcard/Movies/`
 
 ---
@@ -55,6 +57,7 @@ curl -X POST http://<IP>:8080/open \
 **ADB:**
 ```bash
 adb shell am broadcast -a com.vrclass.player.OPEN \
+  -n com.vrclass.player/.CommandReceiver \
   --es file "lesson01.mp4" \
   --es mode "360"
 ```
@@ -72,7 +75,7 @@ curl -X POST http://<IP>:8080/play
 
 **ADB:**
 ```bash
-adb shell am broadcast -a com.vrclass.player.PLAY
+adb shell am broadcast -a com.vrclass.player.PLAY -n com.vrclass.player/.CommandReceiver
 ```
 
 ---
@@ -86,7 +89,7 @@ curl -X POST http://<IP>:8080/pause
 
 **ADB:**
 ```bash
-adb shell am broadcast -a com.vrclass.player.PAUSE
+adb shell am broadcast -a com.vrclass.player.PAUSE -n com.vrclass.player/.CommandReceiver
 ```
 
 ---
@@ -102,7 +105,7 @@ curl -X POST http://<IP>:8080/stop
 
 **ADB:**
 ```bash
-adb shell am broadcast -a com.vrclass.player.STOP
+adb shell am broadcast -a com.vrclass.player.STOP -n com.vrclass.player/.CommandReceiver
 ```
 
 ---
@@ -118,7 +121,7 @@ curl -X POST http://<IP>:8080/restart
 
 **ADB:**
 ```bash
-adb shell am broadcast -a com.vrclass.player.RESTART
+adb shell am broadcast -a com.vrclass.player.RESTART -n com.vrclass.player/.CommandReceiver
 ```
 
 ---
@@ -134,7 +137,7 @@ curl -X POST http://<IP>:8080/recenter
 
 **ADB:**
 ```bash
-adb shell am broadcast -a com.vrclass.player.RECENTER
+adb shell am broadcast -a com.vrclass.player.RECENTER -n com.vrclass.player/.CommandReceiver
 ```
 
 ---
@@ -151,6 +154,7 @@ adb shell am broadcast -a com.vrclass.player.RECENTER
 **ADB:**
 ```bash
 adb shell am broadcast -a com.vrclass.player.SET_MODE \
+  -n com.vrclass.player/.CommandReceiver \
   --es mode "360"
 ```
 
@@ -168,6 +172,7 @@ adb shell am broadcast -a com.vrclass.player.SET_MODE \
 **ADB:**
 ```bash
 adb shell am broadcast -a com.vrclass.player.SET_LOOP \
+  -n com.vrclass.player/.CommandReceiver \
   --es loop "true"
 ```
 
@@ -219,7 +224,7 @@ curl http://<IP>:8080/status
 
 **ADB:**
 ```bash
-adb shell am broadcast -a com.vrclass.player.GET_STATUS
+adb shell am broadcast -a com.vrclass.player.GET_STATUS -n com.vrclass.player/.CommandReceiver
 ```
 > ADB-варіант виводить статус у Android logcat (тег `VRPlayer`):
 > ```bash
@@ -309,7 +314,7 @@ curl -X POST http://<IP>:8080/debug \
 
 **ADB:**
 ```bash
-adb shell am broadcast -a com.vrclass.player.TOGGLE_DEBUG
+adb shell am broadcast -a com.vrclass.player.TOGGLE_DEBUG -n com.vrclass.player/.CommandReceiver
 ```
 
 ---
