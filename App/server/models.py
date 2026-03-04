@@ -39,7 +39,8 @@ class RequirementVideo(BaseModel):
 
 class ConfigModel(BaseModel):
     apkPath: str = ""
-    packageId: str = "com.vrclassroom.player"
+    packageId: str = "com.vrclass.player"
+    adbActionPrefix: str = "com.vrclass.player"
     requirementVideos: list[RequirementVideo] = []
     batteryThreshold: int = 20
     scanInterval: int = 30
