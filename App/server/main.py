@@ -35,7 +35,12 @@ from .playback_controller import (
     set_global_volume,
     toggle_debug,
 )
-from .requirements_manager import check_requirements, run_update, run_usb_update
+from .requirements_manager import (
+    check_requirements,
+    requirements_refresh_loop,
+    run_update,
+    run_usb_update,
+)
 from .websocket_manager import ws_manager
 
 logging.basicConfig(
@@ -45,11 +50,12 @@ logging.basicConfig(
 logger = logging.getLogger("vrclassroom")
 
 _discovery_task: asyncio.Task | None = None
+_requirements_refresh_task: asyncio.Task | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _discovery_task
+    global _discovery_task, _requirements_refresh_task
     # Startup
     load_config()
     has_adb = await adb_executor.check_adb()
@@ -57,11 +63,14 @@ async def lifespan(app: FastAPI):
         logger.warning("ADB not found in PATH. ADB-dependent features will not work.")
     await device_manager.start()
     _discovery_task = asyncio.create_task(discovery_loop())
+    _requirements_refresh_task = asyncio.create_task(requirements_refresh_loop())
     logger.info("VR Classroom server started")
     yield
     # Shutdown
     if _discovery_task:
         _discovery_task.cancel()
+    if _requirements_refresh_task:
+        _requirements_refresh_task.cancel()
     await device_manager.stop()
     logger.info("VR Classroom server stopped")
 

@@ -48,6 +48,7 @@ class ConfigModel(BaseModel):
     playerPort: int = 8080
     deviceOfflineTimeout: int = 30
     statusPollInterval: int = 5
+    requirementsPollInterval: int = 15
     updateConcurrency: int = 5
     ignoreRequirements: bool = False
 

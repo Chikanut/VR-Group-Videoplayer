@@ -607,6 +607,16 @@ export default function SettingsPage() {
             />
           </div>
           <div className="form-group">
+            <label>Requirements Poll Interval (seconds)</label>
+            <input
+              type="number"
+              min="5"
+              max="120"
+              value={config.requirementsPollInterval || 15}
+              onChange={(e) => updateField('requirementsPollInterval', parseInt(e.target.value) || 15)}
+            />
+          </div>
+          <div className="form-group">
             <label>Update Concurrency</label>
             <input
               type="number"

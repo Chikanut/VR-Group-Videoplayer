@@ -136,6 +136,41 @@ async def check_requirements(device_id: str) -> list[dict[str, Any]]:
     return results
 
 
+async def requirements_refresh_loop():
+    """Periodically refresh requirements for online devices."""
+    await asyncio.sleep(5)
+    while True:
+        try:
+            config = get_config()
+            interval = config.get("requirementsPollInterval", 15)
+            concurrency = config.get("updateConcurrency", 5)
+            await asyncio.sleep(interval)
+
+            devices = await device_manager.get_all()
+            candidates = [
+                d for d in devices
+                if d.get("online") and not d.get("updateInProgress")
+            ]
+
+            if not candidates:
+                continue
+
+            semaphore = asyncio.Semaphore(max(1, concurrency))
+
+            async def _check_with_limit(device_id: str):
+                async with semaphore:
+                    await check_requirements(device_id)
+
+            tasks = [_check_with_limit(d["deviceId"]) for d in candidates]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error("Requirements refresh loop error: %s", e)
+            await asyncio.sleep(5)
+
+
 async def run_update(device_id: str) -> dict[str, Any]:
     """Run the update process for a device: install APK + push missing videos."""
     lock = _get_update_lock(device_id)

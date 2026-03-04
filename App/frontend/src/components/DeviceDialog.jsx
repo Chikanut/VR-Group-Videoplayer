@@ -25,7 +25,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
     if (device) {
       setEditName(device.name || device.deviceId);
       setPersonalVolume(typeof device.personalVolume === 'number' ? device.personalVolume : 1);
-      loadRequirements();
+      setRequirements(device.requirementsDetail || null);
     }
   }, [deviceId]);
 
@@ -46,6 +46,12 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
     }
     setLoadingReqs(false);
   };
+
+  useEffect(() => {
+    if (device) {
+      setRequirements(device.requirementsDetail || null);
+    }
+  }, [device?.requirementsDetail]);
 
   if (!device) {
     return (
