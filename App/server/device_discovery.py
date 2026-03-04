@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import socket
+import time
 
 import aiohttp
 
@@ -317,27 +318,55 @@ async def _scan_usb_devices():
 
 async def handle_self_registration(data: dict):
     """Handle self-registration from a player device."""
-    ip = data["ip"]
-    device_id, id_source = await _resolve_identity(ip, data)
+    try:
+        ip = str(data.get("ip", "")).strip()
+        incoming_device_id = str(data.get("deviceId", "")).strip()
+        if not incoming_device_id or not ip:
+            logger.warning(
+                "Skipping self-registration due to invalid payload: deviceId=%r ip=%r payload=%s",
+                data.get("deviceId"),
+                data.get("ip"),
+                data,
+            )
+            return
 
-    await device_manager.add_or_update(
-        device_id,
-        ip,
-        stable_device_id=device_id,
-        id_source=id_source,
-        battery=data.get("battery", -1),
-        player_connected=True,
-        player_version=data.get("playerVersion", ""),
-        installed_packages=data.get("installedPackages", []),
-    )
+        device_id, id_source = await _resolve_identity(ip, data)
 
-    # If device reports a custom name, use it (unless server already has one)
-    device_name = data.get("deviceName", "")
-    if device_name:
-        await device_manager.apply_device_name_from_device(device_id, device_name)
+        await device_manager.add_or_update(
+            device_id,
+            ip=ip,
+            stable_device_id=device_id,
+            id_source=id_source,
+            battery=data.get("battery", -1),
+            player_connected=True,
+            player_version=data.get("playerVersion", ""),
+            installed_packages=data.get("installedPackages", []),
+        )
 
-    device = await device_manager.get(device_id)
-    if device and not device.adb_connected:
-        connected = await adb_executor.connect(ip)
-        if connected:
-            await device_manager.add_or_update(device_id, ip, stable_device_id=device_id, id_source=id_source, adb_connected=True)
+        await device_manager.add_or_update(
+            device_id,
+            ip=ip,
+            stable_device_id=device_id,
+            id_source=id_source,
+            last_player_response=time.time(),
+            player_connected=True,
+        )
+
+        # If device reports a custom name, use it (unless server already has one)
+        device_name = data.get("deviceName", "")
+        if device_name:
+            await device_manager.apply_device_name_from_device(device_id, device_name)
+
+        device = await device_manager.get(device_id)
+        if device and not device.adb_connected:
+            connected = await adb_executor.connect(ip)
+            if connected:
+                await device_manager.add_or_update(
+                    device_id,
+                    ip=ip,
+                    stable_device_id=device_id,
+                    id_source=id_source,
+                    adb_connected=True,
+                )
+    except Exception:
+        logger.exception("Self-registration handling failed. payload=%s", data)
