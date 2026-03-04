@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .adb_executor import adb_executor
 from .config import get_config, load_config, update_config
-from .device_discovery import discovery_loop, handle_self_registration
+from .device_discovery import battery_poll_loop, discovery_loop, handle_self_registration
 from .device_manager import device_manager
 from .models import (
     AutostartUpdate,
@@ -55,12 +55,13 @@ logging.basicConfig(
 logger = logging.getLogger("vrclassroom")
 
 _discovery_task: asyncio.Task | None = None
+_battery_poll_task: asyncio.Task | None = None
 _requirements_refresh_task: asyncio.Task | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _discovery_task, _requirements_refresh_task
+    global _discovery_task, _battery_poll_task, _requirements_refresh_task
     # Startup
     load_config()
     has_adb = await adb_executor.check_adb()
@@ -68,12 +69,15 @@ async def lifespan(app: FastAPI):
         logger.warning("ADB not found in PATH. ADB-dependent features will not work.")
     await device_manager.start()
     _discovery_task = asyncio.create_task(discovery_loop())
+    _battery_poll_task = asyncio.create_task(battery_poll_loop())
     _requirements_refresh_task = asyncio.create_task(requirements_refresh_loop())
     logger.info("VR Classroom server started")
     yield
     # Shutdown
     if _discovery_task:
         _discovery_task.cancel()
+    if _battery_poll_task:
+        _battery_poll_task.cancel()
     if _requirements_refresh_task:
         _requirements_refresh_task.cancel()
     await device_manager.stop()
