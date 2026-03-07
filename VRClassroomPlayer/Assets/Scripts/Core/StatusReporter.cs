@@ -100,6 +100,26 @@ namespace VRClassroom
             return sb.ToString();
         }
 
+        public void ReportNow()
+        {
+            string json = GetStatusJson();
+        #if UNITY_ANDROID && !UNITY_EDITOR
+            try
+            {
+                using (var logClass = new AndroidJavaClass("android.util.Log"))
+                {
+                    logClass.CallStatic<int>("i", "VRPlayer", json);
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[StatusReporter] Android Log failed: {e.Message}");
+            }
+        #else
+            Debug.Log($"[VRPlayer] {json}");
+        #endif
+        }
+
         public static int GetBatteryPercent()
         {
             float level = SystemInfo.batteryLevel;

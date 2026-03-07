@@ -474,11 +474,7 @@ namespace VRClassroom
                         {
                             float globalVol = ExtractJsonFloat(raw, "globalVolume", 1f);
                             float personalVol = ExtractJsonFloat(raw, "personalVolume", 1f);
-                            if (videoPlayer != null)
-                            {
-                                videoPlayer.GlobalVolume = globalVol;
-                                videoPlayer.PersonalVolume = personalVol;
-                            }
+                            videoPlayer?.SetVolume(globalVol, personalVol);
                             break;
                         }
                     case "set_mode":
