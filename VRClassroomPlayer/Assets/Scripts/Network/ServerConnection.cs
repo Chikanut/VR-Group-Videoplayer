@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
@@ -11,6 +13,7 @@ namespace VRClassroom
     /// <summary>
     /// WebSocket client that connects to the instructor server.
     /// Handles registration, heartbeat status updates, and command reception.
+    /// Auto-discovers the server on the local network if not configured.
     /// </summary>
     public class ServerConnection : MonoBehaviour
     {
@@ -21,7 +24,11 @@ namespace VRClassroom
 
         private const float HeartbeatInterval = 5f;
         private const float ReconnectDelay = 3f;
+        private const float DiscoveryRetryDelay = 10f;
         private const int ReceiveBufferSize = 8192;
+        private const int ServerPort = 8000;
+        private const int DiscoveryConcurrency = 30;
+        private const int DiscoveryTimeoutMs = 2000;
 
         private ClientWebSocket _ws;
         private CancellationTokenSource _cts;
@@ -30,6 +37,8 @@ namespace VRClassroom
         private bool _connected;
         private string _serverUrl;
         private string _deviceId;
+        private bool _discovering;
+        private int _connectionFailures;
 
         private void Start()
         {
@@ -38,7 +47,7 @@ namespace VRClassroom
 
             if (string.IsNullOrEmpty(_serverUrl))
             {
-                Debug.Log("[ServerConnection] No instructor_ip configured, WS disabled. Will retry when set.");
+                Debug.Log("[ServerConnection] No instructor_ip configured. Will auto-discover server on network.");
             }
 
             _cts = new CancellationTokenSource();
@@ -47,7 +56,6 @@ namespace VRClassroom
 
         private void Update()
         {
-            // Process queued main-thread actions
             while (_mainThreadQueue.TryDequeue(out var action))
             {
                 try
@@ -60,7 +68,6 @@ namespace VRClassroom
                 }
             }
 
-            // Send heartbeat
             if (_connected && Time.time - _lastHeartbeatTime >= HeartbeatInterval)
             {
                 _lastHeartbeatTime = Time.time;
@@ -73,7 +80,6 @@ namespace VRClassroom
             if (hasFocus && !_connected)
             {
                 Debug.Log("[ServerConnection] App focused, attempting immediate reconnect");
-                // Force reconnect attempt
                 _serverUrl = BuildServerUrl();
                 CloseWebSocket();
                 StartConnectionLoop();
@@ -94,7 +100,7 @@ namespace VRClassroom
             if (server.Contains(":"))
                 return $"ws://{server}/ws/device";
             else
-                return $"ws://{server}:8000/ws/device";
+                return $"ws://{server}:{ServerPort}/ws/device";
         }
 
         private async void StartConnectionLoop()
@@ -105,15 +111,49 @@ namespace VRClassroom
             {
                 _serverUrl = BuildServerUrl();
 
+                // If no server configured, try to discover it
                 if (string.IsNullOrEmpty(_serverUrl))
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(ReconnectDelay), token).ConfigureAwait(false);
-                    continue;
+                    if (!_discovering)
+                    {
+                        _discovering = true;
+                        string discovered = await DiscoverServer(token);
+                        _discovering = false;
+
+                        if (!string.IsNullOrEmpty(discovered))
+                        {
+                            _mainThreadQueue.Enqueue(() =>
+                            {
+                                PlayerPrefs.SetString("instructor_ip", discovered);
+                                PlayerPrefs.Save();
+                                Debug.Log($"[ServerConnection] Server discovered and saved: {discovered}");
+                            });
+                            _serverUrl = $"ws://{discovered}/ws/device";
+                            _connectionFailures = 0;
+                        }
+                        else
+                        {
+                            Debug.Log($"[ServerConnection] Server not found on network. Retrying in {DiscoveryRetryDelay}s...");
+                            try
+                            {
+                                await Task.Delay(TimeSpan.FromSeconds(DiscoveryRetryDelay), token).ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException) { break; }
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(ReconnectDelay), token).ConfigureAwait(false);
+                        continue;
+                    }
                 }
 
                 try
                 {
                     await ConnectAndRun(token).ConfigureAwait(false);
+                    // If we get here, WS closed normally
+                    _connectionFailures = 0;
                 }
                 catch (OperationCanceledException)
                 {
@@ -122,6 +162,19 @@ namespace VRClassroom
                 catch (Exception e)
                 {
                     Debug.LogWarning($"[ServerConnection] Connection error: {e.Message}");
+                    _connectionFailures++;
+
+                    // After 3 consecutive failures, clear saved IP and re-discover
+                    if (_connectionFailures >= 3)
+                    {
+                        Debug.Log("[ServerConnection] Too many failures, clearing saved server IP to re-discover");
+                        _mainThreadQueue.Enqueue(() =>
+                        {
+                            PlayerPrefs.SetString("instructor_ip", string.Empty);
+                            PlayerPrefs.Save();
+                        });
+                        _connectionFailures = 0;
+                    }
                 }
 
                 _connected = false;
@@ -141,6 +194,128 @@ namespace VRClassroom
             }
         }
 
+        // ─── Server Auto-Discovery ──────────────────────────────────────────
+
+        private async Task<string> DiscoverServer(CancellationToken token)
+        {
+            string localIp = StatusReporter.GetLocalIPAddress();
+            if (string.IsNullOrEmpty(localIp) || localIp == "0.0.0.0")
+            {
+                Debug.LogWarning("[ServerConnection] Cannot discover server: no local IP");
+                return null;
+            }
+
+            string[] parts = localIp.Split('.');
+            if (parts.Length != 4)
+            {
+                Debug.LogWarning($"[ServerConnection] Cannot discover server: unexpected IP format {localIp}");
+                return null;
+            }
+
+            string subnet = $"{parts[0]}.{parts[1]}.{parts[2]}";
+            Debug.Log($"[ServerConnection] Scanning subnet {subnet}.0/24 for server on port {ServerPort}...");
+
+            var semaphore = new SemaphoreSlim(DiscoveryConcurrency);
+            var foundServer = new TaskCompletionSource<string>();
+            var tasks = new Task[254];
+
+            for (int i = 1; i <= 254; i++)
+            {
+                string ip = $"{subnet}.{i}";
+                tasks[i - 1] = ProbeServerAt(ip, semaphore, foundServer, token);
+            }
+
+            try
+            {
+                // Race: either we find a server or all probes complete
+                var allDone = Task.WhenAll(tasks);
+                var winner = await Task.WhenAny(foundServer.Task, allDone).ConfigureAwait(false);
+
+                if (foundServer.Task.IsCompleted && foundServer.Task.Result != null)
+                {
+                    Debug.Log($"[ServerConnection] Found server at {foundServer.Task.Result}");
+                    return foundServer.Task.Result;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[ServerConnection] Discovery scan error: {e.Message}");
+            }
+
+            Debug.Log("[ServerConnection] No server found on subnet");
+            return null;
+        }
+
+        private async Task ProbeServerAt(string ip, SemaphoreSlim semaphore, TaskCompletionSource<string> found, CancellationToken token)
+        {
+            // If already found, skip
+            if (found.Task.IsCompleted) return;
+
+            await semaphore.WaitAsync(token).ConfigureAwait(false);
+            try
+            {
+                if (found.Task.IsCompleted) return;
+
+                // Quick TCP connect check
+                using (var client = new TcpClient())
+                {
+                    var connectTask = client.ConnectAsync(ip, ServerPort);
+                    var completed = await Task.WhenAny(
+                        connectTask,
+                        Task.Delay(DiscoveryTimeoutMs, token)
+                    ).ConfigureAwait(false);
+
+                    if (completed != connectTask || !client.Connected)
+                        return;
+                }
+
+                if (found.Task.IsCompleted) return;
+
+                // Verify it's our server by hitting /api/server-info
+                string url = $"http://{ip}:{ServerPort}/api/server-info";
+                var request = WebRequest.CreateHttp(url);
+                request.Timeout = DiscoveryTimeoutMs;
+                request.Method = "GET";
+
+                try
+                {
+                    using (var response = (HttpWebResponse)await request.GetResponseAsync().ConfigureAwait(false))
+                    {
+                        if (response.StatusCode == HttpStatusCode.OK)
+                        {
+                            using (var reader = new System.IO.StreamReader(response.GetResponseStream()))
+                            {
+                                string body = await reader.ReadToEndAsync().ConfigureAwait(false);
+                                if (body.Contains("\"ip\"") && body.Contains("\"port\""))
+                                {
+                                    found.TrySetResult($"{ip}:{ServerPort}");
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // Not our server
+                }
+            }
+            catch
+            {
+                // Connection failed
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        }
+
+        // ─── WebSocket Connection ───────────────────────────────────────────
+
         private async Task ConnectAndRun(CancellationToken token)
         {
             CloseWebSocket();
@@ -149,12 +324,11 @@ namespace VRClassroom
             Debug.Log($"[ServerConnection] Connecting to {_serverUrl}...");
             await _ws.ConnectAsync(new Uri(_serverUrl), token).ConfigureAwait(false);
             _connected = true;
+            _connectionFailures = 0;
             Debug.Log($"[ServerConnection] Connected to {_serverUrl}");
 
-            // Send register message
             await SendRegister(token).ConfigureAwait(false);
 
-            // Receive loop
             var buffer = new byte[ReceiveBufferSize];
             var messageBuilder = new StringBuilder();
 
@@ -209,10 +383,7 @@ namespace VRClassroom
 
             try
             {
-                // Get status JSON from StatusReporter (must be called on main thread)
                 string statusJson = statusReporter != null ? statusReporter.GetStatusJson() : "{}";
-
-                // Wrap in status message
                 string message = "{\"type\":\"status\"," + statusJson.Substring(1);
 
                 var token = _cts?.Token ?? CancellationToken.None;
@@ -238,11 +409,12 @@ namespace VRClassroom
             ).ConfigureAwait(false);
         }
 
+        // ─── Command Handling ───────────────────────────────────────────────
+
         private void HandleServerMessage(string raw)
         {
             try
             {
-                // Simple JSON parsing for command messages
                 string msgType = ExtractJsonString(raw, "type");
                 if (msgType != "command") return;
 
@@ -250,8 +422,6 @@ namespace VRClassroom
                 if (string.IsNullOrEmpty(action)) return;
 
                 Debug.Log($"[ServerConnection] Command received: {action}");
-
-                // Queue command execution on main thread
                 _mainThreadQueue.Enqueue(() => ExecuteCommand(action, raw));
             }
             catch (Exception e)
