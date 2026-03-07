@@ -18,6 +18,19 @@ namespace VRClassroom
     /// </summary>
     public class ServerConnection : MonoBehaviour
     {
+        [Serializable]
+        private class WsCommandMessage
+        {
+            public string type;
+            public string commandId;
+            public string action;
+            public string file;
+            public string mode;
+            public bool loop;
+            public float globalVolume;
+            public float personalVolume;
+        }
+
         [SerializeField] private StatusReporter statusReporter;
         [SerializeField] private VideoPlayerController videoPlayer;
         [SerializeField] private ViewModeManager viewModeManager;
@@ -30,6 +43,8 @@ namespace VRClassroom
         private const int ServerPort = 8000;
         private const int DiscoveryConcurrency = 30;
         private const int DiscoveryTimeoutMs = 2000;
+        private const int MessagePreviewLength = 160;
+        private const string VerboseNetworkLogsPrefKey = "verbose_network_logs";
 
         private ClientWebSocket _ws;
         private CancellationTokenSource _cts;
@@ -40,6 +55,8 @@ namespace VRClassroom
         private string _deviceId;
         private bool _discovering;
         private int _connectionFailures;
+        private int _reconnectAttempt;
+        private int _discoveryAttempt;
 
         private void Start()
         {
@@ -110,7 +127,9 @@ namespace VRClassroom
 
             while (!token.IsCancellationRequested)
             {
+                _reconnectAttempt++;
                 _serverUrl = BuildServerUrl();
+                LogInfo("connection_loop_iteration", null, $"reconnectAttempt={_reconnectAttempt}, serverUrl={SafeValue(_serverUrl)}");
 
                 // If no server configured, try to discover it
                 if (string.IsNullOrEmpty(_serverUrl))
@@ -118,6 +137,8 @@ namespace VRClassroom
                     if (!_discovering)
                     {
                         _discovering = true;
+                        _discoveryAttempt++;
+                        LogInfo("discovery_start", null, $"attempt={_discoveryAttempt}");
                         string discovered = await DiscoverServer(token);
                         _discovering = false;
 
@@ -131,10 +152,11 @@ namespace VRClassroom
                             });
                             _serverUrl = $"ws://{discovered}/ws/device";
                             _connectionFailures = 0;
+                            LogInfo("discovery_success", null, $"attempt={_discoveryAttempt}, discovered={discovered}");
                         }
                         else
                         {
-                            Debug.Log($"[ServerConnection] Server not found on network. Retrying in {DiscoveryRetryDelay}s...");
+                            LogWarning("discovery_not_found", null, $"attempt={_discoveryAttempt}, retryInSec={DiscoveryRetryDelay}");
                             try
                             {
                                 await Task.Delay(TimeSpan.FromSeconds(DiscoveryRetryDelay), token).ConfigureAwait(false);
@@ -162,7 +184,7 @@ namespace VRClassroom
                 }
                 catch (Exception e)
                 {
-                    Debug.LogWarning($"[ServerConnection] Connection error: {e.Message}");
+                    LogWarning("connection_error", null, $"attempt={_reconnectAttempt}, reason={e.GetType().Name}: {e.Message}");
                     _connectionFailures++;
 
                     // After 3 consecutive failures, clear saved IP and re-discover
@@ -182,7 +204,7 @@ namespace VRClassroom
 
                 if (!token.IsCancellationRequested)
                 {
-                    Debug.Log($"[ServerConnection] Disconnected, reconnecting in {ReconnectDelay}s...");
+                    LogInfo("reconnect_scheduled", null, $"attempt={_reconnectAttempt}, retryInSec={ReconnectDelay}, failures={_connectionFailures}");
                     try
                     {
                         await Task.Delay(TimeSpan.FromSeconds(ReconnectDelay), token).ConfigureAwait(false);
@@ -244,7 +266,7 @@ namespace VRClassroom
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[ServerConnection] Discovery scan error: {e.Message}");
+                LogWarning("discovery_error", null, $"attempt={_discoveryAttempt}, reason={e.GetType().Name}: {e.Message}");
             }
 
             Debug.Log("[ServerConnection] No server found on subnet");
@@ -300,14 +322,14 @@ namespace VRClassroom
                         }
                     }
                 }
-                catch
+                catch (Exception e)
                 {
-                    // Not our server
+                    LogVerbose("discovery_probe_http_error", null, $"attempt={_discoveryAttempt}, ip={ip}, reason={e.GetType().Name}: {e.Message}");
                 }
             }
-            catch
+            catch (Exception e)
             {
-                // Connection failed
+                LogVerbose("discovery_probe_connect_error", null, $"attempt={_discoveryAttempt}, ip={ip}, reason={e.GetType().Name}: {e.Message}");
             }
             finally
             {
@@ -380,6 +402,7 @@ namespace VRClassroom
 
         private async void SendHeartbeat()
         {
+            LogVerbose("heartbeat_prepare", null, $"wsState={GetWebSocketState()}");
             if (_ws == null || _ws.State != WebSocketState.Open) return;
 
             try
@@ -399,6 +422,7 @@ namespace VRClassroom
 
         private async Task SendText(string text, CancellationToken token)
         {
+            LogVerbose("send_text_prepare", null, $"wsState={GetWebSocketState()}, payloadLength={text?.Length ?? 0}");
             if (_ws == null || _ws.State != WebSocketState.Open) return;
 
             var bytes = Encoding.UTF8.GetBytes(text);
@@ -414,34 +438,61 @@ namespace VRClassroom
 
         private void HandleServerMessage(string raw)
         {
+            int rawLength = raw?.Length ?? 0;
+            string preview = CreatePayloadPreview(raw);
+
             try
             {
-                string msgType = ExtractJsonString(raw, "type");
-                if (msgType != "command") return;
+                var command = JsonUtility.FromJson<WsCommandMessage>(raw);
+                if (command == null)
+                {
+                    LogWarning("message_dropped", null, $"reason=invalid json, rawLength={rawLength}, preview={preview}");
+                    return;
+                }
 
-                string action = ExtractJsonString(raw, "action");
-                if (string.IsNullOrEmpty(action)) return;
+                string commandId = ResolveCommandId(command);
+                LogInfo("message_received", commandId,
+                    $"rawLength={rawLength}, preview={preview}, msgType={SafeValue(command.type)}, action={SafeValue(command.action)}");
 
-                Debug.Log($"[ServerConnection] Command received: {action}");
-                _mainThreadQueue.Enqueue(() => ExecuteCommand(action, raw));
+                if (!string.Equals(command.type, "command", StringComparison.Ordinal))
+                {
+                    LogWarning("message_dropped", commandId,
+                        $"reason=unexpected type, msgType={SafeValue(command.type)}, action={SafeValue(command.action)}");
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(command.action))
+                {
+                    LogWarning("message_dropped", commandId, "reason=missing action");
+                    return;
+                }
+
+                LogInfo("command_received", commandId, $"action={command.action}");
+                LogInfo("queue_enqueue", commandId, $"action={command.action}");
+                _mainThreadQueue.Enqueue(() => ExecuteCommand(command, raw));
             }
             catch (Exception e)
             {
-                Debug.LogWarning($"[ServerConnection] Failed to parse server message: {e.Message}");
+                LogWarning("message_dropped", null,
+                    $"reason=invalid json, rawLength={rawLength}, preview={preview}, parseError={e.GetType().Name}: {e.Message}");
             }
         }
 
-        private void ExecuteCommand(string action, string raw)
+        private void ExecuteCommand(WsCommandMessage command, string raw)
         {
+            string action = command.action;
+            string commandId = ResolveCommandId(command);
             try
             {
                 switch (action.ToLowerInvariant())
                 {
                     case "open":
                         {
-                            string file = ExtractJsonString(raw, "file");
-                            string mode = ExtractJsonString(raw, "mode");
-                            bool loop = ExtractJsonBool(raw, "loop");
+                            string file = command.file;
+                            string mode = command.mode;
+                            bool loop = command.loop;
+                            LogInfo("command_start", commandId,
+                                $"action=open, file={SafeValue(file)}, mode={SafeValue(mode)}, loop={loop}");
 
                             if (viewModeManager != null && !string.IsNullOrEmpty(mode))
                             {
@@ -450,61 +501,83 @@ namespace VRClassroom
                                     viewModeManager.SetMode(vm);
                             }
 
+                            bool openInvoked = false;
                             if (videoPlayer != null && !string.IsNullOrEmpty(file))
                             {
                                 videoPlayer.Open(file);
                                 videoPlayer.IsLooping = loop;
+                                openInvoked = true;
                             }
+                            LogInfo("command_end", commandId,
+                                $"action=open, file={SafeValue(file)}, mode={SafeValue(mode)}, loop={loop}, openInvoked={openInvoked}");
                             break;
                         }
                     case "play":
+                        LogInfo("command_start", commandId, "action=play");
                         videoPlayer?.Play();
+                        LogInfo("command_end", commandId, "action=play");
                         break;
                     case "pause":
+                        LogInfo("command_start", commandId, "action=pause");
                         videoPlayer?.Pause();
+                        LogInfo("command_end", commandId, "action=pause");
                         break;
                     case "stop":
+                        LogInfo("command_start", commandId, "action=stop");
                         videoPlayer?.Stop();
                         if (viewModeManager != null)
                             viewModeManager.SetMode(ViewMode.None);
+                        LogInfo("command_end", commandId, "action=stop");
                         break;
                     case "recenter":
+                        LogInfo("command_start", commandId, "action=recenter");
                         orientationManager?.Recenter();
+                        LogInfo("command_end", commandId, "action=recenter");
                         break;
                     case "set_volume":
                         {
-                            float globalVol = ExtractJsonFloat(raw, "globalVolume", 1f);
-                            float personalVol = ExtractJsonFloat(raw, "personalVolume", 1f);
+                            float globalVol = HasJsonField(raw, "globalVolume") ? command.globalVolume : 1f;
+                            float personalVol = HasJsonField(raw, "personalVolume") ? command.personalVolume : 1f;
+                            LogInfo("command_start", commandId,
+                                $"action=set_volume, globalVolume={globalVol}, personalVolume={personalVol}");
                             videoPlayer?.SetVolume(globalVol, personalVol);
+                            LogInfo("command_end", commandId,
+                                $"action=set_volume, globalVolume={globalVol}, personalVolume={personalVol}");
                             break;
                         }
                     case "set_mode":
                         {
-                            string mode = ExtractJsonString(raw, "mode");
+                            string mode = command.mode;
+                            LogInfo("command_start", commandId, $"action=set_mode, mode={SafeValue(mode)}");
                             if (viewModeManager != null && !string.IsNullOrEmpty(mode))
                             {
                                 ViewMode vm = ADBCommandRouter.ParseMode(mode);
                                 viewModeManager.SetMode(vm);
                             }
+                            LogInfo("command_end", commandId, $"action=set_mode, mode={SafeValue(mode)}");
                             break;
                         }
                     case "ping":
+                        LogInfo("command_start", commandId, "action=ping");
                         PlayPingSound();
+                        LogInfo("command_end", commandId, "action=ping");
                         break;
                     case "toggle_debug":
                         {
+                            LogInfo("command_start", commandId, "action=toggle_debug");
                             var debugPanel = FindObjectOfType<DebugLogPanel>();
                             if (debugPanel != null) debugPanel.Toggle();
+                            LogInfo("command_end", commandId, "action=toggle_debug");
                             break;
                         }
                     default:
-                        Debug.LogWarning($"[ServerConnection] Unknown command: {action}");
+                        LogWarning("command_unknown", commandId, $"action={SafeValue(action)}");
                         break;
                 }
             }
             catch (Exception e)
             {
-                Debug.LogError($"[ServerConnection] Command execution failed ({action}): {e}");
+                Debug.LogError($"[ServerConnection][event=command_error][commandId={commandId}] action={SafeValue(action)}, reason={e.GetType().Name}: {e.Message}");
             }
         }
 
@@ -539,6 +612,7 @@ namespace VRClassroom
 
         private void CloseWebSocket()
         {
+            LogVerbose("close_ws_prepare", null, $"wsState={GetWebSocketState()}");
             if (_ws != null)
             {
                 try
@@ -555,43 +629,62 @@ namespace VRClassroom
             }
         }
 
-        // ─── Simple JSON helpers (avoid dependency on external JSON libs) ────
+        // ─── Minimal JSON fallback helpers ───────────────────────────────────
 
-        private static string ExtractJsonString(string json, string key)
+        private static bool HasJsonField(string json, string key)
         {
-            string search = $"\"{key}\":\"";
-            int start = json.IndexOf(search, StringComparison.Ordinal);
-            if (start < 0) return null;
-            start += search.Length;
-            int end = json.IndexOf('"', start);
-            if (end < 0) return null;
-            return json.Substring(start, end - start).Replace("\\\"", "\"").Replace("\\\\", "\\");
+            return json.IndexOf($"\"{key}\"", StringComparison.Ordinal) >= 0;
         }
 
-        private static bool ExtractJsonBool(string json, string key)
+        private static string ResolveCommandId(WsCommandMessage command)
         {
-            string search = $"\"{key}\":";
-            int start = json.IndexOf(search, StringComparison.Ordinal);
-            if (start < 0) return false;
-            start += search.Length;
-            return json.Substring(start).TrimStart().StartsWith("true", StringComparison.OrdinalIgnoreCase);
+            if (command == null || string.IsNullOrWhiteSpace(command.commandId))
+                return "n/a";
+
+            return command.commandId;
         }
 
-        private static float ExtractJsonFloat(string json, string key, float defaultValue)
+        private static string CreatePayloadPreview(string raw)
         {
-            string search = $"\"{key}\":";
-            int start = json.IndexOf(search, StringComparison.Ordinal);
-            if (start < 0) return defaultValue;
-            start += search.Length;
-            string rest = json.Substring(start).TrimStart();
-            int end = 0;
-            while (end < rest.Length && (char.IsDigit(rest[end]) || rest[end] == '.' || rest[end] == '-'))
-                end++;
-            if (end == 0) return defaultValue;
-            if (float.TryParse(rest.Substring(0, end), System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out float result))
-                return result;
-            return defaultValue;
+            if (string.IsNullOrEmpty(raw))
+                return "<empty>";
+
+            return raw.Length <= MessagePreviewLength
+                ? raw
+                : raw.Substring(0, MessagePreviewLength) + "...";
+        }
+
+        private static string SafeValue(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? "<null>" : value;
+        }
+
+        private string GetWebSocketState()
+        {
+            return _ws?.State.ToString() ?? "<null>";
+        }
+
+        private bool IsVerboseNetworkLogsEnabled()
+        {
+            return PlayerPrefs.GetInt(VerboseNetworkLogsPrefKey, 0) == 1;
+        }
+
+        private void LogInfo(string stage, string commandId, string details)
+        {
+            Debug.Log($"[ServerConnection][stage={stage}][commandId={commandId ?? "n/a"}] {details}");
+        }
+
+        private void LogWarning(string stage, string commandId, string details)
+        {
+            Debug.LogWarning($"[ServerConnection][stage={stage}][commandId={commandId ?? "n/a"}] {details}");
+        }
+
+        private void LogVerbose(string stage, string commandId, string details)
+        {
+            if (!IsVerboseNetworkLogsEnabled())
+                return;
+
+            LogInfo(stage, commandId, details);
         }
     }
 }
