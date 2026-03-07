@@ -18,6 +18,18 @@ namespace VRClassroom
     /// </summary>
     public class ServerConnection : MonoBehaviour
     {
+        [Serializable]
+        private class WsCommandMessage
+        {
+            public string type;
+            public string action;
+            public string file;
+            public string mode;
+            public bool loop;
+            public float globalVolume;
+            public float personalVolume;
+        }
+
         [SerializeField] private StatusReporter statusReporter;
         [SerializeField] private VideoPlayerController videoPlayer;
         [SerializeField] private ViewModeManager viewModeManager;
@@ -416,14 +428,27 @@ namespace VRClassroom
         {
             try
             {
-                string msgType = ExtractJsonString(raw, "type");
-                if (msgType != "command") return;
+                var command = JsonUtility.FromJson<WsCommandMessage>(raw);
+                if (command == null)
+                {
+                    Debug.LogWarning("[ServerConnection] Ignoring message: failed to deserialize command payload");
+                    return;
+                }
 
-                string action = ExtractJsonString(raw, "action");
-                if (string.IsNullOrEmpty(action)) return;
+                if (!string.Equals(command.type, "command", StringComparison.Ordinal))
+                {
+                    Debug.LogWarning($"[ServerConnection] Ignoring message: unexpected type '{command.type ?? "<null>"}'");
+                    return;
+                }
 
-                Debug.Log($"[ServerConnection] Command received: {action}");
-                _mainThreadQueue.Enqueue(() => ExecuteCommand(action, raw));
+                if (string.IsNullOrWhiteSpace(command.action))
+                {
+                    Debug.LogWarning("[ServerConnection] Ignoring command: 'action' is missing or empty");
+                    return;
+                }
+
+                Debug.Log($"[ServerConnection] Command received: {command.action}");
+                _mainThreadQueue.Enqueue(() => ExecuteCommand(command, raw));
             }
             catch (Exception e)
             {
@@ -431,17 +456,18 @@ namespace VRClassroom
             }
         }
 
-        private void ExecuteCommand(string action, string raw)
+        private void ExecuteCommand(WsCommandMessage command, string raw)
         {
+            string action = command.action;
             try
             {
                 switch (action.ToLowerInvariant())
                 {
                     case "open":
                         {
-                            string file = ExtractJsonString(raw, "file");
-                            string mode = ExtractJsonString(raw, "mode");
-                            bool loop = ExtractJsonBool(raw, "loop");
+                            string file = command.file;
+                            string mode = command.mode;
+                            bool loop = command.loop;
 
                             if (viewModeManager != null && !string.IsNullOrEmpty(mode))
                             {
@@ -473,14 +499,14 @@ namespace VRClassroom
                         break;
                     case "set_volume":
                         {
-                            float globalVol = ExtractJsonFloat(raw, "globalVolume", 1f);
-                            float personalVol = ExtractJsonFloat(raw, "personalVolume", 1f);
+                            float globalVol = HasJsonField(raw, "globalVolume") ? command.globalVolume : 1f;
+                            float personalVol = HasJsonField(raw, "personalVolume") ? command.personalVolume : 1f;
                             videoPlayer?.SetVolume(globalVol, personalVol);
                             break;
                         }
                     case "set_mode":
                         {
-                            string mode = ExtractJsonString(raw, "mode");
+                            string mode = command.mode;
                             if (viewModeManager != null && !string.IsNullOrEmpty(mode))
                             {
                                 ViewMode vm = ADBCommandRouter.ParseMode(mode);
@@ -555,43 +581,11 @@ namespace VRClassroom
             }
         }
 
-        // ─── Simple JSON helpers (avoid dependency on external JSON libs) ────
+        // ─── Minimal JSON fallback helpers ───────────────────────────────────
 
-        private static string ExtractJsonString(string json, string key)
+        private static bool HasJsonField(string json, string key)
         {
-            string search = $"\"{key}\":\"";
-            int start = json.IndexOf(search, StringComparison.Ordinal);
-            if (start < 0) return null;
-            start += search.Length;
-            int end = json.IndexOf('"', start);
-            if (end < 0) return null;
-            return json.Substring(start, end - start).Replace("\\\"", "\"").Replace("\\\\", "\\");
-        }
-
-        private static bool ExtractJsonBool(string json, string key)
-        {
-            string search = $"\"{key}\":";
-            int start = json.IndexOf(search, StringComparison.Ordinal);
-            if (start < 0) return false;
-            start += search.Length;
-            return json.Substring(start).TrimStart().StartsWith("true", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static float ExtractJsonFloat(string json, string key, float defaultValue)
-        {
-            string search = $"\"{key}\":";
-            int start = json.IndexOf(search, StringComparison.Ordinal);
-            if (start < 0) return defaultValue;
-            start += search.Length;
-            string rest = json.Substring(start).TrimStart();
-            int end = 0;
-            while (end < rest.Length && (char.IsDigit(rest[end]) || rest[end] == '.' || rest[end] == '-'))
-                end++;
-            if (end == 0) return defaultValue;
-            if (float.TryParse(rest.Substring(0, end), System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out float result))
-                return result;
-            return defaultValue;
+            return json.IndexOf($"\"{key}\"", StringComparison.Ordinal) >= 0;
         }
     }
 }
