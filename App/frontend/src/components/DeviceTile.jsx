@@ -13,17 +13,30 @@ function getBorderClass(device) {
 }
 
 function BatteryIcon({ level, charging }) {
-  if (level < 0) return <span className="battery-unknown">?</span>;
+  if (level <= 0) return null;
   let icon = '🔋';
   if (charging) icon = '⚡';
   else if (level <= 10) icon = '🪫';
   return <span className="battery-icon">{icon} {level}%</span>;
 }
 
+function ConnectionBadge({ device }) {
+  if (!device.online) {
+    return <span className="badge badge-offline">Offline</span>;
+  }
+  if (device.playerConnected) {
+    return <span className="badge badge-ok" title="Connected via WebSocket">WS</span>;
+  }
+  if (device.adbConnected) {
+    return <span className="badge badge-warn" title="ADB only - player not running">ADB only</span>;
+  }
+  return <span className="badge badge-offline">Offline</span>;
+}
+
 export default function DeviceTile({ device, onClick }) {
   const config = useDeviceStore((s) => s.config);
   const threshold = config?.batteryThreshold || 20;
-  const isLowBattery = device.battery >= 0 && device.battery <= threshold;
+  const isLowBattery = device.battery > 0 && device.battery <= threshold;
   const isPlaying = device.playbackState === 'playing' || device.playbackState === 'paused';
 
   const handlePing = (e) => {
@@ -51,36 +64,9 @@ export default function DeviceTile({ device, onClick }) {
       </div>
 
       <div className="tile-status-row">
-        {device.online ? (
-          <>
-            {device.adbConnected ? (
-              <span className="badge badge-ok">ADB</span>
-            ) : (
-              <span className="badge badge-warn" title="ADB not connected. Update/Launch unavailable. Connect via USB Init to enable.">
-                No ADB
-              </span>
-            )}
-            {device.playerConnected ? (
-              <span className="badge badge-ok">Player</span>
-            ) : (
-              <span className="badge badge-warn">No Player</span>
-            )}
-            {device.adbConnected && (
-              <span
-                className={`badge ${device.autostartEnabled === true ? 'badge-ok' : 'badge-warn'}`}
-                title="App autostart after boot"
-              >
-                Auto: {device.autostartEnabled === true ? 'On' : device.autostartEnabled === false ? 'Off' : '?'}
-              </span>
-            )}
-            {!device.adbConnected && device.playerConnected && (
-              <span className="badge badge-info" title="Connected via HTTP only. Playback available, but update/launch requires ADB.">
-                HTTP
-              </span>
-            )}
-          </>
-        ) : (
-          <span className="badge badge-offline">Offline</span>
+        <ConnectionBadge device={device} />
+        {device.online && device.adbConnected && !device.playerConnected && (
+          <span className="badge badge-warn">No Player</span>
         )}
       </div>
 
@@ -113,7 +99,10 @@ export default function DeviceTile({ device, onClick }) {
             <div className="progress-bar">
               <div
                 className="progress-fill"
-                style={{ width: `${(device.playbackTime / device.playbackDuration) * 100}%` }}
+                style={{
+                  width: `${(device.playbackTime / device.playbackDuration) * 100}%`,
+                  transition: 'width 1s linear',
+                }}
               />
             </div>
           )}

@@ -15,108 +15,39 @@ logger = logging.getLogger("vrclassroom.devices")
 class DeviceManager:
     def __init__(self):
         self._devices: dict[str, DeviceState] = {}
-        self._device_identity_index: dict[str, str] = {}
-        self._ip_index: dict[str, str] = {}
+        self._ip_to_device: dict[str, str] = {}
         self._lock = asyncio.Lock()
-        self._polling_task: asyncio.Task | None = None
         self._offline_task: asyncio.Task | None = None
-        self._player_recheck_task: asyncio.Task | None = None
 
     async def start(self):
         load_device_names()
-        self._polling_task = asyncio.create_task(self._poll_loop())
         self._offline_task = asyncio.create_task(self._offline_check_loop())
-        self._player_recheck_task = asyncio.create_task(self._player_recheck_loop())
 
     async def stop(self):
-        if self._polling_task:
-            self._polling_task.cancel()
         if self._offline_task:
             self._offline_task.cancel()
-        if self._player_recheck_task:
-            self._player_recheck_task.cancel()
-
-    def _remove_indexes_for_device(self, device_id: str):
-        stale_identity = [k for k, v in self._device_identity_index.items() if v == device_id]
-        for key in stale_identity:
-            del self._device_identity_index[key]
-        stale_ip = [k for k, v in self._ip_index.items() if v == device_id]
-        for key in stale_ip:
-            del self._ip_index[key]
 
     async def add_or_update(self, device_id: str, ip: str, **kwargs) -> DeviceState:
+        """Simple upsert by device_id. IP is tracked but not used as identifier."""
         push_saved_name = False
         saved_name_value = ""
-        device_removed_id: str | None = None
-        broadcast_full_update = False
-        stable_device_id_override = kwargs.pop("stable_device_id", None)
-        incoming_id_source_override = kwargs.pop("id_source", None)
-        stable_device_id = stable_device_id_override or device_id
-        incoming_id_source = incoming_id_source_override or "ip"
         async with self._lock:
-            resolved_id = self._device_identity_index.get(stable_device_id)
-            ip_matched_id = self._ip_index.get(ip)
-
-            if resolved_id and resolved_id not in self._devices:
-                self._remove_indexes_for_device(resolved_id)
-                resolved_id = None
-
-            if ip_matched_id and ip_matched_id not in self._devices:
-                self._remove_indexes_for_device(ip_matched_id)
-                ip_matched_id = None
-
-            if not resolved_id and device_id in self._devices:
-                resolved_id = device_id
-
-            # If stable identity is still unknown but this IP is already online, merge into it.
-            if not resolved_id and ip_matched_id:
-                ip_device = self._devices.get(ip_matched_id)
-                if ip_device and ip_device.online:
-                    resolved_id = ip_matched_id
-
-            is_new = resolved_id is None
-            canonical_id = resolved_id or device_id
+            is_new = device_id not in self._devices
 
             if is_new:
-                device = DeviceState(canonical_id, ip)
-                saved_name = get_device_name(canonical_id)
+                device = DeviceState(device_id, ip)
+                saved_name = get_device_name(device_id)
                 if saved_name:
                     device.name = saved_name
-                    # Will push saved name to device so it stays in sync
                     push_saved_name = True
                     saved_name_value = saved_name
-                self._devices[canonical_id] = device
-                logger.info("New device discovered: %s (%s)", canonical_id, ip)
-            else:
-                device = self._devices[canonical_id]
-                device.ip = ip  # Update IP in case of DHCP change
-                if not stable_device_id_override:
-                    stable_device_id = device.stable_device_id
-                if not incoming_id_source_override:
-                    incoming_id_source = device.id_source
-
-            # Promote temporary IDs (IP/MAC) to stronger stable IDs when available.
-            if canonical_id != device_id and incoming_id_source != "ip" and stable_device_id == device_id:
                 self._devices[device_id] = device
-                del self._devices[canonical_id]
-                self._remove_indexes_for_device(canonical_id)
-                device_removed_id = canonical_id
-                canonical_id = device_id
-                device.device_id = device_id
-                broadcast_full_update = True
+                logger.info("New device discovered: %s (%s)", device_id, ip)
+            else:
+                device = self._devices[device_id]
+                device.ip = ip
 
-            old_id_source = device.id_source
             old_dict = device.to_dict()
-
-            device.stable_device_id = stable_device_id
-            device.id_source = incoming_id_source
-            if old_id_source != device.id_source:
-                logger.info(
-                    "Device %s idSource changed: %s -> %s",
-                    canonical_id,
-                    old_id_source,
-                    device.id_source,
-                )
 
             device.last_seen = time.time()
             device.online = True
@@ -125,50 +56,38 @@ class DeviceManager:
                 if hasattr(device, key):
                     setattr(device, key, value)
 
-            self._remove_indexes_for_device(canonical_id)
-            self._device_identity_index[stable_device_id] = canonical_id
-            self._ip_index[ip] = canonical_id
+            # Update IP index
+            self._ip_to_device[ip] = device_id
 
             new_dict = device.to_dict()
             player_connected = device.player_connected
 
         # Broadcast changes
-        if device_removed_id:
-            await ws_manager.broadcast({
-                "type": "device_removed",
-                "deviceId": device_removed_id,
-            })
-
         if is_new:
             await ws_manager.broadcast({
                 "type": "device_update",
-                "deviceId": canonical_id,
+                "deviceId": device_id,
                 "device": new_dict,
                 "isNew": True,
             })
         else:
-            if broadcast_full_update:
-                await ws_manager.broadcast({
-                    "type": "device_update",
-                    "deviceId": canonical_id,
-                    "device": new_dict,
-                    "isNew": False,
-                })
-                return device
-
             changes = {k: v for k, v in new_dict.items() if old_dict.get(k) != v}
             if changes:
                 await ws_manager.broadcast({
                     "type": "device_update",
-                    "deviceId": canonical_id,
+                    "deviceId": device_id,
                     "changes": changes,
                 })
 
-        # Push server-saved name to newly discovered device so it stays in sync
+        # Push server-saved name to newly discovered device
         if push_saved_name and player_connected and ip:
             await self._push_name_to_device(ip, saved_name_value)
 
         return device
+
+    def get_device_id_by_ip(self, ip: str) -> str | None:
+        """Lookup device_id by IP for discovery correlation."""
+        return self._ip_to_device.get(ip)
 
     async def get_all(self) -> list[dict[str, Any]]:
         async with self._lock:
@@ -187,8 +106,10 @@ class DeviceManager:
         async with self._lock:
             if device_id not in self._devices:
                 return False
-            del self._devices[device_id]
-            self._remove_indexes_for_device(device_id)
+            self._devices.pop(device_id)
+            stale_ips = [ip for ip, did in self._ip_to_device.items() if did == device_id]
+            for ip in stale_ips:
+                del self._ip_to_device[ip]
 
         await ws_manager.broadcast({
             "type": "device_removed",
@@ -212,7 +133,6 @@ class DeviceManager:
             "changes": {"name": name},
         })
 
-        # Push name to device so it persists in PlayerPrefs
         if player_connected and device_ip:
             await self._push_name_to_device(device_ip, name)
 
@@ -222,7 +142,6 @@ class DeviceManager:
         """Apply a device-reported name if the server doesn't have a custom name yet."""
         saved = get_device_name(device_id)
         if saved:
-            # Server has a name already — keep it and don't overwrite
             return
         should_broadcast = False
         async with self._lock:
@@ -238,7 +157,7 @@ class DeviceManager:
             })
 
     async def _push_name_to_device(self, ip: str, name: str):
-        """Push a name to the device via HTTP PUT /name so it persists in PlayerPrefs."""
+        """Push a name to the device via HTTP PUT /name."""
         config = get_config()
         player_port = config.get("playerPort", 8080)
         url = f"http://{ip}:{player_port}/name"
@@ -267,178 +186,55 @@ class DeviceManager:
     def get_snapshot(self) -> list[dict[str, Any]]:
         return [d.to_dict() for d in self._devices.values()]
 
-    async def _poll_loop(self):
-        while True:
-            try:
-                config = get_config()
-                interval = config.get("statusPollInterval", 5)
-                await asyncio.sleep(interval)
+    async def mark_discovery_seen(self, device_id: str):
+        """Reset missed_discovery_cycles for a device found during scan."""
+        async with self._lock:
+            device = self._devices.get(device_id)
+            if device:
+                device.missed_discovery_cycles = 0
 
-                async with self._lock:
-                    devices = [
-                        d for d in self._devices.values()
-                        if d.online and d.player_connected
-                    ]
-
-                if devices:
-                    tasks = [self._poll_device(d) for d in devices]
-                    await asyncio.gather(*tasks, return_exceptions=True)
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error("Poll loop error: %s", e)
-                await asyncio.sleep(5)
-
-    async def _poll_device(self, device: DeviceState):
-        config = get_config()
-        player_port = config.get("playerPort", 8080)
-        url = f"http://{device.ip}:{player_port}/status"
-
-        # Try up to 2 times with increasing timeout for Quest 3 stability
-        for attempt in range(2):
-            try:
-                timeout = 5 if attempt == 0 else 8
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            await self.add_or_update(
-                                device.device_id,
-                                device.ip,
-                                battery=data.get("battery", device.battery),
-                                battery_charging=data.get("batteryCharging", data.get("charging", False)),
-                                playback_state=data.get("state", "idle"),
-                                current_video=data.get("file", ""),
-                                current_mode=data.get("mode", "360"),
-                                playback_time=data.get("time", 0.0),
-                                playback_duration=data.get("duration", 0.0),
-                                loop=data.get("loop", False),
-                                locked=data.get("locked", False),
-                                uptime_minutes=data.get("uptimeMinutes", 0),
-                                personal_volume=data.get("personalVolume", device.personal_volume),
-                                effective_volume=data.get("effectiveVolume", device.effective_volume),
-                                last_player_response=time.time(),
-                                player_connected=True,
-                            )
-                            # Pick up device-reported name
-                            device_name = data.get("deviceName", "")
-                            if device_name:
-                                await self.apply_device_name_from_device(device.device_id, device_name)
-                            return  # Success
-                        else:
-                            logger.warning("Player %s returned status %d", device.ip, resp.status)
-            except Exception:
-                if attempt == 0:
-                    await asyncio.sleep(1)
-                    continue
-
-        # All attempts failed - mark as disconnected only after consecutive failures
-        # Use a grace period: don't disconnect immediately
-        if device.player_connected:
-            now = time.time()
-            grace_period = config.get("deviceOfflineTimeout", 30)
-            if device.last_player_response > 0 and (now - device.last_player_response) > grace_period:
-                await self.add_or_update(
-                    device.device_id,
-                    device.ip,
-                    player_connected=False,
-                )
-
-    async def _player_recheck_loop(self):
-        """Periodically try to detect player HTTP on ADB-connected devices without player_connected.
-
-        This catches cases where the player is running but wasn't detected during discovery
-        (e.g. player started after discovery, HTTP temporarily unavailable, etc).
-        """
-        await asyncio.sleep(15)  # Initial delay to let discovery run first
-        while True:
-            try:
-                config = get_config()
-                player_port = config.get("playerPort", 8080)
-                # Run every 20 seconds
-                await asyncio.sleep(20)
-
-                async with self._lock:
-                    # Find online ADB devices without player connection
-                    adb_only = [
-                        d for d in self._devices.values()
-                        if d.online and d.adb_connected and not d.player_connected
-                    ]
-
-                if not adb_only:
-                    continue
-
-                logger.debug("Rechecking player HTTP on %d ADB-only device(s)", len(adb_only))
-                tasks = [self._try_player_http(d, player_port) for d in adb_only]
-                await asyncio.gather(*tasks, return_exceptions=True)
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error("Player recheck loop error: %s", e)
-                await asyncio.sleep(10)
-
-    async def _try_player_http(self, device: DeviceState, player_port: int):
-        """Try to connect to player HTTP on a device and update state if successful."""
-        url = f"http://{device.ip}:{player_port}/status"
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        logger.info(
-                            "Player HTTP now responding on %s (%s) - marking as connected",
-                            device.device_id, device.ip
-                        )
-                        await self.add_or_update(
-                            device.device_id,
-                            device.ip,
-                            player_connected=True,
-                            player_version=data.get("playerVersion", data.get("version", "")),
-                            playback_state=data.get("state", "idle"),
-                            current_video=data.get("file", ""),
-                            current_mode=data.get("mode", "360"),
-                            playback_time=data.get("time", 0.0),
-                            playback_duration=data.get("duration", 0.0),
-                            loop=data.get("loop", False),
-                            locked=data.get("locked", False),
-                            uptime_minutes=data.get("uptimeMinutes", 0),
-                            last_player_response=time.time(),
-                        )
-                        # Pick up device-reported name
-                        device_name = data.get("deviceName", "")
-                        if device_name:
-                            await self.apply_device_name_from_device(device.device_id, device_name)
-                    else:
-                        logger.debug(
-                            "Player HTTP on %s returned %d", device.ip, resp.status
-                        )
-        except Exception as e:
-            logger.debug("Player HTTP check failed for %s: %s", device.ip, e)
+    async def increment_missed_discovery(self):
+        """Increment missed_discovery_cycles for all online ADB devices not seen in this scan."""
+        async with self._lock:
+            for d in self._devices.values():
+                if d.online and d.adb_connected:
+                    d.missed_discovery_cycles += 1
 
     async def _offline_check_loop(self):
+        """Unified offline detection: WS heartbeat timeout + discovery miss."""
         while True:
             try:
+                await asyncio.sleep(10)
                 config = get_config()
                 timeout = config.get("deviceOfflineTimeout", 30)
-                await asyncio.sleep(10)
-
                 now = time.time()
+
                 async with self._lock:
                     devices_to_update = []
                     for d in self._devices.values():
-                        if d.online and (now - d.last_seen) > timeout:
-                            devices_to_update.append(d)
+                        if not d.online:
+                            continue
 
-                for d in devices_to_update:
-                    await self.add_or_update(
-                        d.device_id,
-                        d.ip,
-                        online=False,
-                        player_connected=False,
-                    )
-                    logger.info("Device %s marked offline (no response for %ds)", d.device_id, timeout)
+                        # WS-connected device: if no heartbeat for 15s, mark player disconnected
+                        if d.player_connected and (now - d.last_seen) > 15:
+                            devices_to_update.append((d, {"player_connected": False}))
+                            continue
+
+                        # Device not seen by discovery for 2+ cycles -> offline
+                        if d.missed_discovery_cycles >= 2 and not d.player_connected:
+                            devices_to_update.append((d, {"online": False, "adb_connected": False}))
+                            continue
+
+                        # General timeout fallback
+                        if (now - d.last_seen) > timeout:
+                            devices_to_update.append((d, {"online": False, "player_connected": False, "adb_connected": False}))
+
+                for d, updates in devices_to_update:
+                    await self.add_or_update(d.device_id, d.ip, **updates)
+                    if not updates.get("online", True):
+                        logger.info("Device %s marked offline", d.device_id)
+                    elif "player_connected" in updates:
+                        logger.info("Device %s player disconnected (heartbeat timeout)", d.device_id)
 
             except asyncio.CancelledError:
                 break

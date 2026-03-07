@@ -22,11 +22,8 @@ DEFAULT_CONFIG = {
     "serverPort": 8000,
     "playerPort": 8080,
     "deviceOfflineTimeout": 30,
-    "statusPollInterval": 5,
-    "requirementsPollInterval": 15,
     "updateConcurrency": 5,
     "ignoreRequirements": False,
-    "fastResyncOnFocus": True,
 }
 
 DEVICE_VIDEO_DIR = "/sdcard/Movies"
@@ -44,7 +41,15 @@ def load_config() -> dict:
             try:
                 with open(CONFIG_PATH, "r") as f:
                     data = json.load(f)
-                _config = {**deepcopy(DEFAULT_CONFIG), **data}
+                # Merge with defaults, ignore unknown fields from old configs gracefully
+                _config = {**deepcopy(DEFAULT_CONFIG)}
+                for key in DEFAULT_CONFIG:
+                    if key in data:
+                        _config[key] = data[key]
+                # Preserve extra keys that might be needed
+                for key in data:
+                    if key not in _config:
+                        _config[key] = data[key]
                 logger.info("Config loaded from %s", CONFIG_PATH)
             except (json.JSONDecodeError, OSError) as e:
                 logger.error("Invalid config file, using defaults: %s", e)

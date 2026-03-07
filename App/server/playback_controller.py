@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 from typing import Any
 
 import aiohttp
@@ -8,13 +7,12 @@ import aiohttp
 from .adb_executor import adb_executor
 from .config import get_config, get_device_video_path
 from .device_manager import device_manager
+from .device_ws_manager import device_ws_manager
 
 logger = logging.getLogger("vrclassroom.playback")
 
 REQUEST_TIMEOUT = 5
 global_volume = 1.0
-BOOT_RECEIVER_CLASS = ".BootCompletedReceiver"
-COMMAND_RECEIVER_CLASS = ".CommandReceiver"
 
 
 def _adb_action_prefix() -> str:
@@ -27,16 +25,10 @@ def _adb_action(command: str) -> str:
     return f"{prefix}.{command.upper()}"
 
 
-def _boot_receiver_component() -> str:
-    config = get_config()
-    package_id = config.get("packageId", "com.vrclass.player")
-    return f"{package_id}/{BOOT_RECEIVER_CLASS}"
-
-
 def _command_receiver_component() -> str:
     config = get_config()
     package_id = config.get("packageId", "com.vrclass.player")
-    return f"{package_id}/{COMMAND_RECEIVER_CLASS}"
+    return f"{package_id}/.CommandReceiver"
 
 
 async def _send_to_player(ip: str, method: str, path: str, json_body: dict | None = None) -> dict[str, Any]:
@@ -68,7 +60,6 @@ async def _send_to_player(ip: str, method: str, path: str, json_body: dict | Non
 
 async def _send_via_adb(ip: str, command: str, intent_extra: str = "") -> dict[str, Any]:
     """Send a command to device via ADB intent as fallback."""
-    config = get_config()
     action = _adb_action(command)
     component = _command_receiver_component()
     cmd = f"am broadcast -a {action} -n {component}"
@@ -79,10 +70,7 @@ async def _send_via_adb(ip: str, command: str, intent_extra: str = "") -> dict[s
 
 
 async def _resolve_devices(device_ids: list[str], require_player: bool = True) -> list:
-    """Resolve device IDs to DeviceState objects.
-    Empty list means all online devices.
-    If require_player is False and ignoreRequirements is set, include ADB-only devices.
-    """
+    """Resolve device IDs to DeviceState objects."""
     config = get_config()
     ignore_req = config.get("ignoreRequirements", False)
 
@@ -106,8 +94,17 @@ async def _resolve_devices(device_ids: list[str], require_player: bool = True) -
 
 
 async def _send_command_to_device(device, command: str, path: str, payload: dict | None = None) -> dict[str, Any]:
-    """Send command prioritizing HTTP API, falling back to ADB."""
-    # Try HTTP API first if player is connected
+    """Send command prioritizing WS, then HTTP API, then ADB fallback."""
+    # Try WebSocket first
+    if device_ws_manager.is_connected(device.device_id):
+        ws_command = {"type": "command", "action": command}
+        if payload:
+            ws_command.update(payload)
+        sent = await device_ws_manager.send_command(device.device_id, ws_command)
+        if sent:
+            return {"success": True, "via": "ws"}
+
+    # Fallback to HTTP API if player is connected
     if device.player_connected:
         result = await _send_to_player(device.ip, "POST", path, payload)
         if result.get("success"):
@@ -129,7 +126,7 @@ async def _send_command_to_device(device, command: str, path: str, payload: dict
                     extra += f" --ef {k} {v}"
         return await _send_via_adb(device.ip, command, extra)
 
-    return {"success": False, "error": "Neither player nor ADB connected"}
+    return {"success": False, "error": "Neither WS, player HTTP, nor ADB connected"}
 
 
 async def open_video(video_id: str, device_ids: list[str]) -> dict[str, Any]:
@@ -234,9 +231,7 @@ async def launch_player(device_ids: list[str]) -> dict[str, Any]:
     """Launch the player app on target devices via ADB."""
     config = get_config()
     package_id = config.get("packageId", "com.vrclass.player")
-    player_port = config.get("playerPort", 8080)
 
-    # Resolve to online ADB-connected devices
     if device_ids:
         devices = []
         for did in device_ids:
@@ -253,35 +248,13 @@ async def launch_player(device_ids: list[str]) -> dict[str, Any]:
     failed_list = []
 
     async def _launch_on_device(device):
-        # Launch via monkey command
         ok, output = await adb_executor.shell(
             device.ip,
             f"monkey -p {package_id} -c android.intent.category.LAUNCHER 1"
         )
         if not ok:
             return {"deviceId": device.device_id, "error": f"Launch failed: {output}"}
-
-        # Wait for player to start and check HTTP
-        await asyncio.sleep(5)
-        try:
-            async with aiohttp.ClientSession() as session:
-                url = f"http://{device.ip}:{player_port}/status"
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        await device_manager.add_or_update(
-                            device.device_id,
-                            device.ip,
-                            player_connected=True,
-                            player_version=data.get("playerVersion", data.get("version", "")),
-                            playback_state=data.get("state", "idle"),
-                        )
-                        return {"deviceId": device.device_id, "playerConnected": True}
-        except Exception:
-            pass
-
-        # Player launched but HTTP not responding yet - still count as success
-        return {"deviceId": device.device_id, "playerConnected": False, "note": "Launched but player HTTP not responding yet"}
+        return {"deviceId": device.device_id, "launched": True}
 
     tasks = [_launch_on_device(d) for d in devices]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -297,11 +270,41 @@ async def launch_player(device_ids: list[str]) -> dict[str, Any]:
     return {"success": success_list, "failed": failed_list}
 
 
+async def restart_app(device_id: str) -> dict[str, Any]:
+    """Restart the player app on a device via ADB (force-stop + launch)."""
+    device = await device_manager.get(device_id)
+    if not device:
+        return {"error": "Device not found"}
+    if not device.adb_connected:
+        return {"error": "ADB not connected"}
+
+    config = get_config()
+    package_id = config.get("packageId", "com.vrclass.player")
+
+    await adb_executor.shell(device.ip, f"am force-stop {package_id}")
+    await asyncio.sleep(1)
+
+    ok, output = await adb_executor.shell(
+        device.ip,
+        f"monkey -p {package_id} -c android.intent.category.LAUNCHER 1"
+    )
+
+    if ok:
+        await device_manager.add_or_update(device_id, device.ip, player_connected=False)
+        return {"ok": True, "message": "App restarted"}
+    return {"error": f"Restart failed: {output}"}
+
+
 async def ping_device(device_id: str) -> dict[str, Any]:
     """Send a ping (beep) to a single device."""
     device = await device_manager.get(device_id)
     if not device:
         return {"error": "Device not found"}
+
+    if device_ws_manager.is_connected(device_id):
+        sent = await device_ws_manager.send_command(device_id, {"type": "command", "action": "ping"})
+        if sent:
+            return {"success": True, "via": "ws"}
 
     if device.player_connected:
         result = await _send_to_player(device.ip, "POST", "/ping")
@@ -319,6 +322,11 @@ async def toggle_debug(device_id: str) -> dict[str, Any]:
     device = await device_manager.get(device_id)
     if not device:
         return {"error": "Device not found"}
+
+    if device_ws_manager.is_connected(device_id):
+        sent = await device_ws_manager.send_command(device_id, {"type": "command", "action": "toggle_debug"})
+        if sent:
+            return {"success": True, "via": "ws"}
 
     if device.player_connected:
         result = await _send_to_player(device.ip, "POST", "/debug")
@@ -400,76 +408,3 @@ async def set_device_volume(device_id: str, volume: float) -> dict[str, Any]:
         "sent": result.get("success", False),
         "error": result.get("error"),
     }
-
-
-async def refresh_device_autostart_state(device_id: str) -> dict[str, Any]:
-    device = await device_manager.get(device_id)
-    if not device:
-        return {"error": "Device not found"}
-    if not device.adb_connected:
-        await device_manager.add_or_update(device.device_id, device.ip, autostart_enabled=None)
-        return {"deviceId": device.device_id, "autostartEnabled": None, "warning": "ADB not connected"}
-
-    component = _boot_receiver_component()
-    state = await adb_executor.get_component_enabled(device.ip, component)
-    await device_manager.add_or_update(device.device_id, device.ip, autostart_enabled=state)
-    return {"deviceId": device.device_id, "autostartEnabled": state}
-
-
-async def set_device_autostart(device_id: str, enabled: bool) -> dict[str, Any]:
-    device = await device_manager.get(device_id)
-    if not device:
-        return {"error": "Device not found"}
-    if not device.adb_connected:
-        return {"error": "ADB not connected"}
-
-    component = _boot_receiver_component()
-    success, output = await adb_executor.set_component_enabled(device.ip, component, enabled)
-    if not success:
-        return {"error": output or "Failed to change autostart component state"}
-
-    # Trust the operation result immediately and then re-read to normalize unknown OEM output differences.
-    await device_manager.add_or_update(device.device_id, device.ip, autostart_enabled=enabled)
-    verified = await adb_executor.get_component_enabled(device.ip, component)
-    final_state = enabled if verified is None else verified
-    await device_manager.add_or_update(device.device_id, device.ip, autostart_enabled=final_state)
-
-    return {
-        "deviceId": device.device_id,
-        "autostartEnabled": final_state,
-        "requested": enabled,
-        "output": output,
-    }
-
-
-async def set_autostart_bulk(enabled: bool, device_ids: list[str] | None = None) -> dict[str, Any]:
-    target_ids = device_ids or []
-    if target_ids:
-        devices = []
-        for did in target_ids:
-            d = await device_manager.get(did)
-            if d and d.online and d.adb_connected:
-                devices.append(d)
-    else:
-        devices = await device_manager.get_online_adb_devices()
-
-    if not devices:
-        return {"success": [], "failed": [], "message": "No online ADB-connected devices available"}
-
-    tasks = [set_device_autostart(d.device_id, enabled) for d in devices]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    success_list = []
-    failed_list = []
-    for device, result in zip(devices, results):
-        if isinstance(result, Exception):
-            failed_list.append({"deviceId": device.device_id, "error": str(result)})
-        elif result.get("error"):
-            failed_list.append({"deviceId": device.device_id, "error": result.get("error")})
-        else:
-            success_list.append({
-                "deviceId": device.device_id,
-                "autostartEnabled": result.get("autostartEnabled"),
-            })
-
-    return {"success": success_list, "failed": failed_list, "enabled": enabled}

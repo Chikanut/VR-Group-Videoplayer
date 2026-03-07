@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import time
 from typing import Any
 
 import aiohttp
@@ -39,7 +38,7 @@ def _compare_versions(local_ver: str, device_ver: str) -> bool:
 
 
 async def check_requirements(device_id: str) -> list[dict[str, Any]]:
-    """Check which requirements are met for a device."""
+    """Check which requirements are met for a device (on-demand only)."""
     device = await device_manager.get(device_id)
     if not device:
         return []
@@ -81,7 +80,6 @@ async def check_requirements(device_id: str) -> list[dict[str, Any]]:
     # Check video files
     device_files: set[str] = set()
 
-    # Try to get file list from player API first
     if device.player_connected:
         try:
             async with aiohttp.ClientSession() as session:
@@ -118,7 +116,6 @@ async def check_requirements(device_id: str) -> list[dict[str, Any]]:
             "present": present,
         })
 
-    # Update device requirements status
     all_met = all(
         r["present"] for r in results
         if r.get("required", True) and (r["type"] != "apk" or bool(apk_path))
@@ -136,43 +133,8 @@ async def check_requirements(device_id: str) -> list[dict[str, Any]]:
     return results
 
 
-async def requirements_refresh_loop():
-    """Periodically refresh requirements for online devices."""
-    await asyncio.sleep(5)
-    while True:
-        try:
-            config = get_config()
-            interval = config.get("requirementsPollInterval", 15)
-            concurrency = config.get("updateConcurrency", 5)
-            await asyncio.sleep(interval)
-
-            devices = await device_manager.get_all()
-            candidates = [
-                d for d in devices
-                if d.get("online") and not d.get("updateInProgress")
-            ]
-
-            if not candidates:
-                continue
-
-            semaphore = asyncio.Semaphore(max(1, concurrency))
-
-            async def _check_with_limit(device_id: str):
-                async with semaphore:
-                    await check_requirements(device_id)
-
-            tasks = [_check_with_limit(d["deviceId"]) for d in candidates]
-            await asyncio.gather(*tasks, return_exceptions=True)
-
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error("Requirements refresh loop error: %s", e)
-            await asyncio.sleep(5)
-
-
 async def run_update(device_id: str) -> dict[str, Any]:
-    """Run the update process for a device: install APK + push missing videos."""
+    """Run the update process for a device: install/update APK only."""
     lock = _get_update_lock(device_id)
 
     if lock.locked():
@@ -197,20 +159,18 @@ async def run_update(device_id: str) -> dict[str, Any]:
         )
 
         config = get_config()
-        videos = config.get("requirementVideos", [])
         package_id = config.get("packageId", "com.vrclassroom.player")
         apk_path = config.get("apkPath", "")
-        results = {"installed_apk": False, "pushed_videos": [], "errors": []}
+        results = {"installed_apk": False, "errors": []}
 
         try:
-            # Step 1: Install/update APK if needed
+            # Install/update APK if needed
             if apk_path and os.path.isfile(apk_path):
                 packages = await adb_executor.list_packages(device.ip)
                 need_install = package_id not in packages
                 need_upgrade = False
 
                 if not need_install:
-                    # Check if version upgrade is needed
                     device_ver = await adb_executor.get_package_version(device.ip, package_id) or ""
                     local_ver = await adb_executor.get_local_apk_version(apk_path) or ""
                     if device_ver and local_ver and _compare_versions(local_ver, device_ver):
@@ -223,100 +183,24 @@ async def run_update(device_id: str) -> dict[str, Any]:
                     success, output = await adb_executor.install_apk(device.ip, apk_path)
                     if success:
                         results["installed_apk"] = True
-                        await _broadcast_progress(device_id, "install_apk", 100, f"APK {action.lower().rstrip('ing')}ed successfully")
+                        await _broadcast_progress(device_id, "install_apk", 100, "APK installed successfully")
                     else:
-                        results["errors"].append(f"APK {action.lower()} failed: {output}")
-                        await _broadcast_progress(device_id, "install_apk_failed", 0, f"APK {action.lower()} failed: {output}")
+                        results["errors"].append(f"APK install failed: {output}")
+                        await _broadcast_progress(device_id, "install_apk_failed", 0, f"APK install failed: {output}")
                 else:
                     await _broadcast_progress(device_id, "install_apk", 100, "APK up to date")
             elif apk_path:
                 logger.warning("APK path configured but file not found: %s", apk_path)
                 await _broadcast_progress(device_id, "install_apk_skipped", 0, f"APK file not found: {apk_path}")
 
-            # Step 2: Push missing videos
-            total_videos = len(videos)
-            for idx, video in enumerate(videos):
-                device = await device_manager.get(device_id)
-                if not device or not device.online:
-                    results["errors"].append("Device went offline during update")
-                    break
-
-                local_path = video.get("localPath", "")
-                video_name = video.get("name", os.path.basename(local_path))
-
-                if not local_path:
-                    continue
-
-                device_path = get_device_video_path(local_path)
-
-                # Check if already present
-                exists = await adb_executor.file_exists(device.ip, device_path)
-                if exists:
-                    await _broadcast_progress(
-                        device_id, "push_video", 100,
-                        f"[{idx + 1}/{total_videos}] {video_name} already present",
-                        file=video_name, video_index=idx, total=total_videos,
-                    )
-                    continue
-
-                if not os.path.isfile(local_path):
-                    error_msg = f"Local file not found: {local_path}"
-                    results["errors"].append(error_msg)
-                    await _broadcast_progress(
-                        device_id, "push_video_failed", 0, error_msg,
-                        file=video_name, video_index=idx, total=total_videos,
-                    )
-                    continue
-
-                # Ensure directory exists on device
-                await adb_executor.ensure_directory(device.ip, device_path)
-
-                file_size = os.path.getsize(local_path)
-                file_size_mb = file_size / (1024 * 1024)
-
-                async def progress_cb(pct, text, _name=video_name, _idx=idx):
-                    await _broadcast_progress(
-                        device_id, "push_video", pct,
-                        f"[{_idx + 1}/{total_videos}] Pushing {_name}... {pct}%",
-                        file=_name, video_index=_idx, total=total_videos,
-                    )
-
-                await _broadcast_progress(
-                    device_id, "push_video", 0,
-                    f"[{idx + 1}/{total_videos}] Pushing {video_name} ({file_size_mb:.0f}MB)...",
-                    file=video_name, video_index=idx, total=total_videos,
-                )
-
-                success, output = await adb_executor.push_file_with_progress(
-                    device.ip, local_path, device_path, progress_cb,
-                )
-
-                if success:
-                    results["pushed_videos"].append(video_name)
-                    # Register file with Android media scanner
-                    logger.info("Scanning media file: %s", device_path)
-                    await adb_executor.scan_media_file(device.ip, device_path)
-                    await _broadcast_progress(
-                        device_id, "push_video", 100,
-                        f"[{idx + 1}/{total_videos}] {video_name} pushed successfully",
-                        file=video_name, video_index=idx, total=total_videos,
-                    )
-                else:
-                    results["errors"].append(f"Push {video_name} failed: {output}")
-                    await _broadcast_progress(
-                        device_id, "push_video_failed", 0,
-                        f"[{idx + 1}/{total_videos}] {video_name} push failed: {output}",
-                        file=video_name, video_index=idx, total=total_videos,
-                    )
-
-            # Step 3: Re-check requirements
+            # Re-check requirements
             await _broadcast_progress(device_id, "verifying", 0, "Verifying requirements...")
             await check_requirements(device_id)
 
             status = "completed" if not results["errors"] else "completed_with_errors"
             await _broadcast_progress(
                 device_id, status, 100,
-                f"Update {status}. Pushed {len(results['pushed_videos'])} video(s), {len(results['errors'])} error(s).",
+                f"Update {status}. {len(results['errors'])} error(s).",
             )
 
         except Exception as e:
@@ -342,14 +226,13 @@ async def run_usb_update(
     update_app: bool = True,
     update_content: bool = True,
 ) -> dict[str, Any]:
-    """Run initialization for a USB-connected device with selectable stages."""
+    """Run initialization for a USB-connected device."""
     config = get_config()
     videos = config.get("requirementVideos", [])
     package_id = config.get("packageId", "com.vrclassroom.player")
     apk_path = config.get("apkPath", "")
     results = {"serial": serial, "installed_apk": False, "pushed_videos": [], "errors": [], "ip": None}
 
-    # Broadcast progress via WebSocket (use serial as device_id for USB)
     usb_device_id = f"usb_{serial}"
 
     async def broadcast_usb(stage, progress, message, **extra):
@@ -389,7 +272,7 @@ async def run_usb_update(
                 results["errors"].append(f"APK file not found: {apk_path}")
                 await broadcast_usb("install_apk_failed", 0, f"APK file not found: {apk_path}")
 
-        # Step 2: Push videos (if selected)
+        # Step 2: Push videos via USB (if selected)
         if update_content:
             total_videos = len(videos)
             for idx, video in enumerate(videos):
@@ -406,7 +289,6 @@ async def run_usb_update(
                                         file=video_name, video_index=idx, total=total_videos)
                     continue
 
-                # Ensure directory
                 await adb_executor.run_on_serial(serial, ["shell", "mkdir", "-p", DEVICE_VIDEO_DIR])
 
                 file_size = os.path.getsize(local_path)
@@ -480,11 +362,13 @@ async def _broadcast_progress(device_id: str, stage: str, progress: int, message
         "message": message,
         **extra,
     }
-    await device_manager.add_or_update(
-        device_id,
-        (await device_manager.get(device_id)).ip,
-        update_progress=progress_data,
-    )
+    device = await device_manager.get(device_id)
+    if device:
+        await device_manager.add_or_update(
+            device_id,
+            device.ip,
+            update_progress=progress_data,
+        )
     await ws_manager.broadcast({
         "type": "update_progress",
         **progress_data,
