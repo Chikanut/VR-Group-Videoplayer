@@ -33,6 +33,19 @@ class DeviceManager:
         push_saved_name = False
         saved_name_value = ""
         async with self._lock:
+            # If the same IP is already known under another ID, treat this as the same device.
+            # This avoids duplicate tiles when the player first registers with one ID and later
+            # ADB discovery reports another ID for the same physical device.
+            existing_device_id_for_ip = self._ip_to_device.get(ip)
+            if existing_device_id_for_ip and existing_device_id_for_ip != device_id:
+                logger.info(
+                    "Aliasing device %s to existing device %s by IP %s",
+                    device_id,
+                    existing_device_id_for_ip,
+                    ip,
+                )
+                device_id = existing_device_id_for_ip
+
             is_new = device_id not in self._devices
 
             if is_new:
