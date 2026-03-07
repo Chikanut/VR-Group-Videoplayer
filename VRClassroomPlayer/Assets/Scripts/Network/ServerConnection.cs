@@ -31,8 +31,6 @@ namespace VRClassroom
             public float globalVolume;
             public float personalVolume;
             public VideoAdvancedSettings advancedSettings;
-            public float globalVolume;
-            public float personalVolume;
         }
 
         [SerializeField] private StatusReporter statusReporter;
@@ -64,7 +62,7 @@ namespace VRClassroom
 
         private void Start()
         {
-            _deviceId = StatusReporter.GetAndroidId();
+            _deviceId = SystemInfo.deviceUniqueIdentifier;
             _serverUrl = BuildServerUrl();
 
             if (string.IsNullOrEmpty(_serverUrl))
@@ -468,9 +466,7 @@ namespace VRClassroom
 
                 Debug.Log($"[ServerConnection] Command received: {command.action}");
                     LogWarning("message_dropped", null, $"reason=invalid json, rawLength={rawLength}, preview={preview}");
-                    return;
-                }
-
+                
                 string commandId = ResolveCommandId(command);
                 LogInfo("message_received", commandId,
                     $"rawLength={rawLength}, preview={preview}, msgType={SafeValue(command.type)}, action={SafeValue(command.action)}");
@@ -529,33 +525,36 @@ namespace VRClassroom
                                 viewModeManager.ApplyAdvancedSettingsOverride(targetMode, command.advancedSettings);
                             }
 
-                            if (videoPlayer != null)
-                            bool openInvoked = false;
-                            if (videoPlayer != null && !string.IsNullOrEmpty(file))
-                            {
-                                videoPlayer.IsLooping = loop;
-                                openInvoked = true;
-                            }
-
                             if (autoRecenterOnOpen)
                             {
                                 orientationManager?.Recenter();
                             }
 
-                            if (string.IsNullOrEmpty(file))
-                            {
-                                Debug.LogWarning("[ServerConnection] OPEN command ignored: 'file' is missing or empty");
-                                break;
-                            }
-
                             if (videoPlayer != null)
                             {
-                                videoPlayer.Open(file);
+                                bool openInvoked = false;
+                                if (videoPlayer != null && !string.IsNullOrEmpty(file))
+                                {
+                                    videoPlayer.IsLooping = loop;
+                                    openInvoked = true;
+                                }
+
+                                if (string.IsNullOrEmpty(file))
+                                {
+                                    Debug.LogWarning("[ServerConnection] OPEN command ignored: 'file' is missing or empty");
+                                    break;
+                                }
+
+                                if (videoPlayer != null)
+                                {
+                                    videoPlayer.Open(file);
+                                }
+                                LogInfo("command_end", commandId,
+                                    $"action=open, file={SafeValue(file)}, mode={SafeValue(mode)}, loop={loop}, openInvoked={openInvoked}");
+                                break;
                             }
-                            LogInfo("command_end", commandId,
-                                $"action=open, file={SafeValue(file)}, mode={SafeValue(mode)}, loop={loop}, openInvoked={openInvoked}");
-                            break;
-                        }
+                        };
+                        break;
                     case "play":
                         LogInfo("command_start", commandId, "action=play");
                         videoPlayer?.Play();
@@ -674,10 +673,6 @@ namespace VRClassroom
         }
 
         // ─── Minimal JSON fallback helpers ───────────────────────────────────
-
-        private static bool HasJsonField(string json, string key)
-        {
-            return json.IndexOf($"\"{key}\"", StringComparison.Ordinal) >= 0;
 
         private static bool HasJsonField(string json, string key)
         {

@@ -733,11 +733,7 @@ namespace VRClassroom
             string deviceName = StatusReporter.GetDeviceName();
 
             // Use the same ID as StatusReporter (saved in PlayerPrefs)
-            string deviceId = PlayerPrefs.GetString("device_id", string.Empty);
-            if (string.IsNullOrEmpty(deviceId))
-            {
-                deviceId = SystemInfo.deviceUniqueIdentifier;
-            }
+            string deviceId = StatusReporter.GetAndroidId();
 
             var sb = new StringBuilder(256);
             sb.Append('{');
