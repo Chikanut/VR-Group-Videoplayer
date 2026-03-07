@@ -93,7 +93,8 @@ namespace VRClassroom
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"uptimeMinutes\":{0},", uptimeMinutes);
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"globalVolume\":{0:F2},", globalVolume);
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"personalVolume\":{0:F2},", personalVolume);
-            sb.AppendFormat(CultureInfo.InvariantCulture, "\"effectiveVolume\":{0:F2}", effectiveVolume);
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"effectiveVolume\":{0:F2},", effectiveVolume);
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"playerVersion\":\"{0}\"", EscapeJson(PlayerVersion));
             sb.Append('}');
 
             return sb.ToString();

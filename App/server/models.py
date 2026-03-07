@@ -48,8 +48,11 @@ class ConfigModel(BaseModel):
     serverPort: int = 8000
     playerPort: int = 8080
     deviceOfflineTimeout: int = 30
+    statusPollInterval: int = 5
+    requirementsPollInterval: int = 15
     updateConcurrency: int = 5
     ignoreRequirements: bool = False
+    fastResyncOnFocus: bool = True
 
 
 class DeviceRegistration(BaseModel):

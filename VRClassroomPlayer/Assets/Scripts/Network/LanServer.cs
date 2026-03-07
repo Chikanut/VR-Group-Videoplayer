@@ -190,6 +190,9 @@ namespace VRClassroom
                         case "/debug":
                             HandleGetDebugToggle(response);
                             return;
+                        case "/server-ip":
+                            HandleGetServerIp(response);
+                            return;
                     }
                 }
 
@@ -209,6 +212,9 @@ namespace VRClassroom
                     {
                         case "/name":
                             HandlePutName(response, putBody);
+                            return;
+                        case "/server-ip":
+                            HandlePutServerIp(response, putBody);
                             return;
                         case "/video-settings":
                             HandlePutVideoSettings(response, putBody);
@@ -776,6 +782,54 @@ namespace VRClassroom
                 Debug.LogError($"[LanServer] PUT /name: invalid json: {e.Message}");
                 SendJson(response, 400, $"{{\"error\":\"{EscapeJson(e.Message)}\"}}");
             }
+        }
+
+        private void HandleGetServerIp(HttpListenerResponse response)
+        {
+            string serverIp = PlayerPrefs.GetString("instructor_ip", string.Empty);
+            string json = $"{{\"serverIp\":\"{EscapeJson(serverIp)}\"}}";
+            SendJson(response, 200, json);
+        }
+
+        private void HandlePutServerIp(HttpListenerResponse response, string body)
+        {
+            if (string.IsNullOrEmpty(body))
+            {
+                SendJson(response, 400, "{\"error\":\"missing body\"}");
+                return;
+            }
+
+            try
+            {
+                var data = JsonUtility.FromJson<ServerIpRequest>(body);
+                if (string.IsNullOrEmpty(data.serverIp))
+                {
+                    SendJson(response, 400, "{\"error\":\"missing serverIp field\"}");
+                    return;
+                }
+
+                Debug.Log($"[LanServer] PUT /server-ip: setting instructor_ip to '{data.serverIp}'");
+
+                QueueCommand(() =>
+                {
+                    PlayerPrefs.SetString("instructor_ip", data.serverIp);
+                    PlayerPrefs.Save();
+                    Debug.Log($"[LanServer] instructor_ip saved: {data.serverIp}");
+                });
+
+                SendJson(response, 200, "{\"ok\":true}");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LanServer] PUT /server-ip: invalid json: {e.Message}");
+                SendJson(response, 400, $"{{\"error\":\"{EscapeJson(e.Message)}\"}}");
+            }
+        }
+
+        [Serializable]
+        private class ServerIpRequest
+        {
+            public string serverIp;
         }
 
         [Serializable]

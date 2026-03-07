@@ -499,13 +499,14 @@ async def device_websocket_endpoint(ws: WebSocket):
                     "time": "playback_time",
                     "duration": "playback_duration",
                     "battery": "battery",
-                    "charging": "battery_charging",
+                    "batteryCharging": "battery_charging",
                     "locked": "locked",
                     "loop": "loop",
                     "uptimeMinutes": "uptime_minutes",
                     "globalVolume": None,  # skip, server manages this
                     "personalVolume": "personal_volume",
                     "effectiveVolume": "effective_volume",
+                    "playerVersion": "player_version",
                 }
                 for json_key, attr_name in field_map.items():
                     if attr_name and json_key in msg:

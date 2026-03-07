@@ -82,11 +82,57 @@ async def _probe_player_http(ip: str, player_port: int) -> dict | None:
     return None
 
 
+async def _push_server_ip_to_player(ip: str, player_port: int, server_url: str):
+    """Push the server's IP:port to the player so it can connect via WebSocket."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            url = f"http://{ip}:{player_port}/server-ip"
+            async with session.put(
+                url,
+                json={"serverIp": server_url},
+                timeout=aiohttp.ClientTimeout(total=3),
+            ) as resp:
+                if resp.status == 200:
+                    logger.info("Pushed server IP %s to device %s", server_url, ip)
+                else:
+                    logger.debug("Failed to push server IP to %s: HTTP %d", ip, resp.status)
+    except Exception as e:
+        logger.debug("Failed to push server IP to %s: %s", ip, e)
+
+
+def _get_server_url() -> str:
+    """Get the server's own IP:port for devices to connect back."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        config = get_config()
+        port = config.get("serverPort", 8000)
+        return f"{ip}:{port}"
+    except Exception:
+        return ""
+
+
+_STATUS_FIELD_MAP = {
+    "state": "playback_state",
+    "file": "current_video",
+    "mode": "current_mode",
+    "time": "playback_time",
+    "duration": "playback_duration",
+    "battery": "battery",
+    "batteryCharging": "battery_charging",
+    "loop": "loop",
+    "uptimeMinutes": "uptime_minutes",
+    "playerVersion": "player_version",
+}
+
+
 async def process_discovered_ip(
     ip: str,
     semaphore: asyncio.Semaphore,
 ):
-    """Discovery: connect ADB + read ID + probe HTTP player."""
+    """Discovery: connect ADB + read ID + probe HTTP player + push server IP."""
     async with semaphore:
         connected = await adb_executor.connect(ip)
         if not connected:
@@ -106,25 +152,15 @@ async def process_discovered_ip(
             status = await _probe_player_http(ip, player_port)
             if status is not None:
                 player_connected = True
-                # Extract useful fields from status response
-                if "state" in status:
-                    extra_kwargs["playback_state"] = status["state"]
-                if "file" in status:
-                    extra_kwargs["current_video"] = status["file"]
-                if "mode" in status:
-                    extra_kwargs["current_mode"] = status["mode"]
-                if "time" in status:
-                    extra_kwargs["playback_time"] = status["time"]
-                if "duration" in status:
-                    extra_kwargs["playback_duration"] = status["duration"]
-                if "battery" in status:
-                    extra_kwargs["battery"] = status["battery"]
-                if "charging" in status:
-                    extra_kwargs["battery_charging"] = status["charging"]
-                if "loop" in status:
-                    extra_kwargs["loop"] = status["loop"]
-                if "uptimeMinutes" in status:
-                    extra_kwargs["uptime_minutes"] = status["uptimeMinutes"]
+                for json_key, attr_name in _STATUS_FIELD_MAP.items():
+                    if json_key in status:
+                        extra_kwargs[attr_name] = status[json_key]
+
+                # Push server IP so the player can establish WS connection
+                server_url = _get_server_url()
+                if server_url:
+                    # Fire and forget — don't block discovery
+                    asyncio.create_task(_push_server_ip_to_player(ip, player_port, server_url))
         else:
             # Device is WS-connected, trust that
             player_connected = True

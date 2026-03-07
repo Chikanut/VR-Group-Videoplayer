@@ -193,6 +193,13 @@ export default function TopControlPanel({ onPlayAll }) {
         <button
           className="btn"
           disabled={!hasCommandTargets}
+          onClick={() => debounce('resumeAll', () => playbackCommand('play'))}
+        >
+          Resume All
+        </button>
+        <button
+          className="btn"
+          disabled={!hasCommandTargets}
           onClick={() => debounce('stopAll', () => playbackCommand('stop'))}
         >
           Stop All
