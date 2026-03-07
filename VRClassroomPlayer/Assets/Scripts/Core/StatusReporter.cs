@@ -17,7 +17,7 @@ namespace VRClassroom
         [SerializeField] private VideoPlayerController videoPlayer;
         [SerializeField] private ViewModeManager viewModeManager;
 
-        public const string PlayerVersion = "1.0.0";
+        public string PlayerVersion => UnityEngine.Application.version;
 
         private void Start()
         {

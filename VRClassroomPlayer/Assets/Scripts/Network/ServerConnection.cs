@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
+using System.Globalization;
 
 namespace VRClassroom
 {
@@ -364,13 +365,13 @@ namespace VRClassroom
 
             var sb = new StringBuilder(256);
             sb.Append("{\"type\":\"register\"");
-            sb.AppendFormat(",\"deviceId\":\"{0}\"", StatusReporter.EscapeJson(_deviceId));
-            sb.AppendFormat(",\"ip\":\"{0}\"", StatusReporter.EscapeJson(ip));
-            sb.AppendFormat(",\"battery\":{0}", battery);
-            sb.AppendFormat(",\"state\":\"idle\"");
-            sb.AppendFormat(",\"playerVersion\":\"{0}\"", StatusReporter.EscapeJson(StatusReporter.PlayerVersion));
+            sb.AppendFormat(CultureInfo.InvariantCulture, ",\"deviceId\":\"{0}\"", StatusReporter.EscapeJson(_deviceId));
+            sb.AppendFormat(CultureInfo.InvariantCulture, ",\"ip\":\"{0}\"", StatusReporter.EscapeJson(ip));
+            sb.AppendFormat(CultureInfo.InvariantCulture, ",\"battery\":{0}", battery);
+            sb.AppendFormat(CultureInfo.InvariantCulture, ",\"state\":\"idle\"");
+            sb.AppendFormat(CultureInfo.InvariantCulture, ",\"playerVersion\":\"{0}\"", StatusReporter.EscapeJson(UnityEngine.Application.version));
             if (!string.IsNullOrEmpty(deviceName))
-                sb.AppendFormat(",\"deviceName\":\"{0}\"", StatusReporter.EscapeJson(deviceName));
+                sb.AppendFormat(CultureInfo.InvariantCulture, ",\"deviceName\":\"{0}\"", StatusReporter.EscapeJson(deviceName));
             sb.Append('}');
 
             await SendText(sb.ToString(), token).ConfigureAwait(false);

@@ -129,6 +129,7 @@ GameObject:
   m_Component:
   - component: {fileID: 38431915}
   - component: {fileID: 38431914}
+  - component: {fileID: 38431916}
   m_Layer: 0
   m_Name: LANServer
   m_TagString: Untagged
@@ -168,6 +169,22 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &38431916
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 38431913}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8f4c2e1a3b5d47e9a0c6f8d2e4b7a1c3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VRClassroom.ServerConnection
+  statusReporter: {fileID: 1130273004}
+  videoPlayer: {fileID: 2000580081}
+  viewModeManager: {fileID: 904553242}
+  orientationManager: {fileID: 549824491}
 --- !u!1 &61422270
 GameObject:
   m_ObjectHideFlags: 0
@@ -218,7 +235,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &92920378
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -720,7 +737,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VRClassroom.DebugLogPanel
   vrCamera: {fileID: 1256054558}
-  startVisible: 0
+  startVisible: 1
   additionalLogObjects:
   - {fileID: 92920377}
 --- !u!4 &596640678
@@ -1230,7 +1247,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::VRClassroom.StatusReporter
   videoPlayer: {fileID: 2000580081}
   viewModeManager: {fileID: 904553242}
-  fastResyncOnFocus: 1
 --- !u!1 &1135317051
 GameObject:
   m_ObjectHideFlags: 0
@@ -1890,6 +1906,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::VRClassroom.PlayerStateManager
   videoPlayerController: {fileID: 2000580081}
   viewModeManager: {fileID: 904553242}
+  orientationManager: {fileID: 0}
 --- !u!1001 &2069006251
 PrefabInstance:
   m_ObjectHideFlags: 0
