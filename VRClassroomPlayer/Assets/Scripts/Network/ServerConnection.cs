@@ -27,6 +27,10 @@ namespace VRClassroom
             public string file;
             public string mode;
             public bool loop;
+            public bool autoRecenterOnOpen = true;
+            public float globalVolume;
+            public float personalVolume;
+            public VideoAdvancedSettings advancedSettings;
             public float globalVolume;
             public float personalVolume;
         }
@@ -446,6 +450,23 @@ namespace VRClassroom
                 var command = JsonUtility.FromJson<WsCommandMessage>(raw);
                 if (command == null)
                 {
+                    Debug.LogWarning("[ServerConnection] Ignoring message: failed to deserialize command payload");
+                    return;
+                }
+
+                if (!string.Equals(command.type, "command", StringComparison.Ordinal))
+                {
+                    Debug.LogWarning($"[ServerConnection] Ignoring message: unexpected type '{command.type ?? "<null>"}'");
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(command.action))
+                {
+                    Debug.LogWarning("[ServerConnection] Ignoring command: 'action' is missing or empty");
+                    return;
+                }
+
+                Debug.Log($"[ServerConnection] Command received: {command.action}");
                     LogWarning("message_dropped", null, $"reason=invalid json, rawLength={rawLength}, preview={preview}");
                     return;
                 }
@@ -491,22 +512,45 @@ namespace VRClassroom
                             string file = command.file;
                             string mode = command.mode;
                             bool loop = command.loop;
+                            bool autoRecenterOnOpen = command.autoRecenterOnOpen;
                             LogInfo("command_start", commandId,
                                 $"action=open, file={SafeValue(file)}, mode={SafeValue(mode)}, loop={loop}");
 
+                            ViewMode targetMode = viewModeManager != null ? viewModeManager.CurrentMode : PlayerConfig.DefaultViewMode;
                             if (viewModeManager != null && !string.IsNullOrEmpty(mode))
                             {
-                                ViewMode vm = ADBCommandRouter.ParseMode(mode);
-                                if (vm != viewModeManager.CurrentMode)
-                                    viewModeManager.SetMode(vm);
+                                targetMode = ADBCommandRouter.ParseMode(mode);
+                                if (targetMode != viewModeManager.CurrentMode)
+                                    viewModeManager.SetMode(targetMode);
                             }
 
+                            if (viewModeManager != null)
+                            {
+                                viewModeManager.ApplyAdvancedSettingsOverride(targetMode, command.advancedSettings);
+                            }
+
+                            if (videoPlayer != null)
                             bool openInvoked = false;
                             if (videoPlayer != null && !string.IsNullOrEmpty(file))
                             {
-                                videoPlayer.Open(file);
                                 videoPlayer.IsLooping = loop;
                                 openInvoked = true;
+                            }
+
+                            if (autoRecenterOnOpen)
+                            {
+                                orientationManager?.Recenter();
+                            }
+
+                            if (string.IsNullOrEmpty(file))
+                            {
+                                Debug.LogWarning("[ServerConnection] OPEN command ignored: 'file' is missing or empty");
+                                break;
+                            }
+
+                            if (videoPlayer != null)
+                            {
+                                videoPlayer.Open(file);
                             }
                             LogInfo("command_end", commandId,
                                 $"action=open, file={SafeValue(file)}, mode={SafeValue(mode)}, loop={loop}, openInvoked={openInvoked}");
@@ -630,6 +674,10 @@ namespace VRClassroom
         }
 
         // ─── Minimal JSON fallback helpers ───────────────────────────────────
+
+        private static bool HasJsonField(string json, string key)
+        {
+            return json.IndexOf($"\"{key}\"", StringComparison.Ordinal) >= 0;
 
         private static bool HasJsonField(string json, string key)
         {
