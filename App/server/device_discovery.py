@@ -2,9 +2,12 @@ import asyncio
 import logging
 import socket
 
+import aiohttp
+
 from .adb_executor import ADB_PORT, adb_executor
 from .config import get_config
 from .device_manager import device_manager
+from .device_ws_manager import device_ws_manager
 
 logger = logging.getLogger("vrclassroom.discovery")
 
@@ -66,11 +69,24 @@ async def _read_stable_id_from_adb(ip: str) -> str:
     return ip
 
 
+async def _probe_player_http(ip: str, player_port: int) -> dict | None:
+    """Try to reach the player's HTTP API on port 8080. Returns status dict or None."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            url = f"http://{ip}:{player_port}/status"
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+    except Exception:
+        pass
+    return None
+
+
 async def process_discovered_ip(
     ip: str,
     semaphore: asyncio.Semaphore,
 ):
-    """Minimal discovery: connect ADB + read ID + register. That's all."""
+    """Discovery: connect ADB + read ID + probe HTTP player."""
     async with semaphore:
         connected = await adb_executor.connect(ip)
         if not connected:
@@ -79,10 +95,46 @@ async def process_discovered_ip(
 
         device_id = await _read_stable_id_from_adb(ip)
 
+        # Check if player app is responding on HTTP (port 8080)
+        config = get_config()
+        player_port = config.get("playerPort", 8080)
+        player_connected = False
+        extra_kwargs = {}
+
+        # Only probe HTTP if device doesn't already have a WS connection
+        if not device_ws_manager.is_connected(device_id):
+            status = await _probe_player_http(ip, player_port)
+            if status is not None:
+                player_connected = True
+                # Extract useful fields from status response
+                if "state" in status:
+                    extra_kwargs["playback_state"] = status["state"]
+                if "file" in status:
+                    extra_kwargs["current_video"] = status["file"]
+                if "mode" in status:
+                    extra_kwargs["current_mode"] = status["mode"]
+                if "time" in status:
+                    extra_kwargs["playback_time"] = status["time"]
+                if "duration" in status:
+                    extra_kwargs["playback_duration"] = status["duration"]
+                if "battery" in status:
+                    extra_kwargs["battery"] = status["battery"]
+                if "charging" in status:
+                    extra_kwargs["battery_charging"] = status["charging"]
+                if "loop" in status:
+                    extra_kwargs["loop"] = status["loop"]
+                if "uptimeMinutes" in status:
+                    extra_kwargs["uptime_minutes"] = status["uptimeMinutes"]
+        else:
+            # Device is WS-connected, trust that
+            player_connected = True
+
         await device_manager.add_or_update(
             device_id,
             ip,
             adb_connected=True,
+            player_connected=player_connected,
+            **extra_kwargs,
         )
         await device_manager.mark_discovery_seen(device_id)
 

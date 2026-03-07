@@ -6,6 +6,7 @@ from typing import Any
 import aiohttp
 
 from .config import get_config, get_device_name, load_device_names, set_device_name
+from .device_ws_manager import device_ws_manager
 from .models import DeviceState
 from .websocket_manager import ws_manager
 
@@ -215,10 +216,18 @@ class DeviceManager:
                         if not d.online:
                             continue
 
-                        # WS-connected device: if no heartbeat for 15s, mark player disconnected
-                        if d.player_connected and (now - d.last_seen) > 15:
-                            devices_to_update.append((d, {"player_connected": False}))
-                            continue
+                        # WS-connected device: if WS dropped but still marked as player_connected
+                        if d.player_connected and not device_ws_manager.is_connected(d.device_id):
+                            # HTTP-probed player: rely on discovery cycle to refresh
+                            # Only mark disconnected if not seen by discovery for 2+ cycles
+                            if d.missed_discovery_cycles >= 2:
+                                devices_to_update.append((d, {"player_connected": False}))
+                                continue
+                        elif d.player_connected and device_ws_manager.is_connected(d.device_id):
+                            # WS-connected: heartbeat timeout (15s)
+                            if (now - d.last_seen) > 15:
+                                devices_to_update.append((d, {"player_connected": False}))
+                                continue
 
                         # Device not seen by discovery for 2+ cycles -> offline
                         if d.missed_discovery_cycles >= 2 and not d.player_connected:
