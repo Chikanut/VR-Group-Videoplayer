@@ -5,8 +5,10 @@ import DeviceGrid from './DeviceGrid';
 import DeviceDialog from './DeviceDialog';
 import VideoSelector from './VideoSelector';
 import ConnectionButton from './ConnectionButton';
+import { useI18n } from '../i18n';
 
 export default function Layout() {
+  const { t } = useI18n();
   const { connected, loading } = useDeviceStore();
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
   const [videoSelectorOpen, setVideoSelectorOpen] = useState(false);
@@ -47,7 +49,7 @@ export default function Layout() {
     <div className="app-container">
       {!connected && (
         <div className="connection-banner">
-          Connection lost. Reconnecting...
+          {t('Connection lost. Reconnecting...')}
         </div>
       )}
       <TopControlPanel
@@ -58,7 +60,7 @@ export default function Layout() {
         {loading ? (
           <div className="loading-state">
             <div className="spinner" />
-            <p>Connecting to server...</p>
+            <p>{t('Connecting to server...')}</p>
           </div>
         ) : (
           <DeviceGrid

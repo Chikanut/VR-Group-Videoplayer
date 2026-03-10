@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getConfig, updateConfig } from '../api';
 import FilePicker from './FilePicker';
+import { useI18n } from '../i18n';
 
 function generateId() {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
@@ -27,6 +28,7 @@ function createDefaultAdvancedSettings() {
 
 export default function SettingsPage() {
   const navigate = useNavigate();
+  const { t, language, setLanguage } = useI18n();
   const [config, setConfig] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -52,22 +54,22 @@ export default function SettingsPage() {
     const names = videos.map((v) => v.name).filter(Boolean);
     const paths = videos.map((v) => v.localPath).filter(Boolean);
     if (new Set(names).size !== names.length) {
-      setError('Duplicate video names found');
+      setError(t('Duplicate video names found'));
       setSaving(false);
       return;
     }
     if (new Set(paths).size !== paths.length) {
-      setError(isAndroidRuntime ? 'Duplicate video filenames found' : 'Duplicate video paths found');
+      setError(isAndroidRuntime ? t('Duplicate video filenames found') : t('Duplicate video paths found'));
       setSaving(false);
       return;
     }
 
     try {
       await updateConfig(config);
-      setSuccess('Settings saved successfully');
+      setSuccess(t('Settings saved successfully'));
       setTimeout(() => setSuccess(''), 3000);
     } catch (e) {
-      setError('Failed to save settings');
+      setError(t('Failed to save settings'));
     }
     setSaving(false);
   };
@@ -176,7 +178,7 @@ export default function SettingsPage() {
   if (!config) {
     return (
       <div className="settings-page">
-        <p>Loading settings...</p>
+        <p>{t('Loading settings...')}</p>
       </div>
     );
   }
@@ -185,11 +187,18 @@ export default function SettingsPage() {
     <div className="settings-page">
       <div className="settings-header">
         <button className="btn" onClick={() => navigate('/')}>
-          Back
+          {t('Back')}
         </button>
-        <h1>Settings</h1>
+        <h1>{t('Settings')}</h1>
+        <div className="form-group" style={{ minWidth: 220, margin: 0 }}>
+          <label>{t('Language')}</label>
+          <select value={language} onChange={(e) => setLanguage(e.target.value)}>
+            <option value="uk">{t('Ukrainian')}</option>
+            <option value="en">{t('English')}</option>
+          </select>
+        </div>
         <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving...' : 'Save'}
+          {saving ? t('Saving...') : t('Save')}
         </button>
       </div>
 

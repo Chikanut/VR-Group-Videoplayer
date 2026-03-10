@@ -12,8 +12,10 @@ import {
   restartApp,
 } from '../api';
 import UpdateProgress from './UpdateProgress';
+import { useI18n } from '../i18n';
 
 export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
+  const { t } = useI18n();
   const device = useDeviceStore((s) => s.devices[deviceId]);
   const config = useDeviceStore((s) => s.config);
   const [editName, setEditName] = useState('');
@@ -62,8 +64,8 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
     return (
       <div className="modal-overlay" onClick={onClose}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
-          <p>Device not found</p>
-          <button className="btn" onClick={onClose}>Close</button>
+          <p>{t('Device not found')}</p>
+          <button className="btn" onClick={onClose}>{t('Close')}</button>
         </div>
       </div>
     );
@@ -111,7 +113,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
             <h2
               className="dialog-title"
               onClick={() => setEditingName(true)}
-              title="Click to rename"
+              title={t('Click to rename')}
             >
               {device.name || device.deviceId}
             </h2>
@@ -120,20 +122,20 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
         </div>
 
         {!device.online && (
-          <div className="dialog-warning">Device is offline</div>
+          <div className="dialog-warning">{t('Device is offline')}</div>
         )}
 
         <div className="dialog-section">
-          <h3>Device Info</h3>
+          <h3>{t('Device Info')}</h3>
           <table className="info-table">
             <tbody>
               <tr><td>Device ID</td><td>{device.deviceId}</td></tr>
               <tr><td>IP</td><td>{device.ip}</td></tr>
               <tr>
-                <td>Battery</td>
-                <td>{device.battery > 0 ? `${device.battery}%${device.batteryCharging ? ' (charging)' : ''}` : 'Unknown'}</td>
+                <td>{t('Battery')}</td>
+                <td>{device.battery > 0 ? `${device.battery}%${device.batteryCharging ? ' (charging)' : ''}` : t('Unknown')}</td>
               </tr>
-              <tr><td>Uptime</td><td>{device.uptimeMinutes} min</td></tr>
+              <tr><td>{t('Uptime')}</td><td>{device.uptimeMinutes} {t('min')}</td></tr>
               {adbAvailable && (
               <tr>
                 <td>ADB</td>
@@ -143,7 +145,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
               </tr>
               )}
               <tr>
-                <td>Player</td>
+                <td>{t('Player')}</td>
                 <td className={device.playerConnected ? 'text-ok' : 'text-warn'}>
                   {device.playerConnected ? `Connected (v${device.playerVersion})` : 'Not connected'}
                 </td>
@@ -153,9 +155,9 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
         </div>
 
         <div className="dialog-section">
-          <h3>Requirements</h3>
+          <h3>{t('Requirements')}</h3>
           {loadingReqs ? (
-            <p>Checking requirements...</p>
+            <p>{t('Checking requirements...')}</p>
           ) : requirements ? (
             <div className="req-list">
               {requirements.map((r, i) => (
@@ -165,10 +167,10 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
                   <span className="req-type">{r.type}</span>
                 </div>
               ))}
-              {requirements.length === 0 && <p>No requirements configured</p>}
+              {requirements.length === 0 && <p>{t('No requirements configured')}</p>}
             </div>
           ) : (
-            <p>Unable to check requirements</p>
+            <p>{t('Unable to check requirements')}</p>
           )}
           {adbAvailable && device.online && device.adbConnected && (device.requirementsMet === false || device.requirementsMet === null) && (
             <button
@@ -176,35 +178,34 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
               onClick={() => updateDevice(deviceId)}
               disabled={device.updateInProgress}
             >
-              {device.updateInProgress ? 'Updating...' : 'Update Device'}
+              {device.updateInProgress ? t('Updating...') : t('Update Device')}
             </button>
           )}
           <button className="btn btn-small" onClick={loadRequirements}>
-            Refresh
+            {t('Refresh')}
           </button>
         </div>
 
         {device.updateInProgress && device.updateProgress && (
           <div className="dialog-section">
-            <h3>Update Progress</h3>
+            <h3>{t('Update Progress')}</h3>
             <UpdateProgress progress={device.updateProgress} />
           </div>
         )}
 
         {adbAvailable && device.online && !device.adbConnected && device.playerConnected && (
           <div className="dialog-section">
-            <h3>WS-Only Mode</h3>
+            <h3>{t('WS-Only Mode')}</h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--info)' }}>
-              This device is connected via WebSocket only (no ADB). Playback commands work normally.
-              To enable app updates, connect the device via USB and run USB Init with Wireless ADB enabled.
+              {t('This device is connected via WebSocket only (no ADB). Playback commands work normally. To enable app updates, connect the device via USB and run USB Init with Wireless ADB enabled.')}
             </p>
           </div>
         )}
 
         {adbAvailable && device.online && device.adbConnected && !device.playerConnected && (
           <div className="dialog-section">
-            <h3>Player</h3>
-            <p className="text-warn">Player not connected. You can try to launch it via ADB.</p>
+            <h3>{t('Player')}</h3>
+            <p className="text-warn">{t('Player not connected. You can try to launch it via ADB.')}</p>
             <button
               className="btn btn-primary"
               onClick={async () => {
@@ -212,33 +213,33 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
                 if (result.error && (!result.success || result.success.length === 0)) {
                   alert(result.error);
                 } else if (result.success && result.success.length > 0) {
-                  alert('Player launch command sent. It should connect via WebSocket shortly.');
+                  alert(t('Player launch command sent. It should connect via WebSocket shortly.'));
                 }
               }}
             >
-              Launch Player via ADB
+              {t('Launch Player via ADB')}
             </button>
           </div>
         )}
 
         <div className="dialog-section">
-          <h3>Device Actions</h3>
+          <h3>{t('Device Actions')}</h3>
           <div className="dialog-controls">
             <button
               className="btn btn-dim"
               disabled={!adbAvailable || !device.online || !device.adbConnected || restarting}
               onClick={handleRestartApp}
-              title={!device.adbConnected ? 'ADB required to restart app' : 'Force-stop and relaunch the player app'}
+              title={!device.adbConnected ? t('ADB required to restart app') : t('Force-stop and relaunch the player app')}
             >
-              {restarting ? 'Restarting...' : 'Restart App'}
+              {restarting ? t('Restarting...') : t('Restart App')}
             </button>
           </div>
         </div>
 
         <div className="dialog-section">
-          <h3>Audio</h3>
+          <h3>{t('Audio')}</h3>
           <div className="volume-control">
-            <label htmlFor="personal-volume-slider">Device volume</label>
+            <label htmlFor="personal-volume-slider">{t('Device volume')}</label>
             <input
               id="personal-volume-slider"
               type="range"
@@ -256,71 +257,71 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
             />
             <span>{Math.round(personalVolume * 100)}%</span>
           </div>
-          <p className="dialog-playback-info">Effective volume: <strong>{Math.round((device.effectiveVolume ?? personalVolume) * 100)}%</strong></p>
+          <p className="dialog-playback-info">{t('Effective volume')}: <strong>{Math.round((device.effectiveVolume ?? personalVolume) * 100)}%</strong></p>
         </div>
 
         <div className="dialog-section">
-          <h3>Playback Controls</h3>
+          <h3>{t('Playback Controls')}</h3>
           <div className="dialog-controls">
             <button
               className="btn btn-success"
               disabled={!device.online || (!device.playerConnected && !(adbAvailable && device.adbConnected))}
               onClick={onPlayVideo}
             >
-              Open Video
+              {t('Open Video')}
             </button>
             <button
               className="btn"
               disabled={!device.online || (!device.playerConnected && !(adbAvailable && device.adbConnected))}
               onClick={() => playbackCommand('play', [deviceId])}
             >
-              Play
+              {t('Play')}
             </button>
             <button
               className="btn"
               disabled={!device.online || (!device.playerConnected && !(adbAvailable && device.adbConnected))}
               onClick={() => playbackCommand('pause', [deviceId])}
             >
-              Pause
+              {t('Pause')}
             </button>
             <button
               className="btn"
               disabled={!device.online || (!device.playerConnected && !(adbAvailable && device.adbConnected))}
               onClick={() => playbackCommand('stop', [deviceId])}
             >
-              Stop
+              {t('Stop')}
             </button>
             <button
               className="btn"
               disabled={!device.online || (!device.playerConnected && !(adbAvailable && device.adbConnected))}
               onClick={() => playbackCommand('recenter', [deviceId])}
             >
-              Recenter
+              {t('Recenter')}
             </button>
             <button
               className="btn"
               disabled={!device.online || (!device.playerConnected && !(adbAvailable && device.adbConnected))}
               onClick={() => pingDevice(deviceId)}
             >
-              Ping
+              {t('Ping')}
             </button>
             <button
               className="btn btn-dim"
               disabled={!device.online || (!device.playerConnected && !(adbAvailable && device.adbConnected))}
               onClick={() => toggleDeviceDebug(deviceId)}
-              title="Toggle debug panel on this device"
+              title={t('Toggle debug panel on this device')}
             >
-              Debug
+              {t('Debug')}
             </button>
           </div>
           {device.playbackState !== 'idle' && (
             <div className="dialog-playback-info">
               <p>
-                State: <strong>{device.playbackState}</strong> | Mode: <strong>{device.currentMode}</strong>
-                {device.loop && ' | Loop'}
+                {t('State')}: <strong>{device.playbackState}</strong> | {t('Mode')}: <strong>{device.currentMode}</strong>
+                {device.loop && ` | ${t('Loop')}`}
               </p>
               {device.currentVideo && (
-                <p>File: {device.currentVideo}</p>
+                <p>{t('File')}: {device.currentVideo}</p>
               )}
               {device.playbackDuration > 0 && (
                 <div className="progress-bar large">
