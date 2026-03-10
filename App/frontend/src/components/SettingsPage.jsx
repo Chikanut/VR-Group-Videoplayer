@@ -570,12 +570,29 @@ export default function SettingsPage() {
             />
           </div>
           <div className="form-group">
-            <label>Network Subnet (auto-detected if empty)</label>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={config.networkSubnetAuto ?? true}
+                onChange={(e) => updateField('networkSubnetAuto', e.target.checked)}
+              />
+              <span>Network Subnet Auto Detect (Android)</span>
+            </label>
+            <span className="form-hint">
+              When enabled, subnet is refreshed from detected Android network on every startup.
+            </span>
+          </div>
+          <div className="form-group">
+            <label>Network Subnet (manual mode)</label>
             <input
               type="text"
               value={config.networkSubnet || ''}
-              onChange={(e) => updateField('networkSubnet', e.target.value)}
+              onChange={(e) => {
+                updateField('networkSubnet', e.target.value);
+                updateField('networkSubnetAuto', false);
+              }}
               placeholder="192.168.1"
+              disabled={config.networkSubnetAuto ?? true}
             />
           </div>
           <div className="form-group">

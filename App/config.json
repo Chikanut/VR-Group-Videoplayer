@@ -59,5 +59,6 @@
   "ignoreRequirements": true,
   "statusPollInterval": 1,
   "requirementsPollInterval": 3,
-  "fastResyncOnFocus": true
+  "fastResyncOnFocus": true,
+  "networkSubnetAuto": true
 }
