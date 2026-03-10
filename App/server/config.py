@@ -22,6 +22,7 @@ DEFAULT_CONFIG = {
     "batteryThreshold": 20,
     "scanInterval": 30,
     "networkSubnet": "",
+    "networkSubnetAuto": True,
     "serverPort": 8000,
     "playerPort": 8080,
     "deviceOfflineTimeout": 30,
@@ -84,6 +85,9 @@ def detect_android_hotspot_subnet() -> str:
 def load_config() -> dict:
     global _config
     with _config_lock:
+        should_save_config = False
+        detected_subnet = ""
+
         if CONFIG_PATH.exists():
             try:
                 with open(CONFIG_PATH, "r") as f:
@@ -97,6 +101,14 @@ def load_config() -> dict:
                 for key in data:
                     if key not in _config:
                         _config[key] = data[key]
+
+                if "networkSubnet" in data and "networkSubnetAuto" not in data:
+                    _config["networkSubnetAuto"] = True
+                    should_save_config = True
+                    logger.info(
+                        "Config migration: existing networkSubnet detected without networkSubnetAuto; "
+                        "defaulting to auto mode for Android compatibility"
+                    )
                 logger.info("Config loaded from %s", CONFIG_PATH)
             except (json.JSONDecodeError, OSError) as e:
                 logger.error("Invalid config file, using defaults: %s", e)
@@ -106,10 +118,32 @@ def load_config() -> dict:
             _save_config_locked()
             logger.info("Created default config at %s", CONFIG_PATH)
 
-        if _is_android_runtime() and not _config.get("networkSubnet"):
-            _config["networkSubnet"] = detect_android_hotspot_subnet()
+        if _is_android_runtime():
+            detected_subnet = detect_android_hotspot_subnet()
+            if _config.get("networkSubnetAuto", True):
+                if _config.get("networkSubnet") != detected_subnet:
+                    _config["networkSubnet"] = detected_subnet
+                    should_save_config = True
+            elif not _config.get("networkSubnet"):
+                _config["networkSubnet"] = detected_subnet
+                should_save_config = True
+                logger.warning(
+                    "networkSubnetAuto=false but networkSubnet is empty; "
+                    "falling back to detected subnet"
+                )
 
         _config["adbAvailable"] = ADB_AVAILABLE
+
+        logger.info(
+            "Network config at runtime: networkSubnet=%s, networkSubnetAuto=%s, detectedSubnet=%s",
+            _config.get("networkSubnet", ""),
+            _config.get("networkSubnetAuto", True),
+            detected_subnet,
+        )
+
+        if should_save_config:
+            _save_config_locked()
+
         return deepcopy(_config)
 
 
