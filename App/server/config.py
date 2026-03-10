@@ -7,7 +7,7 @@ import uuid
 from copy import deepcopy
 from pathlib import Path
 from threading import Lock
-from typing import Optional
+from typing import Optional, Tuple
 
 logger = logging.getLogger("vrclassroom.config")
 
@@ -54,11 +54,41 @@ def detect_adb_available() -> bool:
 ADB_AVAILABLE = detect_adb_available()
 
 
-def detect_android_hotspot_subnet() -> str:
+def _extract_subnet(ip_addr: str) -> str:
+    parts = ip_addr.split(".")
+    if len(parts) != 4:
+        return ""
+    if any(not part.isdigit() for part in parts):
+        return ""
+    return f"{parts[0]}.{parts[1]}.{parts[2]}"
+
+
+def _detect_android_hotspot_subnet_with_source() -> Tuple[str, str]:
     """Best-effort detection of active hotspot/LAN subnet on Android runtime."""
     override = os.environ.get("VRCLASSROOM_ANDROID_SUBNET", "").strip()
     if override:
-        return override
+        return override, "env_override"
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route_sock:
+            route_sock.connect(("8.8.8.8", 80))
+            local_ip = route_sock.getsockname()[0]
+        subnet = _extract_subnet(local_ip)
+        if subnet:
+            return subnet, "route"
+    except OSError:
+        pass
+
+    try:
+        hostname = socket.gethostname()
+        for addr in socket.gethostbyname_ex(hostname)[2]:
+            if not addr or addr.startswith("127."):
+                continue
+            subnet = _extract_subnet(addr)
+            if subnet:
+                return subnet, "hostname"
+    except OSError:
+        pass
 
     candidates = [
         "192.168.43",   # Android legacy hotspot
@@ -66,20 +96,12 @@ def detect_android_hotspot_subnet() -> str:
         "172.20.10",    # iOS hotspot (shared networks)
     ]
 
-    try:
-        hostname = socket.gethostname()
-        for addr in socket.gethostbyname_ex(hostname)[2]:
-            if not addr or "." not in addr or addr.startswith("127."):
-                continue
-            parts = addr.split(".")
-            if len(parts) == 4:
-                subnet = f"{parts[0]}.{parts[1]}.{parts[2]}"
-                if subnet not in candidates:
-                    candidates.insert(0, subnet)
-    except Exception:
-        pass
+    return candidates[0], "fallback_candidates"
 
-    return candidates[0]
+
+def detect_android_hotspot_subnet() -> str:
+    subnet, _ = _detect_android_hotspot_subnet_with_source()
+    return subnet
 
 
 def load_config() -> dict:
@@ -87,6 +109,7 @@ def load_config() -> dict:
     with _config_lock:
         should_save_config = False
         detected_subnet = ""
+        detected_subnet_source = "n/a"
 
         if CONFIG_PATH.exists():
             try:
@@ -119,7 +142,7 @@ def load_config() -> dict:
             logger.info("Created default config at %s", CONFIG_PATH)
 
         if _is_android_runtime():
-            detected_subnet = detect_android_hotspot_subnet()
+            detected_subnet, detected_subnet_source = _detect_android_hotspot_subnet_with_source()
             if _config.get("networkSubnetAuto", True):
                 if _config.get("networkSubnet") != detected_subnet:
                     _config["networkSubnet"] = detected_subnet
@@ -135,10 +158,11 @@ def load_config() -> dict:
         _config["adbAvailable"] = ADB_AVAILABLE
 
         logger.info(
-            "Network config at runtime: networkSubnet=%s, networkSubnetAuto=%s, detectedSubnet=%s",
+            "Network config at runtime: networkSubnet=%s, networkSubnetAuto=%s, detectedSubnet=%s, source=%s",
             _config.get("networkSubnet", ""),
             _config.get("networkSubnetAuto", True),
             detected_subnet,
+            detected_subnet_source if _is_android_runtime() else "n/a",
         )
 
         if should_save_config:
