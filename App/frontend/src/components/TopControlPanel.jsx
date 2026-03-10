@@ -2,9 +2,11 @@ import React, { useRef, useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useDeviceStore from '../store/deviceStore';
 import { playbackCommand, updateAllDevices, getUsbDevices, updateUsbDevice, launchPlayer, getGlobalVolume, setGlobalVolume } from '../api';
+import { useI18n } from '../i18n';
 
 export default function TopControlPanel({ onPlayAll, panelRef }) {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const config = useDeviceStore((s) => s.config);
   const devices = useDeviceStore((s) => s.getDeviceList());
   const onlineDevices = devices.filter((d) => d.online);
@@ -74,7 +76,7 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
   const handleUsbInit = async () => {
     const hasAnySelected = usbOptions.enableWirelessAdb || usbOptions.updateApp || usbOptions.updateContent;
     if (!hasAnySelected) {
-      alert('Select at least one initialization option.');
+      alert(t('Select at least one initialization option.'));
       return;
     }
 
@@ -84,15 +86,15 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
       const data = await getUsbDevices();
       const serials = data.devices || [];
       if (serials.length === 0) {
-        alert('No USB devices found. Connect a Quest headset via USB cable.');
+        alert(t('No USB devices found. Connect a Quest headset via USB cable.'));
       } else {
         for (const serial of serials) {
           await updateUsbDevice(serial, usbOptions);
         }
-        alert(`Started initialization for ${serials.length} USB device(s). Check progress below.`);
+        alert(t('Started initialization for {count} USB device(s). Check progress below.', { count: serials.length }));
       }
     } catch (e) {
-      alert('Failed to scan USB devices');
+      alert(t('Failed to scan USB devices'));
     }
     setUsbScanning(false);
   };
@@ -106,10 +108,10 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
       <div className="top-panel-left">
         <h1 className="top-panel-title">VR Classroom</h1>
         <span className="device-count">
-          {onlineDevices.length}/{devices.length} online
+          {t('{online}/{total} online', { online: onlineDevices.length, total: devices.length })}
         </span>
-        <span className="runtime-badge" title="Runtime mode detected by backend config">
-          Mode: {isAndroidRuntime ? 'Android' : 'Desktop'}
+        <span className="runtime-badge" title={t('Runtime mode detected by backend config')}>
+          {t('Mode')}: {isAndroidRuntime ? t('Android') : t('Desktop')}
         </span>
       </div>
       <div className="top-panel-controls">
@@ -119,14 +121,14 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
           disabled={!hasOnline}
           onClick={() => debounce('updateAll', async () => {
             if (needsUpdate.length === 0) {
-              alert('All devices up to date');
+              alert(t('All devices up to date'));
               return;
             }
             if (adbAvailable) {
               const noAdb = onlineDevices.filter((d) => !d.adbConnected);
               if (noAdb.length > 0) {
                 const proceed = confirm(
-                  `${noAdb.length} device(s) without ADB will be skipped. Continue?`
+                  t('{count} device(s) without ADB will be skipped. Continue?', { count: noAdb.length })
                 );
                 if (!proceed) return;
               }
@@ -134,7 +136,7 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
             await updateAllDevices();
           })}
         >
-          Update All {needsUpdate.length > 0 && `(${needsUpdate.length})`}
+          {t('Update All')} {needsUpdate.length > 0 && `(${needsUpdate.length})`}
         </button>
         )}
         {showAdbControls && adbAvailable && (
@@ -144,7 +146,7 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
             onClick={() => !usbScanning && setUsbMenuOpen(!usbMenuOpen)}
             disabled={usbScanning}
           >
-            {usbScanning ? 'Scanning USB...' : 'USB Init'}
+            {usbScanning ? t('Scanning USB...') : t('USB Init')}
           </button>
           {usbMenuOpen && (
             <div className="usb-init-menu">
@@ -154,7 +156,7 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
                   checked={usbOptions.enableWirelessAdb}
                   onChange={() => toggleOption('enableWirelessAdb')}
                 />
-                <span>Wireless ADB</span>
+                <span>{t('Wireless ADB')}</span>
               </label>
               <label className="usb-init-option">
                 <input
@@ -162,7 +164,7 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
                   checked={usbOptions.updateApp}
                   onChange={() => toggleOption('updateApp')}
                 />
-                <span>Update App</span>
+                <span>{t('Update App')}</span>
               </label>
               <label className="usb-init-option">
                 <input
@@ -170,13 +172,13 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
                   checked={usbOptions.updateContent}
                   onChange={() => toggleOption('updateContent')}
                 />
-                <span>Update Content</span>
+                <span>{t('Update Content')}</span>
               </label>
               <button
                 className="btn btn-primary usb-init-start"
                 onClick={handleUsbInit}
               >
-                Start
+                {t('Start')}
               </button>
             </div>
           )}
@@ -186,17 +188,17 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
         <button
           className="btn"
           disabled={!hasAdbDevices}
-          title={adbNoPlayer.length > 0 ? `${adbNoPlayer.length} device(s) without player` : 'Launch player on all ADB devices'}
+          title={adbNoPlayer.length > 0 ? t('{count} device(s) without player', { count: adbNoPlayer.length }) : t('Launch player on all ADB devices')}
           onClick={() => debounce('launchPlayer', async () => {
             const result = await launchPlayer();
             if (result.error && (!result.success || result.success.length === 0)) {
               alert(result.error);
             } else if (result.success) {
-              alert(`Player launch command sent to ${result.success.length} device(s).`);
+              alert(t('Player launch command sent to {count} device(s).', { count: result.success.length }));
             }
           })}
         >
-          Launch Player {adbNoPlayer.length > 0 && `(${adbNoPlayer.length})`}
+          {t('Launch Player')} {adbNoPlayer.length > 0 && `(${adbNoPlayer.length})`}
         </button>
         )}
         <button
@@ -204,38 +206,38 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
           disabled={!hasCommandTargets}
           onClick={() => debounce('playAll', onPlayAll)}
         >
-          Play All
+          {t('Play All')}
         </button>
         <button
           className="btn"
           disabled={!hasCommandTargets}
           onClick={() => debounce('pauseAll', () => playbackCommand('pause'))}
         >
-          Pause All
+          {t('Pause All')}
         </button>
         <button
           className="btn"
           disabled={!hasCommandTargets}
           onClick={() => debounce('resumeAll', () => playbackCommand('play'))}
         >
-          Resume All
+          {t('Resume All')}
         </button>
         <button
           className="btn"
           disabled={!hasCommandTargets}
           onClick={() => debounce('stopAll', () => playbackCommand('stop'))}
         >
-          Stop All
+          {t('Stop All')}
         </button>
         <button
           className="btn"
           disabled={!hasCommandTargets}
           onClick={() => debounce('recenterAll', () => playbackCommand('recenter'))}
         >
-          Recenter All
+          {t('Recenter All')}
         </button>
         <div className="volume-control global-volume-control">
-          <label htmlFor="global-volume-slider">Global volume</label>
+          <label htmlFor="global-volume-slider">{t('Global volume')}</label>
           <input
             id="global-volume-slider"
             type="range"
@@ -256,7 +258,7 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
           className="btn btn-secondary"
           onClick={() => navigate('/settings')}
         >
-          Settings
+          {t('Settings')}
         </button>
       </div>
     </header>
