@@ -6,6 +6,8 @@ echo ============================================
 echo   VR Classroom - Windows EXE Build
 echo ============================================
 
+set "ICON_PATH=assets\icons\app.ico"
+
 where python >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Python not found in PATH.
@@ -49,7 +51,16 @@ echo [BUILD] Building Windows executable with PyInstaller...
 if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
 
-pyinstaller --noconfirm --clean --onefile --name VRClassroomControl --add-data "frontend/dist;frontend/dist" run.py
+if not exist "%ICON_PATH%" (
+    echo [WARN ] EXE icon not found at %CD%\%ICON_PATH%
+    echo [WARN ] Build will continue with default icon.
+    set "PYINSTALLER_ICON_ARG="
+) else (
+    echo [BUILD] Using EXE icon: %CD%\%ICON_PATH%
+    set "PYINSTALLER_ICON_ARG=--icon %ICON_PATH%"
+)
+
+pyinstaller --noconfirm --clean --onefile --name VRClassroomControl --add-data "frontend/dist;frontend/dist" %PYINSTALLER_ICON_ARG% run.py
 if errorlevel 1 exit /b 1
 
 echo.
