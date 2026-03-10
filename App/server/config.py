@@ -16,6 +16,7 @@ LEGACY_DEVICE_NAMES_PATH = Path(__file__).parent.parent / "device_names.json"
 
 DEFAULT_CONFIG = {
     "apkPath": "",
+    "apkDownloadUrl": "",
     "packageId": "com.vrclass.player",
     "adbActionPrefix": "com.vrclass.player",
     "requirementVideos": [],

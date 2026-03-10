@@ -225,6 +225,16 @@ export default function SettingsPage() {
             placeholder="com.vrclassroom.player"
           />
         </div>
+        <div className="form-group">
+          <label>APK Download URL (for QR code)</label>
+          <input
+            type="text"
+            value={config.apkDownloadUrl || ''}
+            onChange={(e) => updateField('apkDownloadUrl', e.target.value)}
+            placeholder="https://example.com/path/to/player.apk"
+          />
+          <p className="form-hint">Used in CONNECTION window to generate QR code for Android APK download.</p>
+        </div>
       </section>
       )}
 

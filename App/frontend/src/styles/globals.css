@@ -1103,6 +1103,28 @@ body {
   padding: 8px 0;
 }
 
+.connection-tabs {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+}
+
+.connection-tab {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.connection-tab.active {
+  border-color: var(--primary);
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
 .qr-container {
   padding: 8px;
   background: #fff;
@@ -1112,7 +1134,7 @@ body {
 
 .connection-url {
   font-family: monospace;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 600;
   color: var(--primary);
   word-break: break-all;
