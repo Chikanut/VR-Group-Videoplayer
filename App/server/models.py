@@ -45,6 +45,7 @@ class ConfigModel(BaseModel):
     batteryThreshold: int = 20
     scanInterval: int = 30
     networkSubnet: str = ""
+    networkSubnetAuto: bool = True
     serverPort: int = 8000
     playerPort: int = 8080
     deviceOfflineTimeout: int = 30
