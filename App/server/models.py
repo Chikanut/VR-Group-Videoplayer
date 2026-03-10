@@ -39,6 +39,7 @@ class RequirementVideo(BaseModel):
 
 class ConfigModel(BaseModel):
     apkPath: str = ""
+    apkDownloadUrl: str = ""
     packageId: str = "com.vrclass.player"
     adbActionPrefix: str = "com.vrclass.player"
     requirementVideos: List[RequirementVideo] = []
