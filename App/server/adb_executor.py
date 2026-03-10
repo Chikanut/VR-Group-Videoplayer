@@ -4,6 +4,7 @@ import re
 import shlex
 import shutil
 from collections import defaultdict
+from typing import Dict, List, Optional, Tuple
 
 from .config import ADB_AVAILABLE
 
@@ -15,8 +16,8 @@ COMMAND_TIMEOUT = 50
 
 class ADBExecutor:
     def __init__(self):
-        self._device_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
-        self._adb_path: str | None = None
+        self._device_locks: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._adb_path: Optional[str] = None
 
     async def check_adb(self) -> bool:
         self._adb_path = shutil.which("adb")
@@ -29,7 +30,7 @@ class ADBExecutor:
     def _adb_cmd(self) -> str:
         return self._adb_path or "adb"
 
-    async def _run(self, ip: str, args: list[str], timeout: int = COMMAND_TIMEOUT) -> tuple[bool, str]:
+    async def _run(self, ip: str, args: List[str], timeout: int = COMMAND_TIMEOUT) -> Tuple[bool, str]:
         target = f"{ip}:{ADB_PORT}"
         cmd = [self._adb_cmd(), "-s", target] + args
         async with self._device_locks[ip]:
@@ -104,14 +105,14 @@ class ADBExecutor:
         except Exception:
             return False
 
-    async def install_apk(self, ip: str, apk_path: str) -> tuple[bool, str]:
+    async def install_apk(self, ip: str, apk_path: str) -> Tuple[bool, str]:
         return await self._run(ip, ["install", "-r", apk_path], timeout=120)
 
-    async def push_file(self, ip: str, local_path: str, device_path: str) -> tuple[bool, str]:
+    async def push_file(self, ip: str, local_path: str, device_path: str) -> Tuple[bool, str]:
         return await self._run(ip, ["push", local_path, device_path], timeout=600)
 
     async def push_file_with_progress(self, ip: str, local_path: str, device_path: str,
-                                       progress_callback=None) -> tuple[bool, str]:
+                                       progress_callback=None) -> Tuple[bool, str]:
         target = f"{ip}:{ADB_PORT}"
         cmd = [self._adb_cmd(), "-s", target, "push", local_path, device_path]
         async with self._device_locks[ip]:
@@ -169,10 +170,10 @@ class ADBExecutor:
             except Exception as e:
                 return False, str(e)
 
-    async def shell(self, ip: str, command: str) -> tuple[bool, str]:
+    async def shell(self, ip: str, command: str) -> Tuple[bool, str]:
         return await self._run(ip, ["shell", command], timeout=COMMAND_TIMEOUT)
 
-    async def list_packages(self, ip: str) -> list[str]:
+    async def list_packages(self, ip: str) -> List[str]:
         success, output = await self.shell(ip, "pm list packages")
         if not success:
             return []
@@ -188,14 +189,14 @@ class ADBExecutor:
         success, output = await self.shell(ip, f"test -f {quoted} && echo ok || echo missing")
         return success and "ok" in output
 
-    async def get_package_version(self, ip: str, package_id: str) -> str | None:
+    async def get_package_version(self, ip: str, package_id: str) -> Optional[str]:
         success, output = await self.shell(ip, f"dumpsys package {package_id} | grep versionName")
         if not success:
             return None
         match = re.search(r"versionName=([\w\.-]+)", output)
         return match.group(1) if match else None
 
-    async def get_local_apk_version(self, apk_path: str) -> str | None:
+    async def get_local_apk_version(self, apk_path: str) -> Optional[str]:
         try:
             proc = await asyncio.create_subprocess_exec(
                 self._adb_cmd(), "shell", "aapt", "dump", "badging", apk_path,
@@ -211,7 +212,7 @@ class ADBExecutor:
             pass
         return None
 
-    async def list_usb_devices(self) -> list[str]:
+    async def list_usb_devices(self) -> List[str]:
         try:
             proc = await asyncio.create_subprocess_exec(
                 self._adb_cmd(), "devices",
@@ -232,7 +233,7 @@ class ADBExecutor:
         except Exception:
             return []
 
-    async def get_usb_device_ip(self, serial: str) -> str | None:
+    async def get_usb_device_ip(self, serial: str) -> Optional[str]:
         success, output = await self.run_on_serial(
             serial,
             ["shell", "ip", "-f", "inet", "addr", "show", "wlan0"],
@@ -263,7 +264,7 @@ class ADBExecutor:
         except Exception:
             return False
 
-    async def run_on_serial(self, serial: str, args: list[str], timeout: int = COMMAND_TIMEOUT) -> tuple[bool, str]:
+    async def run_on_serial(self, serial: str, args: List[str], timeout: int = COMMAND_TIMEOUT) -> Tuple[bool, str]:
         cmd = [self._adb_cmd(), "-s", serial] + args
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -279,11 +280,11 @@ class ADBExecutor:
         except Exception as e:
             return False, str(e)
 
-    async def install_apk_usb(self, serial: str, apk_path: str) -> tuple[bool, str]:
+    async def install_apk_usb(self, serial: str, apk_path: str) -> Tuple[bool, str]:
         return await self.run_on_serial(serial, ["install", "-r", apk_path], timeout=120)
 
     async def push_file_usb_with_progress(self, serial: str, local_path: str, device_path: str,
-                                           progress_callback=None) -> tuple[bool, str]:
+                                           progress_callback=None) -> Tuple[bool, str]:
         cmd = [self._adb_cmd(), "-s", serial, "push", local_path, device_path]
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -378,46 +379,46 @@ class NoOpADBExecutor:
     async def is_connected(self, ip: str) -> bool:
         return False
 
-    async def install_apk(self, ip: str, apk_path: str) -> tuple[bool, str]:
+    async def install_apk(self, ip: str, apk_path: str) -> Tuple[bool, str]:
         return False, "ADB disabled"
 
-    async def push_file(self, ip: str, local_path: str, device_path: str) -> tuple[bool, str]:
+    async def push_file(self, ip: str, local_path: str, device_path: str) -> Tuple[bool, str]:
         return False, "ADB disabled"
 
-    async def push_file_with_progress(self, ip: str, local_path: str, device_path: str, progress_callback=None) -> tuple[bool, str]:
+    async def push_file_with_progress(self, ip: str, local_path: str, device_path: str, progress_callback=None) -> Tuple[bool, str]:
         return False, "ADB disabled"
 
-    async def shell(self, ip: str, command: str) -> tuple[bool, str]:
+    async def shell(self, ip: str, command: str) -> Tuple[bool, str]:
         return False, "ADB disabled"
 
-    async def list_packages(self, ip: str) -> list[str]:
+    async def list_packages(self, ip: str) -> List[str]:
         return []
 
     async def file_exists(self, ip: str, device_path: str) -> bool:
         return False
 
-    async def get_package_version(self, ip: str, package_id: str) -> str | None:
+    async def get_package_version(self, ip: str, package_id: str) -> Optional[str]:
         return None
 
-    async def get_local_apk_version(self, apk_path: str) -> str | None:
+    async def get_local_apk_version(self, apk_path: str) -> Optional[str]:
         return None
 
-    async def list_usb_devices(self) -> list[str]:
+    async def list_usb_devices(self) -> List[str]:
         return []
 
-    async def get_usb_device_ip(self, serial: str) -> str | None:
+    async def get_usb_device_ip(self, serial: str) -> Optional[str]:
         return None
 
     async def enable_tcpip(self, serial: str) -> bool:
         return False
 
-    async def run_on_serial(self, serial: str, args: list[str], timeout: int = COMMAND_TIMEOUT) -> tuple[bool, str]:
+    async def run_on_serial(self, serial: str, args: List[str], timeout: int = COMMAND_TIMEOUT) -> Tuple[bool, str]:
         return False, "ADB disabled"
 
-    async def install_apk_usb(self, serial: str, apk_path: str) -> tuple[bool, str]:
+    async def install_apk_usb(self, serial: str, apk_path: str) -> Tuple[bool, str]:
         return False, "ADB disabled"
 
-    async def push_file_usb_with_progress(self, serial: str, local_path: str, device_path: str, progress_callback=None) -> tuple[bool, str]:
+    async def push_file_usb_with_progress(self, serial: str, local_path: str, device_path: str, progress_callback=None) -> Tuple[bool, str]:
         return False, "ADB disabled"
 
     async def scan_media_file_usb(self, serial: str, device_path: str) -> str:
