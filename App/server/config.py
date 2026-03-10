@@ -50,7 +50,6 @@ def detect_adb_available() -> bool:
     return shutil.which("adb") is not None
 
 
-IS_ANDROID_RUNTIME = _is_android_runtime()
 ADB_AVAILABLE = detect_adb_available()
 
 
@@ -111,7 +110,6 @@ def load_config() -> dict:
             _config["networkSubnet"] = detect_android_hotspot_subnet()
 
         _config["adbAvailable"] = ADB_AVAILABLE
-        _config["isAndroidRuntime"] = IS_ANDROID_RUNTIME
         return deepcopy(_config)
 
 
@@ -127,7 +125,6 @@ def get_config() -> dict:
     with _config_lock:
         if _config:
             _config["adbAvailable"] = ADB_AVAILABLE
-            _config["isAndroidRuntime"] = IS_ANDROID_RUNTIME
         return deepcopy(_config)
 
 
@@ -136,7 +133,6 @@ def update_config(new_config: dict) -> dict:
     with _config_lock:
         _config.update(new_config)
         _config["adbAvailable"] = ADB_AVAILABLE
-        _config["isAndroidRuntime"] = IS_ANDROID_RUNTIME
         # Ensure requirement videos have IDs and strip legacy devicePath
         for video in _config.get("requirementVideos", []):
             if not video.get("id"):

@@ -3,12 +3,15 @@ import useDeviceStore from '../store/deviceStore';
 import {
   setDeviceName,
   pingDevice,
+  updateDevice,
   getRequirements,
   playbackCommand,
+  launchPlayerSingle,
   toggleDeviceDebug,
   setDeviceVolume,
   restartApp,
 } from '../api';
+import UpdateProgress from './UpdateProgress';
 
 export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
   const device = useDeviceStore((s) => s.devices[deviceId]);
@@ -54,7 +57,6 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
   }, [device?.requirementsDetail]);
 
   const adbAvailable = config?.adbAvailable !== false;
-  const isAndroidRuntime = config?.isAndroidRuntime === true;
 
   if (!device) {
     return (
@@ -168,7 +170,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
           ) : (
             <p>Unable to check requirements</p>
           )}
-          {!isAndroidRuntime && adbAvailable && device.online && device.adbConnected && (device.requirementsMet === false || device.requirementsMet === null) && (
+          {adbAvailable && device.online && device.adbConnected && (device.requirementsMet === false || device.requirementsMet === null) && (
             <button
               className="btn btn-primary"
               onClick={() => updateDevice(deviceId)}
@@ -182,14 +184,14 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
           </button>
         </div>
 
-        {!isAndroidRuntime && device.updateInProgress && device.updateProgress && (
+        {device.updateInProgress && device.updateProgress && (
           <div className="dialog-section">
             <h3>Update Progress</h3>
             <UpdateProgress progress={device.updateProgress} />
           </div>
         )}
 
-        {!isAndroidRuntime && adbAvailable && device.online && !device.adbConnected && device.playerConnected && (
+        {adbAvailable && device.online && !device.adbConnected && device.playerConnected && (
           <div className="dialog-section">
             <h3>WS-Only Mode</h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--info)' }}>
@@ -199,7 +201,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
           </div>
         )}
 
-        {!isAndroidRuntime && adbAvailable && device.online && device.adbConnected && !device.playerConnected && (
+        {adbAvailable && device.online && device.adbConnected && !device.playerConnected && (
           <div className="dialog-section">
             <h3>Player</h3>
             <p className="text-warn">Player not connected. You can try to launch it via ADB.</p>

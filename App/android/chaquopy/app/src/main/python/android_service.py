@@ -5,7 +5,6 @@ import uvicorn
 
 _server = None
 _thread = None
-_lock = threading.Lock()
 
 
 def _run():
@@ -17,21 +16,12 @@ def _run():
     _server.run()
 
 
-def _is_running() -> bool:
-    return _thread is not None and _thread.is_alive()
-
-
 def start_server():
     global _thread
-    with _lock:
-        if _is_running():
-            return
-        _thread = threading.Thread(target=_run, daemon=True)
-        _thread.start()
-
-
-def ensure_server_running():
-    start_server()
+    if _thread and _thread.is_alive():
+        return
+    _thread = threading.Thread(target=_run, daemon=True)
+    _thread.start()
 
 
 def stop_server():
