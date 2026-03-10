@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { getConfig, updateConfig } from '../api';
 import FilePicker from './FilePicker';
 import { useI18n } from '../i18n';
+import packageJson from '../../package.json';
 
 function generateId() {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
@@ -712,6 +713,14 @@ export default function SettingsPage() {
           onClose={() => setFilePicker(null)}
         />
       )}
+
+      <footer className="settings-footer">
+        <span>Version: {packageJson.version}</span>
+        <span>Автор: Войтович Євген</span>
+        <a href="https://github.com/Chikanut" target="_blank" rel="noreferrer">
+          GitHub: https://github.com/Chikanut
+        </a>
+      </footer>
     </div>
   );
 }
