@@ -1063,6 +1063,26 @@ body {
   color: var(--text-dim);
 }
 
+.settings-footer {
+  margin-top: 8px;
+  padding: 12px 4px 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+.settings-footer a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.settings-footer a:hover {
+  text-decoration: underline;
+}
+
 /* ─── Connection Button & QR Modal ─────────────────────────────────────────── */
 .connection-btn {
   position: fixed;
