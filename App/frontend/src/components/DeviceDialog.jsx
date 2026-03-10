@@ -57,6 +57,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
   }, [device?.requirementsDetail]);
 
   const adbAvailable = config?.adbAvailable !== false;
+  const isAndroidRuntime = config?.isAndroidRuntime === true;
 
   if (!device) {
     return (
@@ -170,7 +171,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
           ) : (
             <p>Unable to check requirements</p>
           )}
-          {adbAvailable && device.online && device.adbConnected && (device.requirementsMet === false || device.requirementsMet === null) && (
+          {!isAndroidRuntime && adbAvailable && device.online && device.adbConnected && (device.requirementsMet === false || device.requirementsMet === null) && (
             <button
               className="btn btn-primary"
               onClick={() => updateDevice(deviceId)}
@@ -184,14 +185,14 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
           </button>
         </div>
 
-        {device.updateInProgress && device.updateProgress && (
+        {!isAndroidRuntime && device.updateInProgress && device.updateProgress && (
           <div className="dialog-section">
             <h3>Update Progress</h3>
             <UpdateProgress progress={device.updateProgress} />
           </div>
         )}
 
-        {adbAvailable && device.online && !device.adbConnected && device.playerConnected && (
+        {!isAndroidRuntime && adbAvailable && device.online && !device.adbConnected && device.playerConnected && (
           <div className="dialog-section">
             <h3>WS-Only Mode</h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--info)' }}>
@@ -201,7 +202,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
           </div>
         )}
 
-        {adbAvailable && device.online && device.adbConnected && !device.playerConnected && (
+        {!isAndroidRuntime && adbAvailable && device.online && device.adbConnected && !device.playerConnected && (
           <div className="dialog-section">
             <h3>Player</h3>
             <p className="text-warn">Player not connected. You can try to launch it via ADB.</p>

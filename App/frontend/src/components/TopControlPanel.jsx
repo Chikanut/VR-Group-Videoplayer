@@ -11,6 +11,7 @@ export default function TopControlPanel({ onPlayAll }) {
   const hasOnline = onlineDevices.length > 0;
   const ignoreReq = config?.ignoreRequirements || false;
   const adbAvailable = config?.adbAvailable !== false;
+  const isAndroidRuntime = config?.isAndroidRuntime === true;
   const hasCommandTargets = onlineDevices.some((d) => d.playerConnected || (ignoreReq && adbAvailable && d.adbConnected));
   const hasAdbDevices = adbAvailable && onlineDevices.some((d) => d.adbConnected);
   const adbNoPlayer = adbAvailable ? onlineDevices.filter((d) => d.adbConnected && !d.playerConnected) : [];
@@ -99,29 +100,31 @@ export default function TopControlPanel({ onPlayAll }) {
         </span>
       </div>
       <div className="top-panel-controls">
-        <button
-          className="btn btn-primary"
-          disabled={!hasOnline}
-          onClick={() => debounce('updateAll', async () => {
-            if (needsUpdate.length === 0) {
-              alert('All devices up to date');
-              return;
-            }
-            if (adbAvailable) {
-              const noAdb = onlineDevices.filter((d) => !d.adbConnected);
-              if (noAdb.length > 0) {
-                const proceed = confirm(
-                  `${noAdb.length} device(s) without ADB will be skipped. Continue?`
-                );
-                if (!proceed) return;
+        {!isAndroidRuntime && (
+          <button
+            className="btn btn-primary"
+            disabled={!hasOnline}
+            onClick={() => debounce('updateAll', async () => {
+              if (needsUpdate.length === 0) {
+                alert('All devices up to date');
+                return;
               }
-            }
-            await updateAllDevices();
-          })}
-        >
-          Update All {needsUpdate.length > 0 && `(${needsUpdate.length})`}
-        </button>
-        {adbAvailable && (
+              if (adbAvailable) {
+                const noAdb = onlineDevices.filter((d) => !d.adbConnected);
+                if (noAdb.length > 0) {
+                  const proceed = confirm(
+                    `${noAdb.length} device(s) without ADB will be skipped. Continue?`
+                  );
+                  if (!proceed) return;
+                }
+              }
+              await updateAllDevices();
+            })}
+          >
+            Update All {needsUpdate.length > 0 && `(${needsUpdate.length})`}
+          </button>
+        )}
+        {!isAndroidRuntime && adbAvailable && (
         <div className="usb-init-wrapper" ref={usbMenuRef}>
           <button
             className="btn"
@@ -166,7 +169,7 @@ export default function TopControlPanel({ onPlayAll }) {
           )}
         </div>
         )}
-        {adbAvailable && (
+        {!isAndroidRuntime && adbAvailable && (
         <button
           className="btn"
           disabled={!hasAdbDevices}

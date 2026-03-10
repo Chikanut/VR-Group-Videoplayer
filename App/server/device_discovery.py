@@ -12,7 +12,7 @@ from .device_ws_manager import device_ws_manager
 
 logger = logging.getLogger("vrclassroom.discovery")
 
-DISCOVERY_CONCURRENCY = 8
+DISCOVERY_CONCURRENCY = 32
 
 
 def detect_subnet() -> str:
@@ -31,12 +31,12 @@ def detect_subnet() -> str:
         return "192.168.1"
 
 
-async def scan_ip(ip: str, port: int) -> Optional[str]:
+async def scan_ip(ip: str, port: int, timeout_s: float = 2.0) -> Optional[str]:
     """Try to connect to a TCP port on a single IP. Returns IP if successful."""
     try:
         _, writer = await asyncio.wait_for(
             asyncio.open_connection(ip, port),
-            timeout=2,
+            timeout=timeout_s,
         )
         writer.close()
         await writer.wait_closed()
@@ -45,10 +45,16 @@ async def scan_ip(ip: str, port: int) -> Optional[str]:
         return None
 
 
-async def scan_subnet(subnet: str, port: int) -> List[str]:
+async def scan_subnet(subnet: str, port: int, timeout_s: float = 2.0) -> List[str]:
     """Scan a /24 subnet for devices with a given port open."""
     logger.info("Scanning subnet %s.0/24 on port %d...", subnet, port)
-    tasks = [scan_ip(f"{subnet}.{i}", port) for i in range(1, 255)]
+    semaphore = asyncio.Semaphore(DISCOVERY_CONCURRENCY)
+
+    async def scan_with_limit(candidate_ip: str):
+        async with semaphore:
+            return await scan_ip(candidate_ip, port, timeout_s=timeout_s)
+
+    tasks = [scan_with_limit(f"{subnet}.{i}") for i in range(1, 255)]
     results = await asyncio.gather(*tasks)
     found = [ip for ip in results if ip is not None]
     logger.info("Scan complete. Found %d device(s) with port %d open", len(found), port)
@@ -204,7 +210,8 @@ async def discovery_loop():
 
             player_port = config.get("playerPort", 8080)
             discovery_port = ADB_PORT if ADB_AVAILABLE else player_port
-            discovered_ips = await scan_subnet(subnet, discovery_port)
+            timeout_s = 0.8 if not ADB_AVAILABLE else 1.5
+            discovered_ips = await scan_subnet(subnet, discovery_port, timeout_s=timeout_s)
 
             semaphore = asyncio.Semaphore(DISCOVERY_CONCURRENCY)
             tasks = [process_discovered_ip(ip, semaphore) for ip in discovered_ips]
