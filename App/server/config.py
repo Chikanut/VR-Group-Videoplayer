@@ -11,8 +11,8 @@ from typing import Optional, Tuple
 
 logger = logging.getLogger("vrclassroom.config")
 
-CONFIG_PATH = Path(__file__).parent.parent / "config.json"
-DEVICE_NAMES_PATH = Path(__file__).parent.parent / "device_names.json"
+LEGACY_CONFIG_PATH = Path(__file__).parent.parent / "config.json"
+LEGACY_DEVICE_NAMES_PATH = Path(__file__).parent.parent / "device_names.json"
 
 DEFAULT_CONFIG = {
     "apkPath": "",
@@ -47,6 +47,24 @@ def _runtime_target() -> str:
 
 def _is_android_runtime() -> bool:
     return _runtime_target() == "android"
+
+
+def _android_private_dir() -> Path:
+    private_root = os.environ.get("ANDROID_PRIVATE", "").strip()
+    if private_root:
+        return Path(private_root)
+    # Fallback for environments where launcher did not provide ANDROID_PRIVATE.
+    return Path.home() / ".vrclassroom"
+
+
+def _resolve_runtime_paths() -> Tuple[Path, Path]:
+    if _is_android_runtime():
+        private_dir = _android_private_dir()
+        return private_dir / "config.json", private_dir / "device_names.json"
+    return LEGACY_CONFIG_PATH, LEGACY_DEVICE_NAMES_PATH
+
+
+CONFIG_PATH, DEVICE_NAMES_PATH = _resolve_runtime_paths()
 
 
 def detect_adb_available() -> bool:
@@ -117,9 +135,21 @@ def load_config() -> dict:
         detected_subnet = ""
         detected_subnet_source = "n/a"
 
-        if CONFIG_PATH.exists():
+        logger.info("Config file path resolved to %s", CONFIG_PATH.resolve())
+
+        source_config_path = CONFIG_PATH
+        if _is_android_runtime() and not CONFIG_PATH.exists() and LEGACY_CONFIG_PATH.exists():
+            source_config_path = LEGACY_CONFIG_PATH
+            should_save_config = True
+            logger.info(
+                "Config migration: loading legacy config from %s and moving to %s",
+                LEGACY_CONFIG_PATH,
+                CONFIG_PATH,
+            )
+
+        if source_config_path.exists():
             try:
-                with open(CONFIG_PATH, "r") as f:
+                with open(source_config_path, "r") as f:
                     data = json.load(f)
                 # Merge with defaults, ignore unknown fields from old configs gracefully
                 _config = {**deepcopy(DEFAULT_CONFIG)}
@@ -138,7 +168,7 @@ def load_config() -> dict:
                         "Config migration: existing networkSubnet detected without networkSubnetAuto; "
                         "defaulting to auto mode for Android compatibility"
                     )
-                logger.info("Config loaded from %s", CONFIG_PATH)
+                logger.info("Config loaded from %s", source_config_path)
             except (json.JSONDecodeError, OSError) as e:
                 logger.error("Invalid config file, using defaults: %s", e)
                 _config = deepcopy(DEFAULT_CONFIG)
@@ -169,11 +199,24 @@ def load_config() -> dict:
             _config["isAndroidRuntime"],
             _config["adbAvailable"],
         )
+        if _is_android_runtime():
+            logger.info(
+                "Android subnet detection: subnet=%s source=%s auto=%s",
+                _config.get("networkSubnet", ""),
+                detected_subnet_source,
+                _config.get("networkSubnetAuto", True),
+            )
+
+        if should_save_config:
+            _save_config_locked()
+            logger.info("Config persisted to %s", CONFIG_PATH)
+
         return deepcopy(_config)
 
 
 def _save_config_locked():
     try:
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(CONFIG_PATH, "w") as f:
             json.dump(_config, f, indent=2)
     except OSError as e:
@@ -232,6 +275,7 @@ def set_device_name(device_id: str, name: str):
     with _device_names_lock:
         _device_names[device_id] = name
         try:
+            DEVICE_NAMES_PATH.parent.mkdir(parents=True, exist_ok=True)
             with open(DEVICE_NAMES_PATH, "w") as f:
                 json.dump(_device_names, f, indent=2)
         except OSError as e:
