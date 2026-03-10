@@ -101,6 +101,9 @@ export async function toggleDeviceDebug(deviceId) {
   return request(`/devices/${deviceId}/debug`, { method: 'POST' });
 }
 
+export async function restartApp(deviceId) {
+  return request(`/devices/${deviceId}/restart-app`, { method: 'POST' });
+}
 
 export async function getGlobalVolume() {
   return request('/playback/volume/global');
@@ -117,24 +120,5 @@ export async function setDeviceVolume(deviceId, volume) {
   return request(`/devices/${deviceId}/volume`, {
     method: 'POST',
     body: JSON.stringify({ volume }),
-  });
-}
-
-
-export async function getDeviceAutostart(deviceId) {
-  return request(`/devices/${deviceId}/autostart`);
-}
-
-export async function setDeviceAutostart(deviceId, enabled) {
-  return request(`/devices/${deviceId}/autostart`, {
-    method: 'POST',
-    body: JSON.stringify({ enabled }),
-  });
-}
-
-export async function setBulkAutostart(enabled, deviceIds = []) {
-  return request('/devices/autostart', {
-    method: 'POST',
-    body: JSON.stringify({ enabled, deviceIds }),
   });
 }

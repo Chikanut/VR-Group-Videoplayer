@@ -1,5 +1,15 @@
 import { create } from 'zustand';
 
+/**
+ * Shallow compare two objects. Returns true if they differ.
+ */
+function hasChanges(existing, changes) {
+  for (const key in changes) {
+    if (existing[key] !== changes[key]) return true;
+  }
+  return false;
+}
+
 const useDeviceStore = create((set, get) => ({
   devices: {},
   config: null,
@@ -29,7 +39,12 @@ const useDeviceStore = create((set, get) => ({
       } else if (data.device) {
         devices[data.deviceId] = data.device;
       } else if (data.changes && devices[data.deviceId]) {
-        devices[data.deviceId] = { ...devices[data.deviceId], ...data.changes };
+        // Shallow compare: only update if something actually changed
+        if (hasChanges(devices[data.deviceId], data.changes)) {
+          devices[data.deviceId] = { ...devices[data.deviceId], ...data.changes };
+        } else {
+          return state; // No re-render needed
+        }
       }
       return { devices };
     });

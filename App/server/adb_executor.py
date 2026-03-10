@@ -191,11 +191,13 @@ class ADBExecutor:
         return packages
 
     async def file_exists(self, ip: str, device_path: str) -> bool:
-        success, output = await self._run(ip, ["shell", "ls", device_path])
+        quoted = shlex.quote(device_path)
+        success, output = await self._run(ip, ["shell", f"ls {quoted}"])
         return success and "No such file" not in output
 
     async def get_file_size(self, ip: str, device_path: str) -> int:
-        success, output = await self._run(ip, ["shell", "stat", "-c", "%s", device_path])
+        quoted = shlex.quote(device_path)
+        success, output = await self._run(ip, ["shell", f"stat -c %s {quoted}"])
         if success:
             try:
                 return int(output.strip())
@@ -241,24 +243,22 @@ class ADBExecutor:
         import os
         dir_path = os.path.dirname(device_path)
         if dir_path:
-            success, _ = await self._run(ip, ["shell", "mkdir", "-p", dir_path])
+            quoted = shlex.quote(dir_path)
+            success, _ = await self._run(ip, ["shell", f"mkdir -p {quoted}"])
             return success
         return True
 
     async def scan_media_file(self, ip: str, device_path: str) -> str:
         """Ask Android media scanner to index a file."""
-        # Escape single quotes in path
-        escaped = device_path.replace("'", "'\\''")
+        quoted = shlex.quote(device_path)
         file_uri = f"file://{device_path}"
-        escaped_uri = file_uri.replace("'", "'\\''")
+        quoted_uri = shlex.quote(file_uri)
 
         outputs = []
         # Method 1: broadcast intent
         success, out = await self._run(
             ip,
-            ["shell", "am", "broadcast", "-a",
-             "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
-             "-d", escaped_uri],
+            ["shell", f"am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d {quoted_uri}"],
         )
         if out:
             outputs.append(out)
@@ -266,17 +266,16 @@ class ADBExecutor:
         # Method 2: media.scan service (newer Android)
         success2, out2 = await self._run(
             ip,
-            ["shell", "cmd", "media.scan", escaped],
+            ["shell", f"cmd media.scan {quoted}"],
         )
         if out2 and "can't find service" not in out2.lower():
             outputs.append(out2)
 
         # Method 3: content provider insert
+        quoted_data = shlex.quote(f"_data:s:{device_path}")
         success3, out3 = await self._run(
             ip,
-            ["shell", "content", "insert", "--uri",
-             "content://media/external/file",
-             "--bind", f"_data:s:{device_path}"],
+            ["shell", f"content insert --uri content://media/external/file --bind {quoted_data}"],
         )
         if out3:
             outputs.append(out3)
@@ -464,26 +463,25 @@ class ADBExecutor:
 
     async def scan_media_file_usb(self, serial: str, device_path: str) -> str:
         """Ask Android media scanner to index a file on USB device."""
+        quoted = shlex.quote(device_path)
         file_uri = f"file://{device_path}"
+        quoted_uri = shlex.quote(file_uri)
         outputs = []
         success, out = await self.run_on_serial(
             serial,
-            ["shell", "am", "broadcast", "-a",
-             "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
-             "-d", file_uri],
+            ["shell", f"am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d {quoted_uri}"],
         )
         if out:
             outputs.append(out)
         success2, out2 = await self.run_on_serial(
-            serial, ["shell", "cmd", "media.scan", device_path],
+            serial, ["shell", f"cmd media.scan {quoted}"],
         )
         if out2 and "can't find service" not in out2.lower():
             outputs.append(out2)
+        quoted_data = shlex.quote(f"_data:s:{device_path}")
         success3, out3 = await self.run_on_serial(
             serial,
-            ["shell", "content", "insert", "--uri",
-             "content://media/external/file",
-             "--bind", f"_data:s:{device_path}"],
+            ["shell", f"content insert --uri content://media/external/file --bind {quoted_data}"],
         )
         if out3:
             outputs.append(out3)

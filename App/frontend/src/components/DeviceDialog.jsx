@@ -9,7 +9,7 @@ import {
   launchPlayerSingle,
   toggleDeviceDebug,
   setDeviceVolume,
-  setDeviceAutostart,
+  restartApp,
 } from '../api';
 import UpdateProgress from './UpdateProgress';
 
@@ -20,7 +20,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
   const [requirements, setRequirements] = useState(null);
   const [loadingReqs, setLoadingReqs] = useState(false);
   const [personalVolume, setPersonalVolume] = useState(1);
-  const [updatingAutostart, setUpdatingAutostart] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   const volumeDebounceRef = useRef(null);
 
   useEffect(() => {
@@ -78,6 +78,19 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
     if (e.key === 'Escape') setEditingName(false);
   };
 
+  const handleRestartApp = async () => {
+    setRestarting(true);
+    try {
+      const result = await restartApp(deviceId);
+      if (result.error) {
+        alert(result.error);
+      }
+    } catch (e) {
+      alert('Restart failed: ' + e.message);
+    }
+    setRestarting(false);
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal device-dialog" onClick={(e) => e.stopPropagation()}>
@@ -115,7 +128,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
               <tr><td>IP</td><td>{device.ip}</td></tr>
               <tr>
                 <td>Battery</td>
-                <td>{device.battery >= 0 ? `${device.battery}%${device.batteryCharging ? ' (charging)' : ''}` : 'Unknown'}</td>
+                <td>{device.battery > 0 ? `${device.battery}%${device.batteryCharging ? ' (charging)' : ''}` : 'Unknown'}</td>
               </tr>
               <tr><td>Uptime</td><td>{device.uptimeMinutes} min</td></tr>
               <tr>
@@ -128,12 +141,6 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
                 <td>Player</td>
                 <td className={device.playerConnected ? 'text-ok' : 'text-warn'}>
                   {device.playerConnected ? `Connected (v${device.playerVersion})` : 'Not connected'}
-                </td>
-              </tr>
-              <tr>
-                <td>Autostart</td>
-                <td className={device.autostartEnabled === true ? 'text-ok' : 'text-warn'}>
-                  {device.autostartEnabled === true ? 'Enabled' : device.autostartEnabled === false ? 'Disabled' : 'Unknown'}
                 </td>
               </tr>
             </tbody>
@@ -181,33 +188,11 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
 
         {device.online && !device.adbConnected && device.playerConnected && (
           <div className="dialog-section">
-            <h3>HTTP-Only Mode</h3>
+            <h3>WS-Only Mode</h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--info)' }}>
-              This device is connected via HTTP only (no ADB). Playback commands work normally.
-              To enable app updates and content push, connect the device via USB and run USB Init with Wireless ADB enabled.
+              This device is connected via WebSocket only (no ADB). Playback commands work normally.
+              To enable app updates, connect the device via USB and run USB Init with Wireless ADB enabled.
             </p>
-          </div>
-        )}
-
-        {device.online && device.adbConnected && (
-          <div className="dialog-section">
-            <h3>Autostart</h3>
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={device.autostartEnabled === true}
-                disabled={updatingAutostart}
-                onChange={async (e) => {
-                  setUpdatingAutostart(true);
-                  const result = await setDeviceAutostart(deviceId, e.target.checked);
-                  if (result.error) {
-                    alert(result.error);
-                  }
-                  setUpdatingAutostart(false);
-                }}
-              />
-              <span>Launch app automatically after device boot</span>
-            </label>
           </div>
         )}
 
@@ -222,8 +207,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
                 if (result.error && (!result.success || result.success.length === 0)) {
                   alert(result.error);
                 } else if (result.success && result.success.length > 0) {
-                  const s = result.success[0];
-                  alert(s.playerConnected ? 'Player launched and HTTP connected!' : 'Player launched but HTTP not responding yet.');
+                  alert('Player launch command sent. It should connect via WebSocket shortly.');
                 }
               }}
             >
@@ -231,6 +215,20 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
             </button>
           </div>
         )}
+
+        <div className="dialog-section">
+          <h3>Device Actions</h3>
+          <div className="dialog-controls">
+            <button
+              className="btn btn-dim"
+              disabled={!device.online || !device.adbConnected || restarting}
+              onClick={handleRestartApp}
+              title={!device.adbConnected ? 'ADB required to restart app' : 'Force-stop and relaunch the player app'}
+            >
+              {restarting ? 'Restarting...' : 'Restart App'}
+            </button>
+          </div>
+        </div>
 
         <div className="dialog-section">
           <h3>Audio</h3>

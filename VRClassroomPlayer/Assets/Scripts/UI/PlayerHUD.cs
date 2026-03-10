@@ -16,6 +16,8 @@ namespace VRClassroom
         private Text _modeText;
         private Text _ipText;
 
+        private Text _version;
+
         private const float CanvasDistance = 3f;
         private const float CanvasScale = 0.005f;
         private const int MaxFilenameLength = 30;
@@ -138,6 +140,7 @@ namespace VRClassroom
             // IP address
             string ip = StatusReporter.GetLocalIPAddress();
             _ipText.text = ip == "0.0.0.0" ? "No Network" : ip;
+            _version.text = UnityEngine.Application.version;
         }
 
 #if UNITY_EDITOR
@@ -308,6 +311,9 @@ namespace VRClassroom
                 new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 50f),
                 new Vector2(700f, 50f), 28, TextAnchor.MiddleCenter);
             _ipText.color = new Color(0.7f, 0.7f, 0.7f, 1f);
+
+            _version = CreateText(canvasTransform, "VersionText",  new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-100f, 15f), new Vector2(700f, 50f), 28, TextAnchor.MiddleCenter);
+            _version.color = new Color(0.7f, 0.7f, 0.7f, 1f);
         }
 
         private Text CreateText(Transform parent, string name,

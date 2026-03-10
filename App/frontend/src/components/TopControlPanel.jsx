@@ -1,7 +1,7 @@
 import React, { useRef, useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useDeviceStore from '../store/deviceStore';
-import { playbackCommand, updateAllDevices, getUsbDevices, updateUsbDevice, launchPlayer, getGlobalVolume, setGlobalVolume, setBulkAutostart } from '../api';
+import { playbackCommand, updateAllDevices, getUsbDevices, updateUsbDevice, launchPlayer, getGlobalVolume, setGlobalVolume } from '../api';
 
 export default function TopControlPanel({ onPlayAll }) {
   const navigate = useNavigate();
@@ -13,9 +13,6 @@ export default function TopControlPanel({ onPlayAll }) {
   const hasCommandTargets = onlineDevices.some((d) => d.playerConnected || (ignoreReq && d.adbConnected));
   const hasAdbDevices = onlineDevices.some((d) => d.adbConnected);
   const adbNoPlayer = onlineDevices.filter((d) => d.adbConnected && !d.playerConnected);
-  const onlineAdbDevices = onlineDevices.filter((d) => d.adbConnected);
-  const allAutostartEnabled = onlineAdbDevices.length > 0 && onlineAdbDevices.every((d) => d.autostartEnabled === true);
-  const hasKnownAutostartState = onlineAdbDevices.some((d) => typeof d.autostartEnabled === 'boolean');
   const debounceRef = useRef({});
   const [usbScanning, setUsbScanning] = useState(false);
   const [usbMenuOpen, setUsbMenuOpen] = useState(false);
@@ -35,7 +32,6 @@ export default function TopControlPanel({ onPlayAll }) {
     setTimeout(() => { debounceRef.current[key] = false; }, 1000);
   }, []);
 
-  // Close menu on outside click
   useEffect(() => {
     if (!usbMenuOpen) return;
     const handleClick = (e) => {
@@ -46,7 +42,6 @@ export default function TopControlPanel({ onPlayAll }) {
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [usbMenuOpen]);
-
 
   useEffect(() => {
     const loadGlobalVolume = async () => {
@@ -169,31 +164,13 @@ export default function TopControlPanel({ onPlayAll }) {
         <button
           className="btn"
           disabled={!hasAdbDevices}
-          title={allAutostartEnabled ? 'Disable autostart on all online ADB devices' : 'Enable autostart on all online ADB devices'}
-          onClick={() => debounce('bulkAutostart', async () => {
-            const nextEnabled = !allAutostartEnabled;
-            const result = await setBulkAutostart(nextEnabled);
-            const ok = result.success?.length || 0;
-            const failed = result.failed?.length || 0;
-            if (failed > 0) {
-              alert(`Autostart ${nextEnabled ? 'enable' : 'disable'}: ${ok} succeeded, ${failed} failed.`);
-            }
-          })}
-        >
-          {allAutostartEnabled ? 'Disable Autostart' : 'Enable Autostart'}
-          {hasKnownAutostartState && ` (${onlineAdbDevices.filter((d) => d.autostartEnabled === true).length}/${onlineAdbDevices.length})`}
-        </button>
-        <button
-          className="btn"
-          disabled={!hasAdbDevices}
           title={adbNoPlayer.length > 0 ? `${adbNoPlayer.length} device(s) without player` : 'Launch player on all ADB devices'}
           onClick={() => debounce('launchPlayer', async () => {
             const result = await launchPlayer();
             if (result.error && (!result.success || result.success.length === 0)) {
               alert(result.error);
             } else if (result.success) {
-              const connected = result.success.filter((s) => s.playerConnected).length;
-              alert(`Player launched on ${result.success.length} device(s). ${connected} confirmed HTTP connection.`);
+              alert(`Player launch command sent to ${result.success.length} device(s).`);
             }
           })}
         >
@@ -212,6 +189,13 @@ export default function TopControlPanel({ onPlayAll }) {
           onClick={() => debounce('pauseAll', () => playbackCommand('pause'))}
         >
           Pause All
+        </button>
+        <button
+          className="btn"
+          disabled={!hasCommandTargets}
+          onClick={() => debounce('resumeAll', () => playbackCommand('play'))}
+        >
+          Resume All
         </button>
         <button
           className="btn"

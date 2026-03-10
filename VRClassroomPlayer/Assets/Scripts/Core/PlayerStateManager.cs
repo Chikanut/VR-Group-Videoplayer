@@ -35,6 +35,7 @@ namespace VRClassroom
 
         [SerializeField] private VideoPlayerController videoPlayerController;
         [SerializeField] private ViewModeManager viewModeManager;
+        [SerializeField] private OrientationManager orientationManager;
 
         private void Awake()
         {
@@ -51,6 +52,8 @@ namespace VRClassroom
 
         private void Start()
         {
+            TryDisableGuardian();
+
             if (videoPlayerController != null)
             {
                 videoPlayerController.OnStateChanged += HandleStateChanged;
@@ -131,6 +134,13 @@ namespace VRClassroom
             Debug.Log($"[PlayerStateManager] Video loaded: {filename}");
             CurrentFile = filename;
             OnPlayerStateUpdated?.Invoke();
+
+            // Auto-recenter when a new video is opened (after prepare completes)
+            if (orientationManager != null)
+            {
+                Debug.Log("[PlayerStateManager] Auto-recentering on new video open.");
+                orientationManager.Recenter();
+            }
         }
 
         private void HandleVideoCompleted()
@@ -157,6 +167,63 @@ namespace VRClassroom
             Debug.Log($"[PlayerStateManager] View mode changed: {CurrentMode} -> {mode}");
             CurrentMode = mode;
             OnPlayerStateUpdated?.Invoke();
+        }
+
+        /// <summary>
+        /// Attempt to disable Guardian boundary to prevent passthrough camera
+        /// from interrupting video playback. Uses OVRBoundary if available,
+        /// otherwise tries Android system properties.
+        /// </summary>
+        private void TryDisableGuardian()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            try
+            {
+                // Try OVRManager.boundary if Meta XR SDK is present at runtime
+                var ovrManagerType = System.Type.GetType("OVRManager, Assembly-CSharp");
+                if (ovrManagerType != null)
+                {
+                    var instanceProp = ovrManagerType.GetProperty("instance",
+                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    if (instanceProp != null)
+                    {
+                        var instance = instanceProp.GetValue(null);
+                        if (instance != null)
+                        {
+                            var boundaryProp = ovrManagerType.GetProperty("boundary");
+                            if (boundaryProp != null)
+                            {
+                                var boundary = boundaryProp.GetValue(instance);
+                                if (boundary != null)
+                                {
+                                    var setVisibleMethod = boundary.GetType().GetMethod("SetVisible");
+                                    if (setVisibleMethod != null)
+                                    {
+                                        setVisibleMethod.Invoke(boundary, new object[] { false });
+                                        Debug.Log("[PlayerStateManager] Guardian boundary hidden via OVRManager.");
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Fallback: try Android system property
+                using (var runtime = new AndroidJavaClass("java.lang.Runtime"))
+                using (var instance = runtime.CallStatic<AndroidJavaObject>("getRuntime"))
+                {
+                    var process = instance.Call<AndroidJavaObject>("exec",
+                        new string[] { "setprop", "debug.oculus.guardian_pause", "1" });
+                    process.Call<int>("waitFor");
+                    Debug.Log("[PlayerStateManager] Attempted Guardian disable via setprop (may require root).");
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning($"[PlayerStateManager] Guardian disable not available: {e.Message}");
+            }
+#endif
         }
 
         private void HandleRenderTextureResized(RenderTexture newTexture)

@@ -50,14 +50,14 @@
     }
   ],
   "batteryThreshold": 20,
-  "scanInterval": 3,
+  "scanInterval": 10,
   "networkSubnet": "",
   "serverPort": 8000,
   "playerPort": 8080,
-  "deviceOfflineTimeout": 3,
-  "statusPollInterval": 1,
-  "requirementsPollInterval": 3,
+  "deviceOfflineTimeout": 15,
   "updateConcurrency": 5,
   "ignoreRequirements": true,
+  "statusPollInterval": 1,
+  "requirementsPollInterval": 3,
   "fastResyncOnFocus": true
 }

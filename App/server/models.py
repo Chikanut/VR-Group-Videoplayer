@@ -61,14 +61,11 @@ class DeviceRegistration(BaseModel):
     battery: int = -1
     deviceName: str = ""
     playerVersion: str = ""
-    installedPackages: list[str] = []
 
 
 class DeviceState:
     def __init__(self, device_id: str, ip: str):
         self.device_id: str = device_id
-        self.stable_device_id: str = device_id
-        self.id_source: str = "ip"
         self.ip: str = ip
         self.name: str = ""
         self.battery: int = -1
@@ -88,20 +85,17 @@ class DeviceState:
         self.locked: bool = False
         self.uptime_minutes: int = 0
         self.last_seen: float = time.time()
-        self.last_player_response: float = 0.0
         self.installed_packages: list[str] = []
         self.update_in_progress: bool = False
         self.update_progress: dict | None = None
         self.usb_connected: bool = False
         self.personal_volume: float = 1.0
         self.effective_volume: float = 1.0
-        self.autostart_enabled: bool | None = None
+        self.missed_discovery_cycles: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "deviceId": self.device_id,
-            "stableDeviceId": self.stable_device_id,
-            "idSource": self.id_source,
             "ip": self.ip,
             "name": self.name or self.device_id,
             "battery": self.battery,
@@ -127,7 +121,6 @@ class DeviceState:
             "usbConnected": self.usb_connected,
             "personalVolume": self.personal_volume,
             "effectiveVolume": self.effective_volume,
-            "autostartEnabled": self.autostart_enabled,
         }
 
 
@@ -156,12 +149,3 @@ class VolumeUpdate(BaseModel):
 
 class DeviceVolumeUpdate(VolumeUpdate):
     deviceId: str
-
-
-class AutostartUpdate(BaseModel):
-    enabled: bool
-
-
-class BulkAutostartUpdate(BaseModel):
-    enabled: bool
-    deviceIds: list[str] = []

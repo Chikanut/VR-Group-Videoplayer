@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import platform
@@ -13,11 +14,10 @@ from fastapi.staticfiles import StaticFiles
 
 from .adb_executor import adb_executor
 from .config import get_config, load_config, update_config
-from .device_discovery import battery_poll_loop, discovery_loop, handle_self_registration
+from .device_discovery import discovery_loop, handle_self_registration
 from .device_manager import device_manager
+from .device_ws_manager import REGISTER_TIMEOUT, device_ws_manager
 from .models import (
-    AutostartUpdate,
-    BulkAutostartUpdate,
     ConfigModel,
     DeviceNameUpdate,
     DeviceRegistration,
@@ -32,17 +32,14 @@ from .playback_controller import (
     launch_player,
     open_video,
     ping_device,
-    refresh_device_autostart_state,
+    restart_app,
     send_command,
-    set_autostart_bulk,
-    set_device_autostart,
     set_device_volume,
     set_global_volume,
     toggle_debug,
 )
 from .requirements_manager import (
     check_requirements,
-    requirements_refresh_loop,
     run_update,
     run_usb_update,
 )
@@ -55,13 +52,11 @@ logging.basicConfig(
 logger = logging.getLogger("vrclassroom")
 
 _discovery_task: asyncio.Task | None = None
-_battery_poll_task: asyncio.Task | None = None
-_requirements_refresh_task: asyncio.Task | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _discovery_task, _battery_poll_task, _requirements_refresh_task
+    global _discovery_task
     # Startup
     load_config()
     has_adb = await adb_executor.check_adb()
@@ -69,17 +64,11 @@ async def lifespan(app: FastAPI):
         logger.warning("ADB not found in PATH. ADB-dependent features will not work.")
     await device_manager.start()
     _discovery_task = asyncio.create_task(discovery_loop())
-    _battery_poll_task = asyncio.create_task(battery_poll_loop())
-    _requirements_refresh_task = asyncio.create_task(requirements_refresh_loop())
-    logger.info("VR Classroom server started")
+    logger.info("VR Classroom server started (discovery + offline_check loops)")
     yield
     # Shutdown
     if _discovery_task:
         _discovery_task.cancel()
-    if _battery_poll_task:
-        _battery_poll_task.cancel()
-    if _requirements_refresh_task:
-        _requirements_refresh_task.cancel()
     await device_manager.stop()
     logger.info("VR Classroom server stopped")
 
@@ -170,7 +159,7 @@ async def get_device(device_id: str):
 
 
 @app.put("/api/devices/{device_id}/name")
-async def set_device_name(device_id: str, body: DeviceNameUpdate):
+async def set_device_name_endpoint(device_id: str, body: DeviceNameUpdate):
     success = await device_manager.update_name(device_id, body.name)
     if not success:
         return JSONResponse(status_code=404, content={"error": "Device not found"})
@@ -193,14 +182,24 @@ async def register_device(reg: DeviceRegistration):
 
 @app.post("/api/devices/{device_id}/ping")
 async def device_ping(device_id: str):
-    result = await ping_device(device_id)
-    return result
+    return await ping_device(device_id)
 
 
 @app.post("/api/devices/{device_id}/debug")
 async def device_debug_toggle(device_id: str):
-    """Toggle debug panel on a specific device."""
-    result = await toggle_debug(device_id)
+    return await toggle_debug(device_id)
+
+
+@app.post("/api/devices/{device_id}/restart-app")
+async def device_restart_app(device_id: str):
+    """Restart the player app on a device via ADB (force-stop + launch)."""
+    result = await restart_app(device_id)
+    if result.get("error") == "Device not found":
+        return JSONResponse(status_code=404, content=result)
+    if result.get("error") == "ADB not connected":
+        return JSONResponse(status_code=400, content=result)
+    if result.get("error"):
+        return JSONResponse(status_code=500, content=result)
     return result
 
 
@@ -228,8 +227,6 @@ async def update_device(device_id: str):
             "error": "Update already in progress",
             "progress": device.update_progress,
         })
-
-    # Run update in background
     asyncio.create_task(run_update(device_id))
     return {"ok": True, "message": "Update started"}
 
@@ -291,9 +288,7 @@ async def browse_files(
     path: str = Query("", description="Directory path to browse"),
     filter: str = Query("", description="File extension filter, e.g. .apk,.mp4"),
 ):
-    """Browse local file system for the file picker UI."""
     if not path:
-        # Return drives on Windows, or home dir on Linux/Mac
         if platform.system() == "Windows":
             drives = []
             for letter in string.ascii_uppercase:
@@ -349,13 +344,11 @@ async def browse_files(
 
 @app.post("/api/devices/launch-player")
 async def launch_player_all(cmd: PlaybackCommand):
-    """Launch the player app on all online ADB-connected devices."""
     return await launch_player(cmd.deviceIds)
 
 
 @app.post("/api/devices/{device_id}/launch-player")
 async def launch_player_single(device_id: str):
-    """Launch the player app on a specific device via ADB."""
     device = await device_manager.get(device_id)
     if not device:
         return JSONResponse(status_code=404, content={"error": "Device not found"})
@@ -364,38 +357,12 @@ async def launch_player_single(device_id: str):
     return await launch_player([device_id])
 
 
-@app.post("/api/devices/{device_id}/autostart")
-async def set_device_autostart_endpoint(device_id: str, body: AutostartUpdate):
-    result = await set_device_autostart(device_id, body.enabled)
-    if result.get("error") == "Device not found":
-        return JSONResponse(status_code=404, content=result)
-    if result.get("error") == "ADB not connected":
-        return JSONResponse(status_code=400, content=result)
-    if result.get("error"):
-        return JSONResponse(status_code=500, content=result)
-    return result
-
-
-@app.post("/api/devices/autostart")
-async def set_bulk_autostart_endpoint(body: BulkAutostartUpdate):
-    return await set_autostart_bulk(body.enabled, body.deviceIds)
-
-
-@app.get("/api/devices/{device_id}/autostart")
-async def get_device_autostart_endpoint(device_id: str):
-    result = await refresh_device_autostart_state(device_id)
-    if result.get("error") == "Device not found":
-        return JSONResponse(status_code=404, content=result)
-    return result
-
-
 # ─── Playback endpoints ──────────────────────────────────────────────────────
 
 
 @app.post("/api/playback/open")
 async def playback_open(cmd: OpenCommand):
-    result = await open_video(cmd.videoId, cmd.deviceIds)
-    return result
+    return await open_video(cmd.videoId, cmd.deviceIds)
 
 
 @app.post("/api/playback/play")
@@ -418,9 +385,7 @@ async def playback_recenter(cmd: PlaybackCommand):
     return await send_command("recenter", cmd.deviceIds)
 
 
-# ─── WebSocket endpoint ──────────────────────────────────────────────────────
-
-
+# ─── Volume endpoints ────────────────────────────────────────────────────────
 
 
 @app.get("/api/playback/volume/global")
@@ -440,11 +405,14 @@ async def playback_set_device_volume(device_id: str, body: VolumeUpdate):
         return JSONResponse(status_code=404, content=result)
     return result
 
+
+# ─── Frontend WebSocket endpoint ─────────────────────────────────────────────
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws_manager.connect(ws)
     try:
-        # Send initial snapshot
         devices = device_manager.get_snapshot()
         await ws_manager.send_to(ws, {
             "type": "snapshot",
@@ -452,15 +420,132 @@ async def websocket_endpoint(ws: WebSocket):
             "config": get_config(),
         })
 
-        # Keep connection alive
         while True:
             try:
-                data = await ws.receive_text()
-                # Client can send ping/pong for keepalive
+                await ws.receive_text()
             except WebSocketDisconnect:
                 break
     finally:
         await ws_manager.disconnect(ws)
+
+
+# ─── Device WebSocket endpoint ───────────────────────────────────────────────
+
+
+@app.websocket("/ws/device")
+async def device_websocket_endpoint(ws: WebSocket):
+    """WebSocket endpoint for player devices. Protocol:
+    1. Device connects and sends {"type":"register","deviceId":"...","ip":"...",...}
+    2. Device sends periodic {"type":"status",...} heartbeats every 5s
+    3. Server sends {"type":"command","action":"...",...} to control the device
+    """
+    await ws.accept()
+    device_id = None
+
+    try:
+        # Wait for register message with timeout
+        try:
+            raw = await asyncio.wait_for(ws.receive_text(), timeout=REGISTER_TIMEOUT)
+            msg = json.loads(raw)
+        except (asyncio.TimeoutError, json.JSONDecodeError):
+            logger.warning("Device WS: no valid register message within %ds, closing", REGISTER_TIMEOUT)
+            await ws.close(code=1008, reason="Register timeout")
+            return
+
+        if msg.get("type") != "register":
+            logger.warning("Device WS: first message is not register: %s", msg.get("type"))
+            await ws.close(code=1008, reason="Expected register message")
+            return
+
+        device_id = str(msg.get("deviceId", "")).strip()
+        ip = str(msg.get("ip", "")).strip()
+        if not device_id:
+            logger.warning("Device WS: register without deviceId")
+            await ws.close(code=1008, reason="Missing deviceId")
+            return
+
+        # Register the WS connection
+        await device_ws_manager.register(device_id, ws)
+
+        # Update device in device manager
+        await device_manager.add_or_update(
+            device_id,
+            ip=ip or "unknown",
+            player_connected=True,
+            battery=msg.get("battery", -1),
+            player_version=msg.get("playerVersion", ""),
+            playback_state=msg.get("state", "idle"),
+        )
+
+        device_name = msg.get("deviceName", "")
+        if device_name:
+            await device_manager.apply_device_name_from_device(device_id, device_name)
+
+        logger.info("Device %s registered via WS from %s", device_id, ip)
+
+        # Main receive loop for heartbeats and status updates
+        while True:
+            raw = await ws.receive_text()
+            msg = json.loads(raw)
+            msg_type = msg.get("type", "")
+
+            if msg_type == "status":
+                # Update device state from heartbeat
+                update_kwargs = {}
+                field_map = {
+                    "state": "playback_state",
+                    "file": "current_video",
+                    "mode": "current_mode",
+                    "time": "playback_time",
+                    "duration": "playback_duration",
+                    "battery": "battery",
+                    "batteryCharging": "battery_charging",
+                    "locked": "locked",
+                    "loop": "loop",
+                    "uptimeMinutes": "uptime_minutes",
+                    "globalVolume": None,  # skip, server manages this
+                    "personalVolume": "personal_volume",
+                    "effectiveVolume": "effective_volume",
+                    "playerVersion": "player_version",
+                }
+                for json_key, attr_name in field_map.items():
+                    if attr_name and json_key in msg:
+                        update_kwargs[attr_name] = msg[json_key]
+
+                new_ip = msg.get("ip", "")
+                await device_manager.add_or_update(
+                    device_id,
+                    ip=new_ip or ip,
+                    player_connected=True,
+                    **update_kwargs,
+                )
+
+            elif msg_type == "register":
+                # Re-registration (e.g. after reconnect within same WS)
+                ip = str(msg.get("ip", ip)).strip()
+                await device_manager.add_or_update(
+                    device_id,
+                    ip=ip,
+                    player_connected=True,
+                    battery=msg.get("battery", -1),
+                    player_version=msg.get("playerVersion", ""),
+                )
+
+    except WebSocketDisconnect:
+        logger.info("Device %s WS disconnected normally", device_id or "unknown")
+    except Exception as e:
+        logger.warning("Device %s WS error: %s", device_id or "unknown", e)
+    finally:
+        if device_id:
+            await device_ws_manager.disconnect(device_id)
+            # Mark player as disconnected immediately
+            device = await device_manager.get(device_id)
+            if device:
+                await device_manager.add_or_update(
+                    device_id,
+                    ip=device.ip,
+                    player_connected=False,
+                )
 
 
 # ─── Server info endpoint ─────────────────────────────────────────────────────
@@ -468,7 +553,6 @@ async def websocket_endpoint(ws: WebSocket):
 
 @app.get("/api/server-info")
 async def get_server_info():
-    """Return server IP and port for QR code connection."""
     ip = _get_local_ip()
     config = get_config()
     port = config.get("serverPort", 8000)
@@ -476,7 +560,6 @@ async def get_server_info():
 
 
 def _get_local_ip() -> str:
-    """Get the local network IP address of this machine."""
     import socket
 
     try:
