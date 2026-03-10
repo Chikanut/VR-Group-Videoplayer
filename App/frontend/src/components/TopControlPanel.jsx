@@ -3,16 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import useDeviceStore from '../store/deviceStore';
 import { playbackCommand, updateAllDevices, getUsbDevices, updateUsbDevice, launchPlayer, getGlobalVolume, setGlobalVolume } from '../api';
 
-export default function TopControlPanel({ onPlayAll }) {
+export default function TopControlPanel({ onPlayAll, panelRef }) {
   const navigate = useNavigate();
   const config = useDeviceStore((s) => s.config);
   const devices = useDeviceStore((s) => s.getDeviceList());
   const onlineDevices = devices.filter((d) => d.online);
   const hasOnline = onlineDevices.length > 0;
   const ignoreReq = config?.ignoreRequirements || false;
-  const hasCommandTargets = onlineDevices.some((d) => d.playerConnected || (ignoreReq && d.adbConnected));
-  const hasAdbDevices = onlineDevices.some((d) => d.adbConnected);
-  const adbNoPlayer = onlineDevices.filter((d) => d.adbConnected && !d.playerConnected);
+  const adbAvailable = config?.adbAvailable !== false;
+  const isAndroidRuntime = config?.isAndroidRuntime === true;
+  const hasCommandTargets = onlineDevices.some((d) => d.playerConnected || (ignoreReq && adbAvailable && d.adbConnected));
+  const hasAdbDevices = adbAvailable && onlineDevices.some((d) => d.adbConnected);
+  const adbNoPlayer = adbAvailable ? onlineDevices.filter((d) => d.adbConnected && !d.playerConnected) : [];
   const debounceRef = useRef({});
   const [usbScanning, setUsbScanning] = useState(false);
   const [usbMenuOpen, setUsbMenuOpen] = useState(false);
@@ -55,9 +57,19 @@ export default function TopControlPanel({ onPlayAll }) {
     loadGlobalVolume();
   }, []);
 
+  useEffect(() => {
+    if (!config) return;
+    console.info('[VR Classroom] Runtime mode', {
+      isAndroidRuntime: config.isAndroidRuntime,
+      adbAvailable: config.adbAvailable,
+      networkSubnet: config.networkSubnet,
+    });
+  }, [config]);
+
   const needsUpdate = onlineDevices.filter(
-    (d) => d.adbConnected && d.requirementsMet === false
+    (d) => (adbAvailable ? d.adbConnected : d.playerConnected) && d.requirementsMet === false
   );
+  const showAdbControls = !isAndroidRuntime;
 
   const handleUsbInit = async () => {
     const hasAnySelected = usbOptions.enableWirelessAdb || usbOptions.updateApp || usbOptions.updateContent;
@@ -90,14 +102,18 @@ export default function TopControlPanel({ onPlayAll }) {
   };
 
   return (
-    <header className="top-panel">
+    <header className="top-panel" ref={panelRef}>
       <div className="top-panel-left">
         <h1 className="top-panel-title">VR Classroom</h1>
         <span className="device-count">
           {onlineDevices.length}/{devices.length} online
         </span>
+        <span className="runtime-badge" title="Runtime mode detected by backend config">
+          Mode: {isAndroidRuntime ? 'Android' : 'Desktop'}
+        </span>
       </div>
       <div className="top-panel-controls">
+        {showAdbControls && (
         <button
           className="btn btn-primary"
           disabled={!hasOnline}
@@ -106,18 +122,22 @@ export default function TopControlPanel({ onPlayAll }) {
               alert('All devices up to date');
               return;
             }
-            const noAdb = onlineDevices.filter((d) => !d.adbConnected);
-            if (noAdb.length > 0) {
-              const proceed = confirm(
-                `${noAdb.length} device(s) without ADB will be skipped. Continue?`
-              );
-              if (!proceed) return;
+            if (adbAvailable) {
+              const noAdb = onlineDevices.filter((d) => !d.adbConnected);
+              if (noAdb.length > 0) {
+                const proceed = confirm(
+                  `${noAdb.length} device(s) without ADB will be skipped. Continue?`
+                );
+                if (!proceed) return;
+              }
             }
             await updateAllDevices();
           })}
         >
           Update All {needsUpdate.length > 0 && `(${needsUpdate.length})`}
         </button>
+        )}
+        {showAdbControls && adbAvailable && (
         <div className="usb-init-wrapper" ref={usbMenuRef}>
           <button
             className="btn"
@@ -161,6 +181,8 @@ export default function TopControlPanel({ onPlayAll }) {
             </div>
           )}
         </div>
+        )}
+        {showAdbControls && adbAvailable && (
         <button
           className="btn"
           disabled={!hasAdbDevices}
@@ -176,6 +198,7 @@ export default function TopControlPanel({ onPlayAll }) {
         >
           Launch Player {adbNoPlayer.length > 0 && `(${adbNoPlayer.length})`}
         </button>
+        )}
         <button
           className="btn btn-success"
           disabled={!hasCommandTargets}

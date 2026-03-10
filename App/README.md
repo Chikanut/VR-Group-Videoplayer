@@ -61,6 +61,20 @@ cd ..
 python run.py
 ```
 
+## Android APK (no-ADB mode)
+
+У репозиторії додано scaffold для Android пакування через **Chaquopy**:
+
+- Проєкт: `App/android/chaquopy`
+- Runtime режим: ADB вимикається автоматично (`adbAvailable=false`)
+- UI: WebView wrapper, який відкриває `http://127.0.0.1:8000`
+
+Базові кроки:
+
+1. Відкрити `App/android/chaquopy` в Android Studio.
+2. Запустити `app` на Android пристрої.
+3. Додаток підніме FastAPI у background service і покаже control panel у WebView.
+
 ## Configuration
 
 All settings are managed through the web UI at `/settings`:

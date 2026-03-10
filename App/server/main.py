@@ -6,6 +6,7 @@ import platform
 import string
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,7 +14,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .adb_executor import adb_executor
-from .config import get_config, load_config, update_config
+from .config import ADB_AVAILABLE, get_config, load_config, update_config
 from .device_discovery import discovery_loop, handle_self_registration
 from .device_manager import device_manager
 from .device_ws_manager import REGISTER_TIMEOUT, device_ws_manager
@@ -51,17 +52,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger("vrclassroom")
 
-_discovery_task: asyncio.Task | None = None
+_discovery_task: Optional[asyncio.Task] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _discovery_task
     # Startup
-    load_config()
-    has_adb = await adb_executor.check_adb()
-    if not has_adb:
-        logger.warning("ADB not found in PATH. ADB-dependent features will not work.")
+    config = load_config()
+    logger.info(
+        "Startup runtime diagnostics: isAndroidRuntime=%s adbAvailable=%s networkSubnet=%s",
+        config.get("isAndroidRuntime"),
+        config.get("adbAvailable"),
+        config.get("networkSubnet", ""),
+    )
+    if ADB_AVAILABLE:
+        has_adb = await adb_executor.check_adb()
+        if not has_adb:
+            logger.warning("ADB not found in PATH. ADB-dependent features will not work.")
+    else:
+        logger.info("ADB explicitly disabled; running in HTTP-only mode")
     await device_manager.start()
     _discovery_task = asyncio.create_task(discovery_loop())
     logger.info("VR Classroom server started (discovery + offline_check loops)")
@@ -190,17 +200,18 @@ async def device_debug_toggle(device_id: str):
     return await toggle_debug(device_id)
 
 
-@app.post("/api/devices/{device_id}/restart-app")
-async def device_restart_app(device_id: str):
-    """Restart the player app on a device via ADB (force-stop + launch)."""
-    result = await restart_app(device_id)
-    if result.get("error") == "Device not found":
-        return JSONResponse(status_code=404, content=result)
-    if result.get("error") == "ADB not connected":
-        return JSONResponse(status_code=400, content=result)
-    if result.get("error"):
-        return JSONResponse(status_code=500, content=result)
-    return result
+if ADB_AVAILABLE:
+    @app.post("/api/devices/{device_id}/restart-app")
+    async def device_restart_app(device_id: str):
+        """Restart the player app on a device via ADB (force-stop + launch)."""
+        result = await restart_app(device_id)
+        if result.get("error") == "Device not found":
+            return JSONResponse(status_code=404, content=result)
+        if result.get("error") == "ADB not connected":
+            return JSONResponse(status_code=400, content=result)
+        if result.get("error"):
+            return JSONResponse(status_code=500, content=result)
+        return result
 
 
 # ─── Requirements endpoints ───────────────────────────────────────────────────
@@ -220,6 +231,8 @@ async def update_device(device_id: str):
     device = await device_manager.get(device_id)
     if not device:
         return JSONResponse(status_code=404, content={"error": "Device not found"})
+    if not ADB_AVAILABLE:
+        return JSONResponse(status_code=400, content={"error": "ADB disabled"})
     if not device.adb_connected:
         return JSONResponse(status_code=400, content={"error": "ADB not connected"})
     if device.update_in_progress:
@@ -233,6 +246,9 @@ async def update_device(device_id: str):
 
 @app.post("/api/devices/update-all")
 async def update_all_devices():
+    if not ADB_AVAILABLE:
+        return {"started": [], "skipped": [], "error": "ADB disabled"}
+
     config = get_config()
     devices = await device_manager.get_online_adb_devices()
     concurrency = config.get("updateConcurrency", 5)
@@ -260,25 +276,26 @@ async def update_all_devices():
 
 # ─── USB endpoints ───────────────────────────────────────────────────────────
 
-@app.get("/api/usb-devices")
-async def get_usb_devices():
-    serials = await adb_executor.list_usb_devices()
-    return {"devices": serials}
+if ADB_AVAILABLE:
+    @app.get("/api/usb-devices")
+    async def get_usb_devices():
+        serials = await adb_executor.list_usb_devices()
+        return {"devices": serials}
 
 
-@app.post("/api/usb-devices/{serial}/update")
-async def update_usb_device(serial: str, options: UsbInitOptions | None = None):
-    serials = await adb_executor.list_usb_devices()
-    if serial not in serials:
-        return JSONResponse(status_code=404, content={"error": "USB device not found"})
-    opts = options or UsbInitOptions()
-    asyncio.create_task(run_usb_update(
-        serial,
-        enable_wireless_adb=opts.enableWirelessAdb,
-        update_app=opts.updateApp,
-        update_content=opts.updateContent,
-    ))
-    return {"ok": True, "message": f"USB update started for {serial}"}
+    @app.post("/api/usb-devices/{serial}/update")
+    async def update_usb_device(serial: str, options: Optional[UsbInitOptions] = None):
+        serials = await adb_executor.list_usb_devices()
+        if serial not in serials:
+            return JSONResponse(status_code=404, content={"error": "USB device not found"})
+        opts = options or UsbInitOptions()
+        asyncio.create_task(run_usb_update(
+            serial,
+            enable_wireless_adb=opts.enableWirelessAdb,
+            update_app=opts.updateApp,
+            update_content=opts.updateContent,
+        ))
+        return {"ok": True, "message": f"USB update started for {serial}"}
 
 
 # ─── File browse endpoint ────────────────────────────────────────────────────
@@ -352,6 +369,8 @@ async def launch_player_single(device_id: str):
     device = await device_manager.get(device_id)
     if not device:
         return JSONResponse(status_code=404, content={"error": "Device not found"})
+    if not ADB_AVAILABLE:
+        return JSONResponse(status_code=400, content={"error": "ADB disabled"})
     if not device.adb_connected:
         return JSONResponse(status_code=400, content={"error": "ADB not connected"})
     return await launch_player([device_id])
@@ -414,10 +433,12 @@ async def websocket_endpoint(ws: WebSocket):
     await ws_manager.connect(ws)
     try:
         devices = device_manager.get_snapshot()
+        snapshot_config = get_config()
+        snapshot_config["adbAvailable"] = ADB_AVAILABLE
         await ws_manager.send_to(ws, {
             "type": "snapshot",
             "devices": devices,
-            "config": get_config(),
+            "config": snapshot_config,
         })
 
         while True:
@@ -475,6 +496,10 @@ async def device_websocket_endpoint(ws: WebSocket):
             battery=msg.get("battery", -1),
             player_version=msg.get("playerVersion", ""),
             playback_state=msg.get("state", "idle"),
+            android_id=msg.get("androidId", msg.get("android_id", "")),
+            device_model=msg.get("deviceModel", msg.get("model", "")),
+            mac_address=msg.get("macAddress", msg.get("mac", "")),
+            installed_packages=msg.get("packages", []),
         )
 
         device_name = msg.get("deviceName", "")
@@ -507,6 +532,13 @@ async def device_websocket_endpoint(ws: WebSocket):
                     "personalVolume": "personal_volume",
                     "effectiveVolume": "effective_volume",
                     "playerVersion": "player_version",
+                    "androidId": "android_id",
+                    "android_id": "android_id",
+                    "deviceModel": "device_model",
+                    "model": "device_model",
+                    "macAddress": "mac_address",
+                    "mac": "mac_address",
+                    "packages": "installed_packages",
                 }
                 for json_key, attr_name in field_map.items():
                     if attr_name and json_key in msg:

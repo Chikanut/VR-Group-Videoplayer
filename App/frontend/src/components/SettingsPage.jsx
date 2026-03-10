@@ -32,6 +32,7 @@ export default function SettingsPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [filePicker, setFilePicker] = useState(null); // { target, filter, title }
+  const isAndroidRuntime = config?.isAndroidRuntime === true;
 
   useEffect(() => {
     loadConfig();
@@ -56,7 +57,7 @@ export default function SettingsPage() {
       return;
     }
     if (new Set(paths).size !== paths.length) {
-      setError('Duplicate video paths found');
+      setError(isAndroidRuntime ? 'Duplicate video filenames found' : 'Duplicate video paths found');
       setSaving(false);
       return;
     }
@@ -195,6 +196,7 @@ export default function SettingsPage() {
       {error && <div className="alert alert-error">{error}</div>}
       {success && <div className="alert alert-success">{success}</div>}
 
+      {!isAndroidRuntime && (
       <section className="settings-section">
         <h2>APK Configuration</h2>
         <div className="form-group">
@@ -224,11 +226,12 @@ export default function SettingsPage() {
           />
         </div>
       </section>
+      )}
 
       <section className="settings-section">
         <h2>Requirement Videos</h2>
         <p className="settings-note">
-          Videos are automatically saved to /sdcard/Movies/ on the device.
+          {isAndroidRuntime ? "Enter only filename. The player will search in /sdcard/Movies/." : "Videos are automatically saved to /sdcard/Movies/ on the device."}
         </p>
         <div className="video-requirements-list">
           {(config.requirementVideos || []).map((video, idx) => {
@@ -282,21 +285,30 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="form-group">
-                    <label>Source File (on server PC)</label>
-                    <div className="input-with-button">
+                    <label>{isAndroidRuntime ? 'Video filename on player device' : 'Source File (on server PC)'}</label>
+                    {isAndroidRuntime ? (
                       <input
                         type="text"
                         value={video.localPath || ''}
-                        readOnly
-                        placeholder="Click Browse to select video"
+                        onChange={(e) => updateVideo(idx, 'localPath', e.target.value)}
+                        placeholder="lesson_01.mp4"
                       />
-                      <button
-                        className="btn btn-small"
-                        onClick={() => openFilePicker(`video_${idx}`, '.mp4,.mkv,.avi,.mov,.webm', 'Select Video File')}
-                      >
-                        Browse
-                      </button>
-                    </div>
+                    ) : (
+                      <div className="input-with-button">
+                        <input
+                          type="text"
+                          value={video.localPath || ''}
+                          readOnly
+                          placeholder="Click Browse to select video"
+                        />
+                        <button
+                          className="btn btn-small"
+                          onClick={() => openFilePicker(`video_${idx}`, '.mp4,.mkv,.avi,.mov,.webm', 'Select Video File')}
+                        >
+                          Browse
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div className="form-group form-group-small">
                     <label>Type</label>
@@ -570,12 +582,29 @@ export default function SettingsPage() {
             />
           </div>
           <div className="form-group">
-            <label>Network Subnet (auto-detected if empty)</label>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={config.networkSubnetAuto ?? true}
+                onChange={(e) => updateField('networkSubnetAuto', e.target.checked)}
+              />
+              <span>Network Subnet Auto Detect (Android)</span>
+            </label>
+            <span className="form-hint">
+              When enabled, subnet is refreshed from detected Android network on every startup.
+            </span>
+          </div>
+          <div className="form-group">
+            <label>Network Subnet (manual mode)</label>
             <input
               type="text"
               value={config.networkSubnet || ''}
-              onChange={(e) => updateField('networkSubnet', e.target.value)}
+              onChange={(e) => {
+                updateField('networkSubnet', e.target.value);
+                updateField('networkSubnetAuto', false);
+              }}
               placeholder="192.168.1"
+              disabled={config.networkSubnetAuto ?? true}
             />
           </div>
           <div className="form-group">

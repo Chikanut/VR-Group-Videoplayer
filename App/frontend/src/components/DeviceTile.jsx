@@ -20,14 +20,14 @@ function BatteryIcon({ level, charging }) {
   return <span className="battery-icon">{icon} {level}%</span>;
 }
 
-function ConnectionBadge({ device }) {
+function ConnectionBadge({ device, adbAvailable }) {
   if (!device.online) {
     return <span className="badge badge-offline">Offline</span>;
   }
   if (device.playerConnected) {
     return <span className="badge badge-ok" title="Connected via WebSocket">WS</span>;
   }
-  if (device.adbConnected) {
+  if (adbAvailable && device.adbConnected) {
     return <span className="badge badge-warn" title="ADB only - player not running">ADB only</span>;
   }
   return <span className="badge badge-offline">Offline</span>;
@@ -36,6 +36,7 @@ function ConnectionBadge({ device }) {
 export default function DeviceTile({ device, onClick }) {
   const config = useDeviceStore((s) => s.config);
   const threshold = config?.batteryThreshold || 20;
+  const adbAvailable = config?.adbAvailable !== false;
   const isLowBattery = device.battery > 0 && device.battery <= threshold;
   const isPlaying = device.playbackState === 'playing' || device.playbackState === 'paused';
 
@@ -64,8 +65,8 @@ export default function DeviceTile({ device, onClick }) {
       </div>
 
       <div className="tile-status-row">
-        <ConnectionBadge device={device} />
-        {device.online && device.adbConnected && !device.playerConnected && (
+        <ConnectionBadge device={device} adbAvailable={adbAvailable} />
+        {adbAvailable && device.online && device.adbConnected && !device.playerConnected && (
           <span className="badge badge-warn">No Player</span>
         )}
       </div>
@@ -79,7 +80,7 @@ export default function DeviceTile({ device, onClick }) {
           ) : (
             <span className="req-fail">
               Requirements missing
-              {device.adbConnected && (
+              {adbAvailable && device.adbConnected && (
                 <button className="btn-small btn-update" onClick={handleUpdate}>
                   Update
                 </button>
@@ -116,7 +117,7 @@ export default function DeviceTile({ device, onClick }) {
       <div className="tile-actions">
         <button
           className="btn-small"
-          disabled={!device.online || (!device.playerConnected && !device.adbConnected)}
+          disabled={!device.online || (!device.playerConnected && !(adbAvailable && device.adbConnected))}
           onClick={handlePing}
         >
           Ping

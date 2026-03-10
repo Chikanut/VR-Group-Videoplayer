@@ -3,19 +3,24 @@ import logging
 import socket
 
 import aiohttp
+from typing import Dict, List, Optional
 
 from .adb_executor import ADB_PORT, adb_executor
-from .config import get_config
+from .config import ADB_AVAILABLE, detect_android_hotspot_subnet, get_config
 from .device_manager import device_manager
 from .device_ws_manager import device_ws_manager
 
 logger = logging.getLogger("vrclassroom.discovery")
 
-DISCOVERY_CONCURRENCY = 8
+DISCOVERY_CONCURRENCY = 24
+SCAN_TIMEOUT_SEC = 0.8
 
 
 def detect_subnet() -> str:
     """Try to detect the local subnet for scanning."""
+    if not ADB_AVAILABLE:
+        return detect_android_hotspot_subnet()
+
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
@@ -27,12 +32,12 @@ def detect_subnet() -> str:
         return "192.168.1"
 
 
-async def scan_ip(ip: str) -> str | None:
-    """Try to connect to ADB on a single IP. Returns IP if successful."""
+async def scan_ip(ip: str, port: int, timeout: float = SCAN_TIMEOUT_SEC) -> Optional[str]:
+    """Try to connect to a TCP port on a single IP. Returns IP if successful."""
     try:
         _, writer = await asyncio.wait_for(
-            asyncio.open_connection(ip, ADB_PORT),
-            timeout=2,
+            asyncio.open_connection(ip, port),
+            timeout=timeout,
         )
         writer.close()
         await writer.wait_closed()
@@ -41,13 +46,39 @@ async def scan_ip(ip: str) -> str | None:
         return None
 
 
-async def scan_subnet(subnet: str) -> list[str]:
-    """Scan a /24 subnet for devices with ADB port open."""
-    logger.info("Scanning subnet %s.0/24...", subnet)
-    tasks = [scan_ip(f"{subnet}.{i}") for i in range(1, 255)]
+async def scan_subnet(subnet: str, port: int, preferred_ips: Optional[List[str]] = None) -> List[str]:
+    """Scan a /24 subnet for devices with a given port open."""
+    preferred_ips = preferred_ips or []
+    preferred_in_subnet = [
+        ip for ip in preferred_ips
+        if ip.startswith(f"{subnet}.")
+    ]
+
+    scan_order: List[str] = []
+    seen = set()
+
+    for ip in preferred_in_subnet:
+        if ip not in seen:
+            scan_order.append(ip)
+            seen.add(ip)
+
+    for i in range(1, 255):
+        ip = f"{subnet}.{i}"
+        if ip not in seen:
+            scan_order.append(ip)
+
+    logger.info("Scanning subnet %s.0/24 on port %d...", subnet, port)
+
+    semaphore = asyncio.Semaphore(DISCOVERY_CONCURRENCY)
+
+    async def _scan_with_limit(ip: str):
+        async with semaphore:
+            return await scan_ip(ip, port)
+
+    tasks = [_scan_with_limit(ip) for ip in scan_order]
     results = await asyncio.gather(*tasks)
     found = [ip for ip in results if ip is not None]
-    logger.info("Scan complete. Found %d device(s) with ADB port open", len(found))
+    logger.info("Scan complete. Found %d device(s) with port %d open", len(found), port)
     return found
 
 
@@ -69,12 +100,12 @@ async def _read_stable_id_from_adb(ip: str) -> str:
     return ip
 
 
-async def _probe_player_http(ip: str, player_port: int) -> dict | None:
+async def _probe_player_http(ip: str, player_port: int) -> Optional[Dict]:
     """Try to reach the player's HTTP API on port 8080. Returns status dict or None."""
     try:
         async with aiohttp.ClientSession() as session:
             url = f"http://{ip}:{player_port}/status"
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=2)) as resp:
                 if resp.status == 200:
                     return await resp.json()
     except Exception:
@@ -125,6 +156,13 @@ _STATUS_FIELD_MAP = {
     "loop": "loop",
     "uptimeMinutes": "uptime_minutes",
     "playerVersion": "player_version",
+    "androidId": "android_id",
+    "android_id": "android_id",
+    "deviceModel": "device_model",
+    "model": "device_model",
+    "macAddress": "mac_address",
+    "mac": "mac_address",
+    "packages": "installed_packages",
 }
 
 
@@ -132,44 +170,44 @@ async def process_discovered_ip(
     ip: str,
     semaphore: asyncio.Semaphore,
 ):
-    """Discovery: connect ADB + read ID + probe HTTP player + push server IP."""
+    """Discovery: probe HTTP player and optionally enrich with ADB."""
     async with semaphore:
-        connected = await adb_executor.connect(ip)
-        if not connected:
-            logger.debug("ADB port open on %s but connect failed", ip)
-            return
-
-        device_id = await _read_stable_id_from_adb(ip)
-
-        # Check if player app is responding on HTTP (port 8080)
         config = get_config()
         player_port = config.get("playerPort", 8080)
-        player_connected = False
+
+        status = await _probe_player_http(ip, player_port)
+        if status is None:
+            return
+
+        device_id = str(status.get("deviceId", "")).strip() or ip
         extra_kwargs = {}
+        for json_key, attr_name in _STATUS_FIELD_MAP.items():
+            if json_key in status:
+                extra_kwargs[attr_name] = status[json_key]
 
-        # Only probe HTTP if device doesn't already have a WS connection
+        if "androidId" in status:
+            device_id = str(status.get("androidId") or device_id)
+        if "android_id" in status:
+            device_id = str(status.get("android_id") or device_id)
+        if "packages" in status and isinstance(status.get("packages"), list):
+            extra_kwargs["installed_packages"] = status.get("packages")
+
+        adb_connected = False
+        if ADB_AVAILABLE:
+            adb_connected = await adb_executor.connect(ip)
+            if adb_connected:
+                device_id = await _read_stable_id_from_adb(ip)
+
         if not device_ws_manager.is_connected(device_id):
-            status = await _probe_player_http(ip, player_port)
-            if status is not None:
-                player_connected = True
-                for json_key, attr_name in _STATUS_FIELD_MAP.items():
-                    if json_key in status:
-                        extra_kwargs[attr_name] = status[json_key]
-
-                # Push server IP so the player can establish WS connection
-                server_url = _get_server_url()
-                if server_url:
-                    # Fire and forget — don't block discovery
-                    asyncio.create_task(_push_server_ip_to_player(ip, player_port, server_url))
-        else:
-            # Device is WS-connected, trust that
-            player_connected = True
+            server_url = _get_server_url()
+            if server_url:
+                asyncio.create_task(_push_server_ip_to_player(ip, player_port, server_url))
 
         await device_manager.add_or_update(
             device_id,
             ip,
-            adb_connected=True,
-            player_connected=player_connected,
+            adb_connected=adb_connected,
+            player_connected=True,
             **extra_kwargs,
         )
         await device_manager.mark_discovery_seen(device_id)
@@ -191,7 +229,10 @@ async def discovery_loop():
             # Increment missed cycles for all known devices before scanning
             await device_manager.increment_missed_discovery()
 
-            discovered_ips = await scan_subnet(subnet)
+            known_ips = await device_manager.get_known_ips()
+            player_port = config.get("playerPort", 8080)
+            discovery_port = ADB_PORT if ADB_AVAILABLE else player_port
+            discovered_ips = await scan_subnet(subnet, discovery_port, preferred_ips=known_ips)
 
             semaphore = asyncio.Semaphore(DISCOVERY_CONCURRENCY)
             tasks = [process_discovered_ip(ip, semaphore) for ip in discovered_ips]
@@ -201,7 +242,8 @@ async def discovery_loop():
                     logger.warning("Device processing failed: %s", result)
 
             # Also scan for USB devices
-            await _scan_usb_devices()
+            if ADB_AVAILABLE:
+                await _scan_usb_devices()
 
             logger.info("Discovery complete: discovered=%d", len(discovered_ips))
 
@@ -262,14 +304,15 @@ async def handle_self_registration(data: dict):
             await device_manager.apply_device_name_from_device(incoming_device_id, device_name)
 
         # Try ADB connect if not already connected
-        device = await device_manager.get(incoming_device_id)
-        if device and not device.adb_connected:
-            connected = await adb_executor.connect(ip)
-            if connected:
-                await device_manager.add_or_update(
-                    incoming_device_id,
-                    ip=ip,
-                    adb_connected=True,
-                )
+        if ADB_AVAILABLE:
+            device = await device_manager.get(incoming_device_id)
+            if device and not device.adb_connected:
+                connected = await adb_executor.connect(ip)
+                if connected:
+                    await device_manager.add_or_update(
+                        incoming_device_id,
+                        ip=ip,
+                        adb_connected=True,
+                    )
     except Exception:
         logger.exception("Self-registration handling failed. payload=%s", data)

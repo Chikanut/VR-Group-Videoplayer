@@ -1,10 +1,13 @@
 import json
 import logging
 import os
+import socket
+import shutil
 import uuid
 from copy import deepcopy
 from pathlib import Path
 from threading import Lock
+from typing import Optional, Tuple
 
 logger = logging.getLogger("vrclassroom.config")
 
@@ -19,11 +22,14 @@ DEFAULT_CONFIG = {
     "batteryThreshold": 20,
     "scanInterval": 30,
     "networkSubnet": "",
+    "networkSubnetAuto": True,
     "serverPort": 8000,
     "playerPort": 8080,
     "deviceOfflineTimeout": 30,
     "updateConcurrency": 5,
     "ignoreRequirements": False,
+    "adbAvailable": True,
+    "isAndroidRuntime": False,
 }
 
 DEVICE_VIDEO_DIR = "/sdcard/Movies"
@@ -34,9 +40,83 @@ _device_names: dict = {}
 _device_names_lock = Lock()
 
 
+def _runtime_target() -> str:
+    """Runtime target selected explicitly by launcher: 'android' or 'desktop'."""
+    return os.environ.get("VRCLASSROOM_RUNTIME", "desktop").strip().lower()
+
+
+def _is_android_runtime() -> bool:
+    return _runtime_target() == "android"
+
+
+def detect_adb_available() -> bool:
+    if _is_android_runtime():
+        return False
+    if os.environ.get("VRCLASSROOM_DISABLE_ADB", "").lower() in {"1", "true", "yes", "on"}:
+        return False
+    return shutil.which("adb") is not None
+
+
+ADB_AVAILABLE = detect_adb_available()
+
+
+def _extract_subnet(ip_addr: str) -> str:
+    parts = ip_addr.split(".")
+    if len(parts) != 4:
+        return ""
+    if any(not part.isdigit() for part in parts):
+        return ""
+    return f"{parts[0]}.{parts[1]}.{parts[2]}"
+
+
+def _detect_android_hotspot_subnet_with_source() -> Tuple[str, str]:
+    """Best-effort detection of active hotspot/LAN subnet on Android runtime."""
+    override = os.environ.get("VRCLASSROOM_ANDROID_SUBNET", "").strip()
+    if override:
+        return override, "env_override"
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route_sock:
+            route_sock.connect(("8.8.8.8", 80))
+            local_ip = route_sock.getsockname()[0]
+        subnet = _extract_subnet(local_ip)
+        if subnet:
+            return subnet, "route"
+    except OSError:
+        pass
+
+    try:
+        hostname = socket.gethostname()
+        for addr in socket.gethostbyname_ex(hostname)[2]:
+            if not addr or addr.startswith("127."):
+                continue
+            subnet = _extract_subnet(addr)
+            if subnet:
+                return subnet, "hostname"
+    except OSError:
+        pass
+
+    candidates = [
+        "192.168.43",   # Android legacy hotspot
+        "192.168.232",  # Android 11+ hotspot (common)
+        "172.20.10",    # iOS hotspot (shared networks)
+    ]
+
+    return candidates[0], "fallback_candidates"
+
+
+def detect_android_hotspot_subnet() -> str:
+    subnet, _ = _detect_android_hotspot_subnet_with_source()
+    return subnet
+
+
 def load_config() -> dict:
     global _config
     with _config_lock:
+        should_save_config = False
+        detected_subnet = ""
+        detected_subnet_source = "n/a"
+
         if CONFIG_PATH.exists():
             try:
                 with open(CONFIG_PATH, "r") as f:
@@ -50,6 +130,14 @@ def load_config() -> dict:
                 for key in data:
                     if key not in _config:
                         _config[key] = data[key]
+
+                if "networkSubnet" in data and "networkSubnetAuto" not in data:
+                    _config["networkSubnetAuto"] = True
+                    should_save_config = True
+                    logger.info(
+                        "Config migration: existing networkSubnet detected without networkSubnetAuto; "
+                        "defaulting to auto mode for Android compatibility"
+                    )
                 logger.info("Config loaded from %s", CONFIG_PATH)
             except (json.JSONDecodeError, OSError) as e:
                 logger.error("Invalid config file, using defaults: %s", e)
@@ -58,6 +146,29 @@ def load_config() -> dict:
             _config = deepcopy(DEFAULT_CONFIG)
             _save_config_locked()
             logger.info("Created default config at %s", CONFIG_PATH)
+
+        if _is_android_runtime():
+            detected_subnet, detected_subnet_source = _detect_android_hotspot_subnet_with_source()
+            if _config.get("networkSubnetAuto", True):
+                if _config.get("networkSubnet") != detected_subnet:
+                    _config["networkSubnet"] = detected_subnet
+                    should_save_config = True
+            elif not _config.get("networkSubnet"):
+                _config["networkSubnet"] = detected_subnet
+                should_save_config = True
+                logger.warning(
+                    "networkSubnetAuto=false but networkSubnet is empty; "
+                    "falling back to detected subnet"
+                )
+
+        _config["adbAvailable"] = ADB_AVAILABLE
+        _config["isAndroidRuntime"] = _is_android_runtime()
+        logger.info(
+            "Runtime mode resolved: target=%s isAndroidRuntime=%s adbAvailable=%s",
+            _runtime_target(),
+            _config["isAndroidRuntime"],
+            _config["adbAvailable"],
+        )
         return deepcopy(_config)
 
 
@@ -71,6 +182,9 @@ def _save_config_locked():
 
 def get_config() -> dict:
     with _config_lock:
+        if _config:
+            _config["adbAvailable"] = ADB_AVAILABLE
+            _config["isAndroidRuntime"] = _is_android_runtime()
         return deepcopy(_config)
 
 
@@ -78,6 +192,8 @@ def update_config(new_config: dict) -> dict:
     global _config
     with _config_lock:
         _config.update(new_config)
+        _config["adbAvailable"] = ADB_AVAILABLE
+        _config["isAndroidRuntime"] = _is_android_runtime()
         # Ensure requirement videos have IDs and strip legacy devicePath
         for video in _config.get("requirementVideos", []):
             if not video.get("id"):
@@ -106,7 +222,7 @@ def load_device_names() -> dict:
         return dict(_device_names)
 
 
-def get_device_name(device_id: str) -> str | None:
+def get_device_name(device_id: str) -> Optional[str]:
     with _device_names_lock:
         return _device_names.get(device_id)
 
