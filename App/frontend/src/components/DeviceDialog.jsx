@@ -3,15 +3,12 @@ import useDeviceStore from '../store/deviceStore';
 import {
   setDeviceName,
   pingDevice,
-  updateDevice,
   getRequirements,
   playbackCommand,
-  launchPlayerSingle,
   toggleDeviceDebug,
   setDeviceVolume,
   restartApp,
 } from '../api';
-import UpdateProgress from './UpdateProgress';
 
 export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
   const device = useDeviceStore((s) => s.devices[deviceId]);

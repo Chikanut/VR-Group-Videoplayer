@@ -1,14 +1,13 @@
 import React, { useRef, useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useDeviceStore from '../store/deviceStore';
-import { playbackCommand, updateAllDevices, getUsbDevices, updateUsbDevice, launchPlayer, getGlobalVolume, setGlobalVolume } from '../api';
+import { playbackCommand, getGlobalVolume, setGlobalVolume } from '../api';
 
 export default function TopControlPanel({ onPlayAll }) {
   const navigate = useNavigate();
   const config = useDeviceStore((s) => s.config);
   const devices = useDeviceStore((s) => s.getDeviceList());
   const onlineDevices = devices.filter((d) => d.online);
-  const hasOnline = onlineDevices.length > 0;
   const ignoreReq = config?.ignoreRequirements || false;
   const adbAvailable = config?.adbAvailable !== false;
   const isAndroidRuntime = config?.isAndroidRuntime === true;
@@ -16,14 +15,6 @@ export default function TopControlPanel({ onPlayAll }) {
   const hasAdbDevices = adbAvailable && onlineDevices.some((d) => d.adbConnected);
   const adbNoPlayer = adbAvailable ? onlineDevices.filter((d) => d.adbConnected && !d.playerConnected) : [];
   const debounceRef = useRef({});
-  const [usbScanning, setUsbScanning] = useState(false);
-  const [usbMenuOpen, setUsbMenuOpen] = useState(false);
-  const [usbOptions, setUsbOptions] = useState({
-    enableWirelessAdb: true,
-    updateApp: true,
-    updateContent: true,
-  });
-  const usbMenuRef = useRef(null);
   const volumeDebounceRef = useRef(null);
   const [globalVolume, setGlobalVolumeValue] = useState(1);
 
@@ -33,17 +24,6 @@ export default function TopControlPanel({ onPlayAll }) {
     fn();
     setTimeout(() => { debounceRef.current[key] = false; }, 1000);
   }, []);
-
-  useEffect(() => {
-    if (!usbMenuOpen) return;
-    const handleClick = (e) => {
-      if (usbMenuRef.current && !usbMenuRef.current.contains(e.target)) {
-        setUsbMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [usbMenuOpen]);
 
   useEffect(() => {
     const loadGlobalVolume = async () => {
@@ -56,40 +36,6 @@ export default function TopControlPanel({ onPlayAll }) {
     };
     loadGlobalVolume();
   }, []);
-
-  const needsUpdate = onlineDevices.filter(
-    (d) => (adbAvailable ? d.adbConnected : d.playerConnected) && d.requirementsMet === false
-  );
-
-  const handleUsbInit = async () => {
-    const hasAnySelected = usbOptions.enableWirelessAdb || usbOptions.updateApp || usbOptions.updateContent;
-    if (!hasAnySelected) {
-      alert('Select at least one initialization option.');
-      return;
-    }
-
-    setUsbScanning(true);
-    setUsbMenuOpen(false);
-    try {
-      const data = await getUsbDevices();
-      const serials = data.devices || [];
-      if (serials.length === 0) {
-        alert('No USB devices found. Connect a Quest headset via USB cable.');
-      } else {
-        for (const serial of serials) {
-          await updateUsbDevice(serial, usbOptions);
-        }
-        alert(`Started initialization for ${serials.length} USB device(s). Check progress below.`);
-      }
-    } catch (e) {
-      alert('Failed to scan USB devices');
-    }
-    setUsbScanning(false);
-  };
-
-  const toggleOption = (key) => {
-    setUsbOptions((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
 
   return (
     <header className="top-panel">
