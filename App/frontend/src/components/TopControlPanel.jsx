@@ -57,6 +57,15 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
     loadGlobalVolume();
   }, []);
 
+  useEffect(() => {
+    if (!config) return;
+    console.info('[VR Classroom] Runtime mode', {
+      isAndroidRuntime: config.isAndroidRuntime,
+      adbAvailable: config.adbAvailable,
+      networkSubnet: config.networkSubnet,
+    });
+  }, [config]);
+
   const needsUpdate = onlineDevices.filter(
     (d) => (adbAvailable ? d.adbConnected : d.playerConnected) && d.requirementsMet === false
   );
@@ -98,6 +107,9 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
         <h1 className="top-panel-title">VR Classroom</h1>
         <span className="device-count">
           {onlineDevices.length}/{devices.length} online
+        </span>
+        <span className="runtime-badge" title="Runtime mode detected by backend config">
+          Mode: {isAndroidRuntime ? 'Android' : 'Desktop'}
         </span>
       </div>
       <div className="top-panel-controls">

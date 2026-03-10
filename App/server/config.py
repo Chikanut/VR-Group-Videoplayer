@@ -117,6 +117,12 @@ def load_config() -> dict:
 
         _config["adbAvailable"] = ADB_AVAILABLE
         _config["isAndroidRuntime"] = _is_android_runtime()
+        logger.info(
+            "Runtime mode resolved: target=%s isAndroidRuntime=%s adbAvailable=%s",
+            _runtime_target(),
+            _config["isAndroidRuntime"],
+            _config["adbAvailable"],
+        )
         return deepcopy(_config)
 
 

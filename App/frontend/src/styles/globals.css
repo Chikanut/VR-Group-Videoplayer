@@ -108,6 +108,15 @@ body {
   font-size: 0.85rem;
 }
 
+.runtime-badge {
+  font-size: 0.78rem;
+  color: var(--info);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: rgba(90, 200, 250, 0.1);
+}
+
 .top-panel-controls {
   display: flex;
   align-items: center;
