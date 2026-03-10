@@ -62,7 +62,7 @@ namespace VRClassroom
 
         private void Start()
         {
-            _deviceId = SystemInfo.deviceUniqueIdentifier;
+            _deviceId = StatusReporter.GetAndroidId();
             _serverUrl = BuildServerUrl();
 
             if (string.IsNullOrEmpty(_serverUrl))
