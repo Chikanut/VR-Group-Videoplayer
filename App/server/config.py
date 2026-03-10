@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import socket
 import shutil
 import uuid
 from copy import deepcopy
@@ -51,6 +52,34 @@ def detect_adb_available() -> bool:
 ADB_AVAILABLE = detect_adb_available()
 
 
+def detect_android_hotspot_subnet() -> str:
+    """Best-effort detection of active hotspot/LAN subnet on Android runtime."""
+    override = os.environ.get("VRCLASSROOM_ANDROID_SUBNET", "").strip()
+    if override:
+        return override
+
+    candidates = [
+        "192.168.43",   # Android legacy hotspot
+        "192.168.232",  # Android 11+ hotspot (common)
+        "172.20.10",    # iOS hotspot (shared networks)
+    ]
+
+    try:
+        hostname = socket.gethostname()
+        for addr in socket.gethostbyname_ex(hostname)[2]:
+            if not addr or "." not in addr or addr.startswith("127."):
+                continue
+            parts = addr.split(".")
+            if len(parts) == 4:
+                subnet = f"{parts[0]}.{parts[1]}.{parts[2]}"
+                if subnet not in candidates:
+                    candidates.insert(0, subnet)
+    except Exception:
+        pass
+
+    return candidates[0]
+
+
 def load_config() -> dict:
     global _config
     with _config_lock:
@@ -75,6 +104,10 @@ def load_config() -> dict:
             _config = deepcopy(DEFAULT_CONFIG)
             _save_config_locked()
             logger.info("Created default config at %s", CONFIG_PATH)
+
+        if _is_android_runtime() and not _config.get("networkSubnet"):
+            _config["networkSubnet"] = detect_android_hotspot_subnet()
+
         _config["adbAvailable"] = ADB_AVAILABLE
         return deepcopy(_config)
 

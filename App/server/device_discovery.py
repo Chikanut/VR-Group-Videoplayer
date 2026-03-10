@@ -5,7 +5,7 @@ import socket
 import aiohttp
 
 from .adb_executor import ADB_PORT, adb_executor
-from .config import ADB_AVAILABLE, get_config
+from .config import ADB_AVAILABLE, detect_android_hotspot_subnet, get_config
 from .device_manager import device_manager
 from .device_ws_manager import device_ws_manager
 
@@ -16,6 +16,9 @@ DISCOVERY_CONCURRENCY = 8
 
 def detect_subnet() -> str:
     """Try to detect the local subnet for scanning."""
+    if not ADB_AVAILABLE:
+        return detect_android_hotspot_subnet()
+
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
