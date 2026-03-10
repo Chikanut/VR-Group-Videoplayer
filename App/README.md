@@ -61,6 +61,29 @@ cd ..
 python run.py
 ```
 
+## Windows EXE Build (for distribution)
+
+You can build a standalone Windows executable for the control panel:
+
+```bat
+cd App
+build_windows_exe.bat
+```
+
+Output:
+- `App/dist/VRClassroomControl.exe`
+
+What the script does:
+1. Creates/uses `App/venv`
+2. Installs runtime + build dependencies (`requirements.txt`, `requirements-build.txt`)
+3. Builds frontend assets (`frontend/dist`)
+4. Packages everything into one EXE with PyInstaller
+
+Notes:
+- Build this on Windows (PyInstaller is platform-specific).
+- Keep `adb.exe` available in PATH on target PCs if you need ADB features.
+- The EXE stores `config.json` and `device_names.json` next to the EXE.
+
 ## Android APK (no-ADB mode)
 
 У репозиторії додано scaffold для Android пакування через **Chaquopy**:

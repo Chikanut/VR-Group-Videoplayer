@@ -3,10 +3,11 @@
 import os
 import uvicorn
 from server.config import load_config
+from server.main import app
 
 if __name__ == "__main__":
     os.environ.setdefault("VRCLASSROOM_RUNTIME", "desktop")
     config = load_config()
     port = config.get("serverPort", 8000)
     print(f"Starting VR Classroom Control Server on port {port}...")
-    uvicorn.run("server.main:app", host="0.0.0.0", port=port, reload=False)
+    uvicorn.run(app, host="0.0.0.0", port=port, reload=False)
