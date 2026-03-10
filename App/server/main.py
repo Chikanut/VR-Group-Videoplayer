@@ -55,6 +55,12 @@ logger = logging.getLogger("vrclassroom")
 _discovery_task: Optional[asyncio.Task] = None
 
 
+def _model_to_dict(model):
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    return model.dict()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _discovery_task
@@ -103,7 +109,7 @@ async def get_config_endpoint():
 
 @app.put("/api/config")
 async def update_config_endpoint(config: ConfigModel):
-    new_config = update_config(config.model_dump())
+    new_config = update_config(_model_to_dict(config))
     await ws_manager.broadcast({"type": "config_updated", "config": new_config})
     return new_config
 
@@ -129,7 +135,7 @@ async def update_video_profile(video_id: str, profile: RequirementVideo):
     videos = config.get("requirementVideos", [])
 
     updated = False
-    profile_data = profile.model_dump()
+    profile_data = _model_to_dict(profile)
     profile_data["id"] = video_id
 
     for index, video in enumerate(videos):
@@ -186,7 +192,7 @@ async def remove_device(device_id: str):
 
 @app.post("/api/devices/register")
 async def register_device(reg: DeviceRegistration):
-    await handle_self_registration(reg.model_dump())
+    await handle_self_registration(_model_to_dict(reg))
     return {"ok": True}
 
 
