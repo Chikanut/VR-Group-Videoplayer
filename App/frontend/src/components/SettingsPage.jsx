@@ -203,8 +203,8 @@ export default function SettingsPage() {
             <input
               type="text"
               value={config.apkPath || ''}
-              readOnly
-              placeholder="Click Browse to select APK file"
+              onChange={(e) => updateField('apkPath', e.target.value)}
+              placeholder="/path/to/player.apk"
             />
             <button
               className="btn btn-small"
@@ -287,8 +287,8 @@ export default function SettingsPage() {
                       <input
                         type="text"
                         value={video.localPath || ''}
-                        readOnly
-                        placeholder="Click Browse to select video"
+                        onChange={(e) => updateVideo(idx, 'localPath', e.target.value)}
+                        placeholder="movie.mp4 or /path/to/movie.mp4"
                       />
                       <button
                         className="btn btn-small"
