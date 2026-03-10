@@ -72,6 +72,8 @@ namespace VRClassroom
             string deviceId = GetAndroidId();
             string deviceName = GetDeviceName();
             string ip = GetLocalIPAddress();
+            string deviceModel = GetDeviceModel();
+            string macAddress = GetMacAddress();
             int uptimeMinutes = Mathf.FloorToInt(Time.realtimeSinceStartup / 60f);
 
             var sb = new StringBuilder(512);
@@ -80,6 +82,9 @@ namespace VRClassroom
             if (!string.IsNullOrEmpty(deviceName))
                 sb.AppendFormat(CultureInfo.InvariantCulture, "\"deviceName\":\"{0}\",", EscapeJson(deviceName));
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"ip\":\"{0}\",", EscapeJson(ip));
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"androidId\":\"{0}\",", EscapeJson(deviceId));
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"deviceModel\":\"{0}\",", EscapeJson(deviceModel));
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"macAddress\":\"{0}\",", EscapeJson(macAddress));
             sb.Append("\"online\":true,");
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"state\":\"{0}\",", EscapeJson(state));
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"file\":\"{0}\",", EscapeJson(file));
@@ -180,6 +185,34 @@ namespace VRClassroom
         public static string GetDeviceName()
         {
             return PlayerPrefs.GetString("device_name", string.Empty);
+        }
+
+        public static string GetDeviceModel()
+        {
+            return SystemInfo.deviceModel ?? string.Empty;
+        }
+
+        public static string GetMacAddress()
+        {
+            try
+            {
+                foreach (var ni in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (ni.OperationalStatus != OperationalStatus.Up) continue;
+                    if (ni.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
+                    var address = ni.GetPhysicalAddress();
+                    if (address == null) continue;
+                    var bytes = address.GetAddressBytes();
+                    if (bytes == null || bytes.Length == 0) continue;
+                    return BitConverter.ToString(bytes).Replace("-", ":").ToLowerInvariant();
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return string.Empty;
         }
 
         public static void SetDeviceName(string name)

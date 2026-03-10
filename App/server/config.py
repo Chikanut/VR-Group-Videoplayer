@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import shutil
 import uuid
 from copy import deepcopy
 from pathlib import Path
@@ -24,6 +25,7 @@ DEFAULT_CONFIG = {
     "deviceOfflineTimeout": 30,
     "updateConcurrency": 5,
     "ignoreRequirements": False,
+    "adbAvailable": True,
 }
 
 DEVICE_VIDEO_DIR = "/sdcard/Movies"
@@ -32,6 +34,21 @@ _config: dict = {}
 _config_lock = Lock()
 _device_names: dict = {}
 _device_names_lock = Lock()
+
+
+def _is_android_runtime() -> bool:
+    return bool(os.environ.get("ANDROID_ARGUMENT") or os.environ.get("ANDROID_PRIVATE"))
+
+
+def detect_adb_available() -> bool:
+    if _is_android_runtime():
+        return False
+    if os.environ.get("VRCLASSROOM_DISABLE_ADB", "").lower() in {"1", "true", "yes", "on"}:
+        return False
+    return shutil.which("adb") is not None
+
+
+ADB_AVAILABLE = detect_adb_available()
 
 
 def load_config() -> dict:
@@ -58,6 +75,7 @@ def load_config() -> dict:
             _config = deepcopy(DEFAULT_CONFIG)
             _save_config_locked()
             logger.info("Created default config at %s", CONFIG_PATH)
+        _config["adbAvailable"] = ADB_AVAILABLE
         return deepcopy(_config)
 
 
@@ -71,6 +89,8 @@ def _save_config_locked():
 
 def get_config() -> dict:
     with _config_lock:
+        if _config:
+            _config["adbAvailable"] = ADB_AVAILABLE
         return deepcopy(_config)
 
 
@@ -78,6 +98,7 @@ def update_config(new_config: dict) -> dict:
     global _config
     with _config_lock:
         _config.update(new_config)
+        _config["adbAvailable"] = ADB_AVAILABLE
         # Ensure requirement videos have IDs and strip legacy devicePath
         for video in _config.get("requirementVideos", []):
             if not video.get("id"):

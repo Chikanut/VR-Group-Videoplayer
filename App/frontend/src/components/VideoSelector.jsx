@@ -6,11 +6,12 @@ export default function VideoSelector({ targetDeviceIds, onClose }) {
   const config = useDeviceStore((s) => s.config);
   const devices = useDeviceStore((s) => s.getDeviceList());
   const ignoreReq = config?.ignoreRequirements || false;
+  const adbAvailable = config?.adbAvailable !== false;
   const videos = config?.requirementVideos || [];
 
   // When ignoreRequirements is on, include ADB-connected devices as valid targets
   const isCommandTarget = (d) =>
-    d.online && (d.playerConnected || (ignoreReq && d.adbConnected));
+    d.online && (d.playerConnected || (ignoreReq && adbAvailable && d.adbConnected));
 
   const onlineCommandDevices = devices.filter(isCommandTarget);
 
@@ -73,7 +74,7 @@ export default function VideoSelector({ targetDeviceIds, onClose }) {
           <h2>Select Video</h2>
           <button className="btn-close" onClick={onClose}>x</button>
         </div>
-        {ignoreReq && targetDevices.some((d) => !d.playerConnected) && (
+        {ignoreReq && adbAvailable && targetDevices.some((d) => !d.playerConnected) && (
           <div className="dialog-warning" style={{ margin: '0 1rem' }}>
             Some devices have no player HTTP connection. Commands will be sent via ADB.
           </div>

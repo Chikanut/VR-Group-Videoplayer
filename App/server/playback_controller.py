@@ -5,7 +5,7 @@ from typing import Any
 import aiohttp
 
 from .adb_executor import adb_executor
-from .config import get_config, get_device_video_path
+from .config import ADB_AVAILABLE, get_config, get_device_video_path
 from .device_manager import device_manager
 from .device_ws_manager import device_ws_manager
 
@@ -82,11 +82,11 @@ async def _resolve_devices(device_ids: list[str], require_player: bool = True) -
                 continue
             if d.player_connected:
                 devices.append(d)
-            elif ignore_req and d.adb_connected:
+            elif ignore_req and ADB_AVAILABLE and d.adb_connected:
                 devices.append(d)
         return devices
     else:
-        if ignore_req:
+        if ignore_req and ADB_AVAILABLE:
             async with device_manager._lock:
                 return [d for d in device_manager._devices.values()
                         if d.online and (d.player_connected or d.adb_connected)]
@@ -112,7 +112,7 @@ async def _send_command_to_device(device, command: str, path: str, payload: dict
         logger.warning("HTTP command %s failed for %s, trying ADB fallback", command, device.ip)
 
     # Fallback to ADB
-    if device.adb_connected:
+    if ADB_AVAILABLE and device.adb_connected:
         extra = ""
         if payload:
             for k, v in payload.items():
@@ -126,7 +126,7 @@ async def _send_command_to_device(device, command: str, path: str, payload: dict
                     extra += f" --ef {k} {v}"
         return await _send_via_adb(device.ip, command, extra)
 
-    return {"success": False, "error": "Neither WS, player HTTP, nor ADB connected"}
+    return {"success": False, "error": "Neither WS nor player HTTP connected"}
 
 
 async def open_video(video_id: str, device_ids: list[str]) -> dict[str, Any]:
@@ -311,10 +311,10 @@ async def ping_device(device_id: str) -> dict[str, Any]:
         if result.get("success"):
             return result
 
-    if device.adb_connected:
+    if ADB_AVAILABLE and device.adb_connected:
         return await _send_via_adb(device.ip, "ping")
 
-    return {"error": "Neither player nor ADB connected"}
+    return {"error": "Neither player nor WS connected"}
 
 
 async def toggle_debug(device_id: str) -> dict[str, Any]:
@@ -333,10 +333,10 @@ async def toggle_debug(device_id: str) -> dict[str, Any]:
         if result.get("success"):
             return result
 
-    if device.adb_connected:
+    if ADB_AVAILABLE and device.adb_connected:
         return await _send_via_adb(device.ip, "DEBUG")
 
-    return {"error": "Neither player nor ADB connected"}
+    return {"error": "Neither player nor WS connected"}
 
 
 def get_global_volume() -> float:

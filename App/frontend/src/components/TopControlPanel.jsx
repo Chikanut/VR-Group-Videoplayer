@@ -10,9 +10,10 @@ export default function TopControlPanel({ onPlayAll }) {
   const onlineDevices = devices.filter((d) => d.online);
   const hasOnline = onlineDevices.length > 0;
   const ignoreReq = config?.ignoreRequirements || false;
-  const hasCommandTargets = onlineDevices.some((d) => d.playerConnected || (ignoreReq && d.adbConnected));
-  const hasAdbDevices = onlineDevices.some((d) => d.adbConnected);
-  const adbNoPlayer = onlineDevices.filter((d) => d.adbConnected && !d.playerConnected);
+  const adbAvailable = config?.adbAvailable !== false;
+  const hasCommandTargets = onlineDevices.some((d) => d.playerConnected || (ignoreReq && adbAvailable && d.adbConnected));
+  const hasAdbDevices = adbAvailable && onlineDevices.some((d) => d.adbConnected);
+  const adbNoPlayer = adbAvailable ? onlineDevices.filter((d) => d.adbConnected && !d.playerConnected) : [];
   const debounceRef = useRef({});
   const [usbScanning, setUsbScanning] = useState(false);
   const [usbMenuOpen, setUsbMenuOpen] = useState(false);
@@ -56,7 +57,7 @@ export default function TopControlPanel({ onPlayAll }) {
   }, []);
 
   const needsUpdate = onlineDevices.filter(
-    (d) => d.adbConnected && d.requirementsMet === false
+    (d) => (adbAvailable ? d.adbConnected : d.playerConnected) && d.requirementsMet === false
   );
 
   const handleUsbInit = async () => {
@@ -106,18 +107,21 @@ export default function TopControlPanel({ onPlayAll }) {
               alert('All devices up to date');
               return;
             }
-            const noAdb = onlineDevices.filter((d) => !d.adbConnected);
-            if (noAdb.length > 0) {
-              const proceed = confirm(
-                `${noAdb.length} device(s) without ADB will be skipped. Continue?`
-              );
-              if (!proceed) return;
+            if (adbAvailable) {
+              const noAdb = onlineDevices.filter((d) => !d.adbConnected);
+              if (noAdb.length > 0) {
+                const proceed = confirm(
+                  `${noAdb.length} device(s) without ADB will be skipped. Continue?`
+                );
+                if (!proceed) return;
+              }
             }
             await updateAllDevices();
           })}
         >
           Update All {needsUpdate.length > 0 && `(${needsUpdate.length})`}
         </button>
+        {adbAvailable && (
         <div className="usb-init-wrapper" ref={usbMenuRef}>
           <button
             className="btn"
@@ -161,6 +165,8 @@ export default function TopControlPanel({ onPlayAll }) {
             </div>
           )}
         </div>
+        )}
+        {adbAvailable && (
         <button
           className="btn"
           disabled={!hasAdbDevices}
@@ -176,6 +182,7 @@ export default function TopControlPanel({ onPlayAll }) {
         >
           Launch Player {adbNoPlayer.length > 0 && `(${adbNoPlayer.length})`}
         </button>
+        )}
         <button
           className="btn btn-success"
           disabled={!hasCommandTargets}

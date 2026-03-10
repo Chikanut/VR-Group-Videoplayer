@@ -15,6 +15,7 @@ import UpdateProgress from './UpdateProgress';
 
 export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
   const device = useDeviceStore((s) => s.devices[deviceId]);
+  const config = useDeviceStore((s) => s.config);
   const [editName, setEditName] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [requirements, setRequirements] = useState(null);
@@ -54,6 +55,8 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
       setRequirements(device.requirementsDetail || null);
     }
   }, [device?.requirementsDetail]);
+
+  const adbAvailable = config?.adbAvailable !== false;
 
   if (!device) {
     return (
@@ -131,12 +134,14 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
                 <td>{device.battery > 0 ? `${device.battery}%${device.batteryCharging ? ' (charging)' : ''}` : 'Unknown'}</td>
               </tr>
               <tr><td>Uptime</td><td>{device.uptimeMinutes} min</td></tr>
+              {adbAvailable && (
               <tr>
                 <td>ADB</td>
                 <td className={device.adbConnected ? 'text-ok' : 'text-warn'}>
                   {device.adbConnected ? 'Connected' : 'Not connected'}
                 </td>
               </tr>
+              )}
               <tr>
                 <td>Player</td>
                 <td className={device.playerConnected ? 'text-ok' : 'text-warn'}>
@@ -165,7 +170,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
           ) : (
             <p>Unable to check requirements</p>
           )}
-          {device.online && device.adbConnected && (device.requirementsMet === false || device.requirementsMet === null) && (
+          {adbAvailable && device.online && device.adbConnected && (device.requirementsMet === false || device.requirementsMet === null) && (
             <button
               className="btn btn-primary"
               onClick={() => updateDevice(deviceId)}
@@ -186,7 +191,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
           </div>
         )}
 
-        {device.online && !device.adbConnected && device.playerConnected && (
+        {adbAvailable && device.online && !device.adbConnected && device.playerConnected && (
           <div className="dialog-section">
             <h3>WS-Only Mode</h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--info)' }}>
@@ -196,7 +201,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
           </div>
         )}
 
-        {device.online && device.adbConnected && !device.playerConnected && (
+        {adbAvailable && device.online && device.adbConnected && !device.playerConnected && (
           <div className="dialog-section">
             <h3>Player</h3>
             <p className="text-warn">Player not connected. You can try to launch it via ADB.</p>
@@ -221,7 +226,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
           <div className="dialog-controls">
             <button
               className="btn btn-dim"
-              disabled={!device.online || !device.adbConnected || restarting}
+              disabled={!adbAvailable || !device.online || !device.adbConnected || restarting}
               onClick={handleRestartApp}
               title={!device.adbConnected ? 'ADB required to restart app' : 'Force-stop and relaunch the player app'}
             >
@@ -259,49 +264,49 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
           <div className="dialog-controls">
             <button
               className="btn btn-success"
-              disabled={!device.online || (!device.playerConnected && !device.adbConnected)}
+              disabled={!device.online || (!device.playerConnected && !(adbAvailable && device.adbConnected))}
               onClick={onPlayVideo}
             >
               Open Video
             </button>
             <button
               className="btn"
-              disabled={!device.online || (!device.playerConnected && !device.adbConnected)}
+              disabled={!device.online || (!device.playerConnected && !(adbAvailable && device.adbConnected))}
               onClick={() => playbackCommand('play', [deviceId])}
             >
               Play
             </button>
             <button
               className="btn"
-              disabled={!device.online || (!device.playerConnected && !device.adbConnected)}
+              disabled={!device.online || (!device.playerConnected && !(adbAvailable && device.adbConnected))}
               onClick={() => playbackCommand('pause', [deviceId])}
             >
               Pause
             </button>
             <button
               className="btn"
-              disabled={!device.online || (!device.playerConnected && !device.adbConnected)}
+              disabled={!device.online || (!device.playerConnected && !(adbAvailable && device.adbConnected))}
               onClick={() => playbackCommand('stop', [deviceId])}
             >
               Stop
             </button>
             <button
               className="btn"
-              disabled={!device.online || (!device.playerConnected && !device.adbConnected)}
+              disabled={!device.online || (!device.playerConnected && !(adbAvailable && device.adbConnected))}
               onClick={() => playbackCommand('recenter', [deviceId])}
             >
               Recenter
             </button>
             <button
               className="btn"
-              disabled={!device.online || (!device.playerConnected && !device.adbConnected)}
+              disabled={!device.online || (!device.playerConnected && !(adbAvailable && device.adbConnected))}
               onClick={() => pingDevice(deviceId)}
             >
               Ping
             </button>
             <button
               className="btn btn-dim"
-              disabled={!device.online || (!device.playerConnected && !device.adbConnected)}
+              disabled={!device.online || (!device.playerConnected && !(adbAvailable && device.adbConnected))}
               onClick={() => toggleDeviceDebug(deviceId)}
               title="Toggle debug panel on this device"
             >

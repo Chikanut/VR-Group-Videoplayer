@@ -6,7 +6,7 @@ from typing import Any
 import aiohttp
 
 from .adb_executor import adb_executor
-from .config import get_config, get_device_video_path, DEVICE_VIDEO_DIR
+from .config import ADB_AVAILABLE, get_config, get_device_video_path, DEVICE_VIDEO_DIR
 from .device_manager import device_manager
 from .websocket_manager import ws_manager
 
@@ -43,6 +43,9 @@ async def check_requirements(device_id: str) -> list[dict[str, Any]]:
     if not device:
         return []
 
+    if not ADB_AVAILABLE:
+        return {"status": "error", "message": "ADB disabled"}
+
     config = get_config()
     videos = config.get("requirementVideos", [])
     package_id = config.get("packageId", "com.vrclassroom.player")
@@ -56,7 +59,7 @@ async def check_requirements(device_id: str) -> list[dict[str, Any]]:
     device_version = ""
     local_version = ""
 
-    if device.adb_connected:
+    if ADB_AVAILABLE and device.adb_connected:
         packages = await adb_executor.list_packages(device.ip)
         apk_installed = package_id in packages
         if apk_installed and apk_path and os.path.isfile(apk_path):
@@ -104,8 +107,6 @@ async def check_requirements(device_id: str) -> list[dict[str, Any]]:
                 present = True
             elif os.path.basename(device_path) in device_files:
                 present = True
-            elif device.adb_connected and not present:
-                present = await adb_executor.file_exists(device.ip, device_path)
 
         results.append({
             "type": "video",
@@ -148,6 +149,9 @@ async def run_update(device_id: str) -> dict[str, Any]:
         device = await device_manager.get(device_id)
         if not device:
             return {"status": "error", "message": "Device not found"}
+
+        if not ADB_AVAILABLE:
+            return {"status": "error", "message": "ADB disabled"}
 
         if not device.adb_connected:
             return {"status": "error", "message": "ADB not connected"}

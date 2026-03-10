@@ -86,6 +86,9 @@ class DeviceState:
         self.uptime_minutes: int = 0
         self.last_seen: float = time.time()
         self.installed_packages: list[str] = []
+        self.android_id: str = ""
+        self.device_model: str = ""
+        self.mac_address: str = ""
         self.update_in_progress: bool = False
         self.update_progress: dict | None = None
         self.usb_connected: bool = False
@@ -116,6 +119,9 @@ class DeviceState:
             "uptimeMinutes": self.uptime_minutes,
             "lastSeen": self.last_seen,
             "installedPackages": self.installed_packages,
+            "androidId": self.android_id,
+            "deviceModel": self.device_model,
+            "macAddress": self.mac_address,
             "updateInProgress": self.update_in_progress,
             "updateProgress": self.update_progress,
             "usbConnected": self.usb_connected,
