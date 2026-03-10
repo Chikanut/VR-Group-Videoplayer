@@ -3,15 +3,12 @@ import useDeviceStore from '../store/deviceStore';
 import {
   setDeviceName,
   pingDevice,
-  updateDevice,
   getRequirements,
   playbackCommand,
-  launchPlayerSingle,
   toggleDeviceDebug,
   setDeviceVolume,
   restartApp,
 } from '../api';
-import UpdateProgress from './UpdateProgress';
 
 export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
   const device = useDeviceStore((s) => s.devices[deviceId]);
@@ -170,56 +167,10 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
           ) : (
             <p>Unable to check requirements</p>
           )}
-          {adbAvailable && device.online && device.adbConnected && (device.requirementsMet === false || device.requirementsMet === null) && (
-            <button
-              className="btn btn-primary"
-              onClick={() => updateDevice(deviceId)}
-              disabled={device.updateInProgress}
-            >
-              {device.updateInProgress ? 'Updating...' : 'Update Device'}
-            </button>
-          )}
           <button className="btn btn-small" onClick={loadRequirements}>
             Refresh
           </button>
         </div>
-
-        {device.updateInProgress && device.updateProgress && (
-          <div className="dialog-section">
-            <h3>Update Progress</h3>
-            <UpdateProgress progress={device.updateProgress} />
-          </div>
-        )}
-
-        {adbAvailable && device.online && !device.adbConnected && device.playerConnected && (
-          <div className="dialog-section">
-            <h3>WS-Only Mode</h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--info)' }}>
-              This device is connected via WebSocket only (no ADB). Playback commands work normally.
-              To enable app updates, connect the device via USB and run USB Init with Wireless ADB enabled.
-            </p>
-          </div>
-        )}
-
-        {adbAvailable && device.online && device.adbConnected && !device.playerConnected && (
-          <div className="dialog-section">
-            <h3>Player</h3>
-            <p className="text-warn">Player not connected. You can try to launch it via ADB.</p>
-            <button
-              className="btn btn-primary"
-              onClick={async () => {
-                const result = await launchPlayerSingle(deviceId);
-                if (result.error && (!result.success || result.success.length === 0)) {
-                  alert(result.error);
-                } else if (result.success && result.success.length > 0) {
-                  alert('Player launch command sent. It should connect via WebSocket shortly.');
-                }
-              }}
-            >
-              Launch Player via ADB
-            </button>
-          </div>
-        )}
 
         <div className="dialog-section">
           <h3>Device Actions</h3>
