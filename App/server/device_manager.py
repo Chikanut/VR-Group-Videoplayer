@@ -103,6 +103,10 @@ class DeviceManager:
         """Lookup device_id by IP for discovery correlation."""
         return self._ip_to_device.get(ip)
 
+    async def get_known_ips(self) -> List[str]:
+        async with self._lock:
+            return [d.ip for d in self._devices.values() if d.ip and d.ip != "USB"]
+
     async def get_all(self) -> List[Dict[str, Any]]:
         async with self._lock:
             return [d.to_dict() for d in self._devices.values()]

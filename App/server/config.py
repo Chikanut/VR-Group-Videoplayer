@@ -28,6 +28,7 @@ DEFAULT_CONFIG = {
     "updateConcurrency": 5,
     "ignoreRequirements": False,
     "adbAvailable": True,
+    "isAndroidRuntime": False,
 }
 
 DEVICE_VIDEO_DIR = "/sdcard/Movies"
@@ -110,6 +111,7 @@ def load_config() -> dict:
             _config["networkSubnet"] = detect_android_hotspot_subnet()
 
         _config["adbAvailable"] = ADB_AVAILABLE
+        _config["isAndroidRuntime"] = _is_android_runtime()
         return deepcopy(_config)
 
 
@@ -125,6 +127,7 @@ def get_config() -> dict:
     with _config_lock:
         if _config:
             _config["adbAvailable"] = ADB_AVAILABLE
+            _config["isAndroidRuntime"] = _is_android_runtime()
         return deepcopy(_config)
 
 
@@ -133,6 +136,7 @@ def update_config(new_config: dict) -> dict:
     with _config_lock:
         _config.update(new_config)
         _config["adbAvailable"] = ADB_AVAILABLE
+        _config["isAndroidRuntime"] = _is_android_runtime()
         # Ensure requirement videos have IDs and strip legacy devicePath
         for video in _config.get("requirementVideos", []):
             if not video.get("id"):

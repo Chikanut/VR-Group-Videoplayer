@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import useDeviceStore from '../store/deviceStore';
 import { playbackCommand, updateAllDevices, getUsbDevices, updateUsbDevice, launchPlayer, getGlobalVolume, setGlobalVolume } from '../api';
 
-export default function TopControlPanel({ onPlayAll }) {
+export default function TopControlPanel({ onPlayAll, panelRef }) {
   const navigate = useNavigate();
   const config = useDeviceStore((s) => s.config);
   const devices = useDeviceStore((s) => s.getDeviceList());
@@ -11,6 +11,7 @@ export default function TopControlPanel({ onPlayAll }) {
   const hasOnline = onlineDevices.length > 0;
   const ignoreReq = config?.ignoreRequirements || false;
   const adbAvailable = config?.adbAvailable !== false;
+  const isAndroidRuntime = config?.isAndroidRuntime === true;
   const hasCommandTargets = onlineDevices.some((d) => d.playerConnected || (ignoreReq && adbAvailable && d.adbConnected));
   const hasAdbDevices = adbAvailable && onlineDevices.some((d) => d.adbConnected);
   const adbNoPlayer = adbAvailable ? onlineDevices.filter((d) => d.adbConnected && !d.playerConnected) : [];
@@ -59,6 +60,7 @@ export default function TopControlPanel({ onPlayAll }) {
   const needsUpdate = onlineDevices.filter(
     (d) => (adbAvailable ? d.adbConnected : d.playerConnected) && d.requirementsMet === false
   );
+  const showAdbControls = !isAndroidRuntime;
 
   const handleUsbInit = async () => {
     const hasAnySelected = usbOptions.enableWirelessAdb || usbOptions.updateApp || usbOptions.updateContent;
@@ -91,7 +93,7 @@ export default function TopControlPanel({ onPlayAll }) {
   };
 
   return (
-    <header className="top-panel">
+    <header className="top-panel" ref={panelRef}>
       <div className="top-panel-left">
         <h1 className="top-panel-title">VR Classroom</h1>
         <span className="device-count">
@@ -99,6 +101,7 @@ export default function TopControlPanel({ onPlayAll }) {
         </span>
       </div>
       <div className="top-panel-controls">
+        {showAdbControls && (
         <button
           className="btn btn-primary"
           disabled={!hasOnline}
@@ -121,7 +124,8 @@ export default function TopControlPanel({ onPlayAll }) {
         >
           Update All {needsUpdate.length > 0 && `(${needsUpdate.length})`}
         </button>
-        {adbAvailable && (
+        )}
+        {showAdbControls && adbAvailable && (
         <div className="usb-init-wrapper" ref={usbMenuRef}>
           <button
             className="btn"
@@ -166,7 +170,7 @@ export default function TopControlPanel({ onPlayAll }) {
           )}
         </div>
         )}
-        {adbAvailable && (
+        {showAdbControls && adbAvailable && (
         <button
           className="btn"
           disabled={!hasAdbDevices}
