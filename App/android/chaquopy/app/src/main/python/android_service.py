@@ -9,6 +9,7 @@ _thread = None
 
 def _run():
     global _server
+    os.environ.setdefault("VRCLASSROOM_RUNTIME", "android")
     os.environ.setdefault("VRCLASSROOM_DISABLE_ADB", "1")
     os.environ.setdefault("VRCLASSROOM_ANDROID_SUBNET", "192.168.43")
     config = uvicorn.Config("server.main:app", host="0.0.0.0", port=8000, reload=False, log_level="info")

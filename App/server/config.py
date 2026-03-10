@@ -39,8 +39,13 @@ _device_names: dict = {}
 _device_names_lock = Lock()
 
 
+def _runtime_target() -> str:
+    """Runtime target selected explicitly by launcher: 'android' or 'desktop'."""
+    return os.environ.get("VRCLASSROOM_RUNTIME", "desktop").strip().lower()
+
+
 def _is_android_runtime() -> bool:
-    return bool(os.environ.get("ANDROID_ARGUMENT") or os.environ.get("ANDROID_PRIVATE"))
+    return _runtime_target() == "android"
 
 
 def detect_adb_available() -> bool:
