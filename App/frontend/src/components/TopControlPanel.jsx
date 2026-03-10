@@ -9,7 +9,11 @@ export default function TopControlPanel({ onPlayAll }) {
   const devices = useDeviceStore((s) => s.getDeviceList());
   const onlineDevices = devices.filter((d) => d.online);
   const ignoreReq = config?.ignoreRequirements || false;
-  const hasCommandTargets = onlineDevices.some((d) => d.playerConnected || (ignoreReq && d.adbConnected));
+  const adbAvailable = config?.adbAvailable !== false;
+  const isAndroidRuntime = config?.isAndroidRuntime === true;
+  const hasCommandTargets = onlineDevices.some((d) => d.playerConnected || (ignoreReq && adbAvailable && d.adbConnected));
+  const hasAdbDevices = adbAvailable && onlineDevices.some((d) => d.adbConnected);
+  const adbNoPlayer = adbAvailable ? onlineDevices.filter((d) => d.adbConnected && !d.playerConnected) : [];
   const debounceRef = useRef({});
   const volumeDebounceRef = useRef(null);
   const [globalVolume, setGlobalVolumeValue] = useState(1);
@@ -42,6 +46,92 @@ export default function TopControlPanel({ onPlayAll }) {
         </span>
       </div>
       <div className="top-panel-controls">
+        {!isAndroidRuntime && (
+          <button
+            className="btn btn-primary"
+            disabled={!hasOnline}
+            onClick={() => debounce('updateAll', async () => {
+              if (needsUpdate.length === 0) {
+                alert('All devices up to date');
+                return;
+              }
+              if (adbAvailable) {
+                const noAdb = onlineDevices.filter((d) => !d.adbConnected);
+                if (noAdb.length > 0) {
+                  const proceed = confirm(
+                    `${noAdb.length} device(s) without ADB will be skipped. Continue?`
+                  );
+                  if (!proceed) return;
+                }
+              }
+              await updateAllDevices();
+            })}
+          >
+            Update All {needsUpdate.length > 0 && `(${needsUpdate.length})`}
+          </button>
+        )}
+        {!isAndroidRuntime && adbAvailable && (
+        <div className="usb-init-wrapper" ref={usbMenuRef}>
+          <button
+            className="btn"
+            onClick={() => !usbScanning && setUsbMenuOpen(!usbMenuOpen)}
+            disabled={usbScanning}
+          >
+            {usbScanning ? 'Scanning USB...' : 'USB Init'}
+          </button>
+          {usbMenuOpen && (
+            <div className="usb-init-menu">
+              <label className="usb-init-option">
+                <input
+                  type="checkbox"
+                  checked={usbOptions.enableWirelessAdb}
+                  onChange={() => toggleOption('enableWirelessAdb')}
+                />
+                <span>Wireless ADB</span>
+              </label>
+              <label className="usb-init-option">
+                <input
+                  type="checkbox"
+                  checked={usbOptions.updateApp}
+                  onChange={() => toggleOption('updateApp')}
+                />
+                <span>Update App</span>
+              </label>
+              <label className="usb-init-option">
+                <input
+                  type="checkbox"
+                  checked={usbOptions.updateContent}
+                  onChange={() => toggleOption('updateContent')}
+                />
+                <span>Update Content</span>
+              </label>
+              <button
+                className="btn btn-primary usb-init-start"
+                onClick={handleUsbInit}
+              >
+                Start
+              </button>
+            </div>
+          )}
+        </div>
+        )}
+        {!isAndroidRuntime && adbAvailable && (
+        <button
+          className="btn"
+          disabled={!hasAdbDevices}
+          title={adbNoPlayer.length > 0 ? `${adbNoPlayer.length} device(s) without player` : 'Launch player on all ADB devices'}
+          onClick={() => debounce('launchPlayer', async () => {
+            const result = await launchPlayer();
+            if (result.error && (!result.success || result.success.length === 0)) {
+              alert(result.error);
+            } else if (result.success) {
+              alert(`Player launch command sent to ${result.success.length} device(s).`);
+            }
+          })}
+        >
+          Launch Player {adbNoPlayer.length > 0 && `(${adbNoPlayer.length})`}
+        </button>
+        )}
         <button
           className="btn btn-success"
           disabled={!hasCommandTargets}
