@@ -1,5 +1,6 @@
 {
   "apkPath": "D:\\UnityProjects\\VRGroupViewer\\VR Group Videoplayer\\VRClassroomPlayer\\Builds\\VRClassroomVideoPlayer.apk",
+  "apkDownloadUrl": "",
   "packageId": "com.vrclass.player",
   "adbActionPrefix": "com.vrclass.player",
   "requirementVideos": [
@@ -52,13 +53,15 @@
   "batteryThreshold": 20,
   "scanInterval": 10,
   "networkSubnet": "",
+  "networkSubnetAuto": true,
   "serverPort": 8000,
   "playerPort": 8080,
   "deviceOfflineTimeout": 15,
   "updateConcurrency": 5,
   "ignoreRequirements": true,
+  "adbAvailable": true,
+  "isAndroidRuntime": false,
   "statusPollInterval": 1,
   "requirementsPollInterval": 3,
-  "fastResyncOnFocus": true,
-  "networkSubnetAuto": true
+  "fastResyncOnFocus": true
 }
