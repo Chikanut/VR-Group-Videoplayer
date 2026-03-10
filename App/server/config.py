@@ -3,6 +3,7 @@ import logging
 import os
 import socket
 import shutil
+import sys
 import uuid
 from copy import deepcopy
 from pathlib import Path
@@ -11,8 +12,14 @@ from typing import Optional, Tuple
 
 logger = logging.getLogger("vrclassroom.config")
 
-LEGACY_CONFIG_PATH = Path(__file__).parent.parent / "config.json"
-LEGACY_DEVICE_NAMES_PATH = Path(__file__).parent.parent / "device_names.json"
+def _desktop_base_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).parent.parent
+
+
+LEGACY_CONFIG_PATH = _desktop_base_dir() / "config.json"
+LEGACY_DEVICE_NAMES_PATH = _desktop_base_dir() / "device_names.json"
 
 DEFAULT_CONFIG = {
     "apkPath": "",

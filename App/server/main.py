@@ -4,6 +4,7 @@ import logging
 import os
 import platform
 import string
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -621,7 +622,13 @@ def _get_local_ip() -> str:
 
 # ─── Static files (frontend) ─────────────────────────────────────────────────
 
-FRONTEND_DIST = Path(__file__).parent.parent / "frontend" / "dist"
+def _resolve_frontend_dist() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path.cwd())) / "frontend" / "dist"
+    return Path(__file__).parent.parent / "frontend" / "dist"
+
+
+FRONTEND_DIST = _resolve_frontend_dist()
 
 if FRONTEND_DIST.exists():
     @app.get("/")

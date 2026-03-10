@@ -63,6 +63,17 @@ The launcher script will:
 ### Connecting from a Phone
 Click the small "CONNECTION" button in the bottom-right corner of the web UI to see a QR code with the server's network URL.
 
+### Windows EXE Build (for end users)
+
+If you want to distribute the control panel as a single `.exe`:
+
+```bat
+cd App
+build_windows_exe.bat
+```
+
+Result: `App/dist/VRClassroomControl.exe` (built via PyInstaller, includes frontend assets).
+
 ## Manual Setup
 
 ```bash
