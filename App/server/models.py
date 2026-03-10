@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -9,16 +9,16 @@ from pydantic import BaseModel, Field
 
 
 class VideoTransformSettings(BaseModel):
-    localPosition: dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.0, "z": 0.0})
-    localRotation: dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.0, "z": 0.0})
-    localScale: dict[str, float] = Field(default_factory=lambda: {"x": 1.0, "y": 1.0, "z": 1.0})
+    localPosition: Dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.0, "z": 0.0})
+    localRotation: Dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.0, "z": 0.0})
+    localScale: Dict[str, float] = Field(default_factory=lambda: {"x": 1.0, "y": 1.0, "z": 1.0})
 
 
 class VideoMaterialSettings(BaseModel):
-    tint: dict[str, float] = Field(default_factory=lambda: {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0})
+    tint: Dict[str, float] = Field(default_factory=lambda: {"r": 1.0, "g": 1.0, "b": 1.0, "a": 1.0})
     brightness: float = 1.0
-    textureTiling: dict[str, float] = Field(default_factory=lambda: {"x": 1.0, "y": 1.0})
-    textureOffset: dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.0})
+    textureTiling: Dict[str, float] = Field(default_factory=lambda: {"x": 1.0, "y": 1.0})
+    textureOffset: Dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.0})
 
 
 class VideoAdvancedSettings(BaseModel):
@@ -34,14 +34,14 @@ class RequirementVideo(BaseModel):
     localPath: str = ""
     loop: bool = False
     videoType: str = "360"
-    advancedSettings: VideoAdvancedSettings | None = None
+    advancedSettings: Optional[VideoAdvancedSettings] = None
 
 
 class ConfigModel(BaseModel):
     apkPath: str = ""
     packageId: str = "com.vrclass.player"
     adbActionPrefix: str = "com.vrclass.player"
-    requirementVideos: list[RequirementVideo] = []
+    requirementVideos: List[RequirementVideo] = []
     batteryThreshold: int = 20
     scanInterval: int = 30
     networkSubnet: str = ""
@@ -74,8 +74,8 @@ class DeviceState:
         self.adb_connected: bool = False
         self.player_connected: bool = False
         self.player_version: str = ""
-        self.requirements_met: bool | None = None  # None = not checked yet
-        self.requirements_detail: list[dict] = []
+        self.requirements_met: Optional[bool] = None  # None = not checked yet
+        self.requirements_detail: List[Dict] = []
         self.playback_state: str = "idle"  # idle/playing/paused/loading/completed/error
         self.current_video: str = ""
         self.current_mode: str = "360"
@@ -85,18 +85,18 @@ class DeviceState:
         self.locked: bool = False
         self.uptime_minutes: int = 0
         self.last_seen: float = time.time()
-        self.installed_packages: list[str] = []
+        self.installed_packages: List[str] = []
         self.android_id: str = ""
         self.device_model: str = ""
         self.mac_address: str = ""
         self.update_in_progress: bool = False
-        self.update_progress: dict | None = None
+        self.update_progress: Optional[Dict] = None
         self.usb_connected: bool = False
         self.personal_volume: float = 1.0
         self.effective_volume: float = 1.0
         self.missed_discovery_cycles: int = 0
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> Dict[str, Any]:
         return {
             "deviceId": self.device_id,
             "ip": self.ip,
@@ -131,12 +131,12 @@ class DeviceState:
 
 
 class PlaybackCommand(BaseModel):
-    deviceIds: list[str] = []
+    deviceIds: List[str] = []
 
 
 class OpenCommand(BaseModel):
     videoId: str = ""
-    deviceIds: list[str] = []
+    deviceIds: List[str] = []
 
 
 class DeviceNameUpdate(BaseModel):

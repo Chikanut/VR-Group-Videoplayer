@@ -6,6 +6,7 @@ import platform
 import string
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -51,7 +52,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("vrclassroom")
 
-_discovery_task: asyncio.Task | None = None
+_discovery_task: Optional[asyncio.Task] = None
 
 
 @asynccontextmanager
@@ -277,7 +278,7 @@ if ADB_AVAILABLE:
 
 
     @app.post("/api/usb-devices/{serial}/update")
-    async def update_usb_device(serial: str, options: UsbInitOptions | None = None):
+    async def update_usb_device(serial: str, options: Optional[UsbInitOptions] = None):
         serials = await adb_executor.list_usb_devices()
         if serial not in serials:
             return JSONResponse(status_code=404, content={"error": "USB device not found"})

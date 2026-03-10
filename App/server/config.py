@@ -7,6 +7,7 @@ import uuid
 from copy import deepcopy
 from pathlib import Path
 from threading import Lock
+from typing import Optional
 
 logger = logging.getLogger("vrclassroom.config")
 
@@ -160,7 +161,7 @@ def load_device_names() -> dict:
         return dict(_device_names)
 
 
-def get_device_name(device_id: str) -> str | None:
+def get_device_name(device_id: str) -> Optional[str]:
     with _device_names_lock:
         return _device_names.get(device_id)
 

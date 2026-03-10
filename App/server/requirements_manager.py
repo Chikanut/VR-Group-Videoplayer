@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from typing import Any
+from typing import Any, Dict, List, Set
 
 import aiohttp
 
@@ -12,7 +12,7 @@ from .websocket_manager import ws_manager
 
 logger = logging.getLogger("vrclassroom.requirements")
 
-_update_locks: dict[str, asyncio.Lock] = {}
+_update_locks: Dict[str, asyncio.Lock] = {}
 
 
 def _get_update_lock(device_id: str) -> asyncio.Lock:
@@ -37,7 +37,7 @@ def _compare_versions(local_ver: str, device_ver: str) -> bool:
         return local_ver != device_ver
 
 
-async def check_requirements(device_id: str) -> list[dict[str, Any]]:
+async def check_requirements(device_id: str) -> List[Dict[str, Any]]:
     """Check which requirements are met for a device (on-demand only)."""
     device = await device_manager.get(device_id)
     if not device:
@@ -81,7 +81,7 @@ async def check_requirements(device_id: str) -> list[dict[str, Any]]:
     })
 
     # Check video files
-    device_files: set[str] = set()
+    device_files: Set[str] = set()
 
     if device.player_connected:
         try:
@@ -134,7 +134,7 @@ async def check_requirements(device_id: str) -> list[dict[str, Any]]:
     return results
 
 
-async def run_update(device_id: str) -> dict[str, Any]:
+async def run_update(device_id: str) -> Dict[str, Any]:
     """Run the update process for a device: install/update APK only."""
     lock = _get_update_lock(device_id)
 
@@ -229,7 +229,7 @@ async def run_usb_update(
     enable_wireless_adb: bool = True,
     update_app: bool = True,
     update_content: bool = True,
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     """Run initialization for a USB-connected device."""
     config = get_config()
     videos = config.get("requirementVideos", [])

@@ -3,6 +3,7 @@ import logging
 import socket
 
 import aiohttp
+from typing import Dict, List, Optional
 
 from .adb_executor import ADB_PORT, adb_executor
 from .config import ADB_AVAILABLE, detect_android_hotspot_subnet, get_config
@@ -30,7 +31,7 @@ def detect_subnet() -> str:
         return "192.168.1"
 
 
-async def scan_ip(ip: str, port: int) -> str | None:
+async def scan_ip(ip: str, port: int) -> Optional[str]:
     """Try to connect to a TCP port on a single IP. Returns IP if successful."""
     try:
         _, writer = await asyncio.wait_for(
@@ -44,7 +45,7 @@ async def scan_ip(ip: str, port: int) -> str | None:
         return None
 
 
-async def scan_subnet(subnet: str, port: int) -> list[str]:
+async def scan_subnet(subnet: str, port: int) -> List[str]:
     """Scan a /24 subnet for devices with a given port open."""
     logger.info("Scanning subnet %s.0/24 on port %d...", subnet, port)
     tasks = [scan_ip(f"{subnet}.{i}", port) for i in range(1, 255)]
@@ -72,7 +73,7 @@ async def _read_stable_id_from_adb(ip: str) -> str:
     return ip
 
 
-async def _probe_player_http(ip: str, player_port: int) -> dict | None:
+async def _probe_player_http(ip: str, player_port: int) -> Optional[Dict]:
     """Try to reach the player's HTTP API on port 8080. Returns status dict or None."""
     try:
         async with aiohttp.ClientSession() as session:

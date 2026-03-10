@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 import aiohttp
 
@@ -31,7 +31,7 @@ def _command_receiver_component() -> str:
     return f"{package_id}/.CommandReceiver"
 
 
-async def _send_to_player(ip: str, method: str, path: str, json_body: dict | None = None) -> dict[str, Any]:
+async def _send_to_player(ip: str, method: str, path: str, json_body: Optional[Dict] = None) -> Dict[str, Any]:
     """Send an HTTP request to a player device."""
     config = get_config()
     player_port = config.get("playerPort", 8080)
@@ -58,7 +58,7 @@ async def _send_to_player(ip: str, method: str, path: str, json_body: dict | Non
         return {"success": False, "error": str(e)}
 
 
-async def _send_via_adb(ip: str, command: str, intent_extra: str = "") -> dict[str, Any]:
+async def _send_via_adb(ip: str, command: str, intent_extra: str = "") -> Dict[str, Any]:
     """Send a command to device via ADB intent as fallback."""
     action = _adb_action(command)
     component = _command_receiver_component()
@@ -69,7 +69,7 @@ async def _send_via_adb(ip: str, command: str, intent_extra: str = "") -> dict[s
     return {"success": success, "data": output, "via": "adb"}
 
 
-async def _resolve_devices(device_ids: list[str], require_player: bool = True) -> list:
+async def _resolve_devices(device_ids: List[str], require_player: bool = True) -> List:
     """Resolve device IDs to DeviceState objects."""
     config = get_config()
     ignore_req = config.get("ignoreRequirements", False)
@@ -93,7 +93,7 @@ async def _resolve_devices(device_ids: list[str], require_player: bool = True) -
         return await device_manager.get_online_player_devices()
 
 
-async def _send_command_to_device(device, command: str, path: str, payload: dict | None = None) -> dict[str, Any]:
+async def _send_command_to_device(device, command: str, path: str, payload: Optional[Dict] = None) -> Dict[str, Any]:
     """Send command prioritizing WS, then HTTP API, then ADB fallback."""
     # Try WebSocket first
     if device_ws_manager.is_connected(device.device_id):
@@ -129,7 +129,7 @@ async def _send_command_to_device(device, command: str, path: str, payload: dict
     return {"success": False, "error": "Neither WS nor player HTTP connected"}
 
 
-async def open_video(video_id: str, device_ids: list[str]) -> dict[str, Any]:
+async def open_video(video_id: str, device_ids: List[str]) -> Dict[str, Any]:
     """Open a video on target devices."""
     config = get_config()
     videos = config.get("requirementVideos", [])
@@ -203,7 +203,7 @@ async def open_video(video_id: str, device_ids: list[str]) -> dict[str, Any]:
     }
 
 
-async def send_command(command: str, device_ids: list[str]) -> dict[str, Any]:
+async def send_command(command: str, device_ids: List[str]) -> Dict[str, Any]:
     """Send a playback command (play/pause/stop/recenter) to target devices."""
     devices = await _resolve_devices(device_ids)
     if not devices:
@@ -227,7 +227,7 @@ async def send_command(command: str, device_ids: list[str]) -> dict[str, Any]:
     return {"success": success_list, "failed": failed_list}
 
 
-async def launch_player(device_ids: list[str]) -> dict[str, Any]:
+async def launch_player(device_ids: List[str]) -> Dict[str, Any]:
     """Launch the player app on target devices via ADB."""
     config = get_config()
     package_id = config.get("packageId", "com.vrclass.player")
@@ -270,7 +270,7 @@ async def launch_player(device_ids: list[str]) -> dict[str, Any]:
     return {"success": success_list, "failed": failed_list}
 
 
-async def restart_app(device_id: str) -> dict[str, Any]:
+async def restart_app(device_id: str) -> Dict[str, Any]:
     """Restart the player app on a device via ADB (force-stop + launch)."""
     device = await device_manager.get(device_id)
     if not device:
@@ -295,7 +295,7 @@ async def restart_app(device_id: str) -> dict[str, Any]:
     return {"error": f"Restart failed: {output}"}
 
 
-async def ping_device(device_id: str) -> dict[str, Any]:
+async def ping_device(device_id: str) -> Dict[str, Any]:
     """Send a ping (beep) to a single device."""
     device = await device_manager.get(device_id)
     if not device:
@@ -317,7 +317,7 @@ async def ping_device(device_id: str) -> dict[str, Any]:
     return {"error": "Neither player nor WS connected"}
 
 
-async def toggle_debug(device_id: str) -> dict[str, Any]:
+async def toggle_debug(device_id: str) -> Dict[str, Any]:
     """Toggle debug panel on a single device."""
     device = await device_manager.get(device_id)
     if not device:
@@ -343,7 +343,7 @@ def get_global_volume() -> float:
     return global_volume
 
 
-async def set_global_volume(volume: float) -> dict[str, Any]:
+async def set_global_volume(volume: float) -> Dict[str, Any]:
     global global_volume
     clamped = max(0.0, min(1.0, float(volume)))
     global_volume = clamped
@@ -378,7 +378,7 @@ async def set_global_volume(volume: float) -> dict[str, Any]:
     return {"globalVolume": clamped, "success": success, "failed": failed}
 
 
-async def set_device_volume(device_id: str, volume: float) -> dict[str, Any]:
+async def set_device_volume(device_id: str, volume: float) -> Dict[str, Any]:
     device = await device_manager.get(device_id)
     if not device:
         return {"error": "Device not found"}

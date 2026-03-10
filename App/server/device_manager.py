@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 import aiohttp
 
@@ -15,10 +15,10 @@ logger = logging.getLogger("vrclassroom.devices")
 
 class DeviceManager:
     def __init__(self):
-        self._devices: dict[str, DeviceState] = {}
-        self._ip_to_device: dict[str, str] = {}
+        self._devices: Dict[str, DeviceState] = {}
+        self._ip_to_device: Dict[str, str] = {}
         self._lock = asyncio.Lock()
-        self._offline_task: asyncio.Task | None = None
+        self._offline_task: Optional[asyncio.Task] = None
 
     async def start(self):
         load_device_names()
@@ -99,19 +99,19 @@ class DeviceManager:
 
         return device
 
-    def get_device_id_by_ip(self, ip: str) -> str | None:
+    def get_device_id_by_ip(self, ip: str) -> Optional[str]:
         """Lookup device_id by IP for discovery correlation."""
         return self._ip_to_device.get(ip)
 
-    async def get_all(self) -> list[dict[str, Any]]:
+    async def get_all(self) -> List[Dict[str, Any]]:
         async with self._lock:
             return [d.to_dict() for d in self._devices.values()]
 
-    async def get(self, device_id: str) -> DeviceState | None:
+    async def get(self, device_id: str) -> Optional[DeviceState]:
         async with self._lock:
             return self._devices.get(device_id)
 
-    async def get_dict(self, device_id: str) -> dict | None:
+    async def get_dict(self, device_id: str) -> Optional[Dict]:
         async with self._lock:
             device = self._devices.get(device_id)
             return device.to_dict() if device else None
@@ -189,15 +189,15 @@ class DeviceManager:
         except Exception as e:
             logger.warning("Failed to push name to device %s: %s", ip, e)
 
-    async def get_online_player_devices(self) -> list[DeviceState]:
+    async def get_online_player_devices(self) -> List[DeviceState]:
         async with self._lock:
             return [d for d in self._devices.values() if d.online and d.player_connected]
 
-    async def get_online_adb_devices(self) -> list[DeviceState]:
+    async def get_online_adb_devices(self) -> List[DeviceState]:
         async with self._lock:
             return [d for d in self._devices.values() if d.online and d.adb_connected]
 
-    def get_snapshot(self) -> list[dict[str, Any]]:
+    def get_snapshot(self) -> List[Dict[str, Any]]:
         return [d.to_dict() for d in self._devices.values()]
 
     async def mark_discovery_seen(self, device_id: str):
