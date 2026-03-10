@@ -59,7 +59,13 @@ _discovery_task: Optional[asyncio.Task] = None
 async def lifespan(app: FastAPI):
     global _discovery_task
     # Startup
-    load_config()
+    config = load_config()
+    logger.info(
+        "Startup runtime diagnostics: isAndroidRuntime=%s adbAvailable=%s networkSubnet=%s",
+        config.get("isAndroidRuntime"),
+        config.get("adbAvailable"),
+        config.get("networkSubnet", ""),
+    )
     if ADB_AVAILABLE:
         has_adb = await adb_executor.check_adb()
         if not has_adb:

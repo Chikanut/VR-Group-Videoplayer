@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import useDeviceStore from '../store/deviceStore';
 import TopControlPanel from './TopControlPanel';
 import DeviceGrid from './DeviceGrid';
@@ -11,6 +11,27 @@ export default function Layout() {
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
   const [videoSelectorOpen, setVideoSelectorOpen] = useState(false);
   const [videoSelectorDeviceIds, setVideoSelectorDeviceIds] = useState([]);
+  const [topPanelHeight, setTopPanelHeight] = useState(80);
+  const topPanelRef = useRef(null);
+
+  useEffect(() => {
+    if (!topPanelRef.current) return;
+
+    const node = topPanelRef.current;
+    const updateHeight = () => {
+      setTopPanelHeight(node.offsetHeight || 80);
+    };
+
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(node);
+    window.addEventListener('resize', updateHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, []);
 
   const handlePlayAll = () => {
     setVideoSelectorDeviceIds([]);
@@ -31,8 +52,9 @@ export default function Layout() {
       )}
       <TopControlPanel
         onPlayAll={handlePlayAll}
+        panelRef={topPanelRef}
       />
-      <main className="main-content">
+      <main className="main-content" style={{ paddingTop: `${topPanelHeight + 20}px` }}>
         {loading ? (
           <div className="loading-state">
             <div className="spinner" />

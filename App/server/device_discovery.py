@@ -12,7 +12,8 @@ from .device_ws_manager import device_ws_manager
 
 logger = logging.getLogger("vrclassroom.discovery")
 
-DISCOVERY_CONCURRENCY = 8
+DISCOVERY_CONCURRENCY = 24
+SCAN_TIMEOUT_SEC = 0.8
 
 
 def detect_subnet() -> str:
@@ -31,12 +32,12 @@ def detect_subnet() -> str:
         return "192.168.1"
 
 
-async def scan_ip(ip: str, port: int) -> Optional[str]:
+async def scan_ip(ip: str, port: int, timeout: float = SCAN_TIMEOUT_SEC) -> Optional[str]:
     """Try to connect to a TCP port on a single IP. Returns IP if successful."""
     try:
         _, writer = await asyncio.wait_for(
             asyncio.open_connection(ip, port),
-            timeout=2,
+            timeout=timeout,
         )
         writer.close()
         await writer.wait_closed()
@@ -45,10 +46,36 @@ async def scan_ip(ip: str, port: int) -> Optional[str]:
         return None
 
 
-async def scan_subnet(subnet: str, port: int) -> List[str]:
+async def scan_subnet(subnet: str, port: int, preferred_ips: Optional[List[str]] = None) -> List[str]:
     """Scan a /24 subnet for devices with a given port open."""
+    preferred_ips = preferred_ips or []
+    preferred_in_subnet = [
+        ip for ip in preferred_ips
+        if ip.startswith(f"{subnet}.")
+    ]
+
+    scan_order: List[str] = []
+    seen = set()
+
+    for ip in preferred_in_subnet:
+        if ip not in seen:
+            scan_order.append(ip)
+            seen.add(ip)
+
+    for i in range(1, 255):
+        ip = f"{subnet}.{i}"
+        if ip not in seen:
+            scan_order.append(ip)
+
     logger.info("Scanning subnet %s.0/24 on port %d...", subnet, port)
-    tasks = [scan_ip(f"{subnet}.{i}", port) for i in range(1, 255)]
+
+    semaphore = asyncio.Semaphore(DISCOVERY_CONCURRENCY)
+
+    async def _scan_with_limit(ip: str):
+        async with semaphore:
+            return await scan_ip(ip, port)
+
+    tasks = [_scan_with_limit(ip) for ip in scan_order]
     results = await asyncio.gather(*tasks)
     found = [ip for ip in results if ip is not None]
     logger.info("Scan complete. Found %d device(s) with port %d open", len(found), port)
@@ -78,7 +105,7 @@ async def _probe_player_http(ip: str, player_port: int) -> Optional[Dict]:
     try:
         async with aiohttp.ClientSession() as session:
             url = f"http://{ip}:{player_port}/status"
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=2)) as resp:
                 if resp.status == 200:
                     return await resp.json()
     except Exception:
@@ -202,9 +229,10 @@ async def discovery_loop():
             # Increment missed cycles for all known devices before scanning
             await device_manager.increment_missed_discovery()
 
+            known_ips = await device_manager.get_known_ips()
             player_port = config.get("playerPort", 8080)
             discovery_port = ADB_PORT if ADB_AVAILABLE else player_port
-            discovered_ips = await scan_subnet(subnet, discovery_port)
+            discovered_ips = await scan_subnet(subnet, discovery_port, preferred_ips=known_ips)
 
             semaphore = asyncio.Semaphore(DISCOVERY_CONCURRENCY)
             tasks = [process_discovered_ip(ip, semaphore) for ip in discovered_ips]

@@ -29,6 +29,7 @@ DEFAULT_CONFIG = {
     "updateConcurrency": 5,
     "ignoreRequirements": False,
     "adbAvailable": True,
+    "isAndroidRuntime": False,
 }
 
 DEVICE_VIDEO_DIR = "/sdcard/Movies"
@@ -39,8 +40,13 @@ _device_names: dict = {}
 _device_names_lock = Lock()
 
 
+def _runtime_target() -> str:
+    """Runtime target selected explicitly by launcher: 'android' or 'desktop'."""
+    return os.environ.get("VRCLASSROOM_RUNTIME", "desktop").strip().lower()
+
+
 def _is_android_runtime() -> bool:
-    return bool(os.environ.get("ANDROID_ARGUMENT") or os.environ.get("ANDROID_PRIVATE"))
+    return _runtime_target() == "android"
 
 
 def detect_adb_available() -> bool:
@@ -156,18 +162,13 @@ def load_config() -> dict:
                 )
 
         _config["adbAvailable"] = ADB_AVAILABLE
-
+        _config["isAndroidRuntime"] = _is_android_runtime()
         logger.info(
-            "Network config at runtime: networkSubnet=%s, networkSubnetAuto=%s, detectedSubnet=%s, source=%s",
-            _config.get("networkSubnet", ""),
-            _config.get("networkSubnetAuto", True),
-            detected_subnet,
-            detected_subnet_source if _is_android_runtime() else "n/a",
+            "Runtime mode resolved: target=%s isAndroidRuntime=%s adbAvailable=%s",
+            _runtime_target(),
+            _config["isAndroidRuntime"],
+            _config["adbAvailable"],
         )
-
-        if should_save_config:
-            _save_config_locked()
-
         return deepcopy(_config)
 
 
@@ -183,6 +184,7 @@ def get_config() -> dict:
     with _config_lock:
         if _config:
             _config["adbAvailable"] = ADB_AVAILABLE
+            _config["isAndroidRuntime"] = _is_android_runtime()
         return deepcopy(_config)
 
 
@@ -191,6 +193,7 @@ def update_config(new_config: dict) -> dict:
     with _config_lock:
         _config.update(new_config)
         _config["adbAvailable"] = ADB_AVAILABLE
+        _config["isAndroidRuntime"] = _is_android_runtime()
         # Ensure requirement videos have IDs and strip legacy devicePath
         for video in _config.get("requirementVideos", []):
             if not video.get("id"):

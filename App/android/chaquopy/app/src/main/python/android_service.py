@@ -11,6 +11,7 @@ _logger = logging.getLogger("vrclassroom.android_service")
 
 def _run():
     global _server
+    os.environ.setdefault("VRCLASSROOM_RUNTIME", "android")
     os.environ.setdefault("VRCLASSROOM_DISABLE_ADB", "1")
     runtime = os.environ.get("VRCLASSROOM_RUNTIME", "<unset>")
     subnet = os.environ.get("VRCLASSROOM_ANDROID_SUBNET")

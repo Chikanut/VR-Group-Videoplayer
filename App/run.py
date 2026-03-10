@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Entry point for VR Classroom Control Server."""
+import os
 import uvicorn
 from server.config import load_config
 
 if __name__ == "__main__":
+    os.environ.setdefault("VRCLASSROOM_RUNTIME", "desktop")
     config = load_config()
     port = config.get("serverPort", 8000)
     print(f"Starting VR Classroom Control Server on port {port}...")
