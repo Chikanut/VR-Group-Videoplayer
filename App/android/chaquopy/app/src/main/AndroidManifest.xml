@@ -7,7 +7,9 @@
         android:allowBackup="true"
         android:label="VR Control Panel"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+        android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config">
 
         <service
             android:name=".ServerService"

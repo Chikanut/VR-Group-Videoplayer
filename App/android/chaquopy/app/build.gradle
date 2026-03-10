@@ -16,15 +16,16 @@ android {
         versionName "0.1.0"
 
         ndk {
-            abiFilters "arm64-v8a", "armeabi-v7a"
+            abiFilters "arm64-v8a", "armeabi-v7a", "x86_64"
         }
 
         python {
             pip {
-                install "fastapi>=0.104.0"
-                install "uvicorn[standard]>=0.24.0"
-                install "aiohttp>=3.9.0"
-                install "pydantic>=2.0.0"
+                install "fastapi==0.99.1"
+                install "pydantic==1.10.13"
+                install "uvicorn==0.23.2"
+                install "aiohttp==3.9.1"
+                install "wsproto==1.2.0"
             }
         }
     }
@@ -48,6 +49,9 @@ android {
     sourceSets {
         main {
             python.srcDirs = ["src/main/python", "../../../"]
+            python.exclude "android/**"
+            python.exclude "**/.gradle/**"
+            python.exclude "**/build/**"
         }
     }
 }

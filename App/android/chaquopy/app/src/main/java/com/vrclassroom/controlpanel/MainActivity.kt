@@ -2,6 +2,8 @@ package com.vrclassroom.controlpanel
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.webkit.WebSettings
 import android.webkit.WebView
 import androidx.appcompat.app.AppCompatActivity
@@ -17,7 +19,7 @@ class MainActivity : AppCompatActivity() {
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.settings.cacheMode = WebSettings.LOAD_DEFAULT
-        webView.loadUrl("http://127.0.0.1:8000")
+        Handler(Looper.getMainLooper()).postDelayed({ webView.loadUrl("http://127.0.0.1:8000") }, 2500)
     }
 
     override fun onDestroy() {
