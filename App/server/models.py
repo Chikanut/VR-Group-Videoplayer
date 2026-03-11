@@ -55,6 +55,7 @@ class ConfigModel(BaseModel):
     updateConcurrency: int = 5
     ignoreRequirements: bool = False
     fastResyncOnFocus: bool = True
+    adbEnabled: bool = True
 
 
 class DeviceRegistration(BaseModel):

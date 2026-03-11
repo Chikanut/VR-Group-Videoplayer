@@ -605,6 +605,20 @@ export default function SettingsPage() {
             <label className="checkbox-label">
               <input
                 type="checkbox"
+                checked={config.adbEnabled ?? true}
+                onChange={(e) => updateField('adbEnabled', e.target.checked)}
+                disabled={(config.adbAvailable === false) || isAndroidRuntime}
+              />
+              <span>Enable ADB Features</span>
+            </label>
+            <span className="form-hint">
+              Disable to use only HTTP/WebSocket device control without ADB discovery/commands.
+            </span>
+          </div>
+          <div className="form-group">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
                 checked={config.networkSubnetAuto ?? true}
                 onChange={(e) => updateField('networkSubnetAuto', e.target.checked)}
               />
