@@ -13,10 +13,11 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
   const hasOnline = onlineDevices.length > 0;
   const ignoreReq = config?.ignoreRequirements || false;
   const adbAvailable = config?.adbAvailable !== false;
+  const adbEnabled = config?.adbEnabled !== false && adbAvailable;
   const isAndroidRuntime = config?.isAndroidRuntime === true;
-  const hasCommandTargets = onlineDevices.some((d) => d.playerConnected || (ignoreReq && adbAvailable && d.adbConnected));
-  const hasAdbDevices = adbAvailable && onlineDevices.some((d) => d.adbConnected);
-  const adbNoPlayer = adbAvailable ? onlineDevices.filter((d) => d.adbConnected && !d.playerConnected) : [];
+  const hasCommandTargets = onlineDevices.some((d) => d.playerConnected || (ignoreReq && adbEnabled && d.adbConnected));
+  const hasAdbDevices = adbEnabled && onlineDevices.some((d) => d.adbConnected);
+  const adbNoPlayer = adbEnabled ? onlineDevices.filter((d) => d.adbConnected && !d.playerConnected) : [];
   const debounceRef = useRef({});
   const [usbScanning, setUsbScanning] = useState(false);
   const [usbMenuOpen, setUsbMenuOpen] = useState(false);
@@ -64,12 +65,13 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
     console.info('[VR Classroom] Runtime mode', {
       isAndroidRuntime: config.isAndroidRuntime,
       adbAvailable: config.adbAvailable,
+      adbEnabled: config.adbEnabled,
       networkSubnet: config.networkSubnet,
     });
   }, [config]);
 
   const needsUpdate = onlineDevices.filter(
-    (d) => (adbAvailable ? d.adbConnected : d.playerConnected) && d.requirementsMet === false
+    (d) => (adbEnabled ? d.adbConnected : d.playerConnected) && d.requirementsMet === false
   );
   const showAdbControls = !isAndroidRuntime;
 
@@ -124,7 +126,7 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
               alert(t('All devices up to date'));
               return;
             }
-            if (adbAvailable) {
+            if (adbEnabled) {
               const noAdb = onlineDevices.filter((d) => !d.adbConnected);
               if (noAdb.length > 0) {
                 const proceed = confirm(
@@ -139,7 +141,7 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
           {t('Update All')} {needsUpdate.length > 0 && `(${needsUpdate.length})`}
         </button>
         )}
-        {showAdbControls && adbAvailable && (
+        {showAdbControls && adbEnabled && (
         <div className="usb-init-wrapper" ref={usbMenuRef}>
           <button
             className="btn"
@@ -184,7 +186,7 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
           )}
         </div>
         )}
-        {showAdbControls && adbAvailable && (
+        {showAdbControls && adbEnabled && (
         <button
           className="btn"
           disabled={!hasAdbDevices}

@@ -36,20 +36,6 @@ call App\venv\Scripts\activate.bat
 echo [SETUP] Installing/updating dependencies...
 pip install -q -r App\requirements.txt
 
-:: Install and build frontend before server start
-echo [SETUP] Installing frontend dependencies and building frontend...
-cd App\frontend
-where npm >nul 2>&1
-if errorlevel 1 (
-    echo [WARNING] npm not found. Frontend must be built manually.
-    echo Install Node.js from https://nodejs.org
-    cd ..\..
-) else (
-    call npm install
-    call npm run build
-    cd ..\..
-)
-
 echo.
 echo [START] Starting server...
 echo [INFO]  Opening http://localhost:8000 in your default browser

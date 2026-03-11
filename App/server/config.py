@@ -36,6 +36,7 @@ DEFAULT_CONFIG = {
     "deviceOfflineTimeout": 30,
     "updateConcurrency": 5,
     "ignoreRequirements": False,
+    "adbEnabled": True,
     "adbAvailable": True,
     "isAndroidRuntime": False,
 }
@@ -84,6 +85,16 @@ def detect_adb_available() -> bool:
 
 
 ADB_AVAILABLE = detect_adb_available()
+
+
+def is_adb_enabled() -> bool:
+    """Return whether ADB functionality should be active right now."""
+    if not ADB_AVAILABLE:
+        return False
+    with _config_lock:
+        if not _config:
+            return True
+        return bool(_config.get("adbEnabled", True))
 
 
 def _extract_subnet(ip_addr: str) -> str:
@@ -200,6 +211,7 @@ def load_config() -> dict:
                 )
 
         _config["adbAvailable"] = ADB_AVAILABLE
+        _config["adbEnabled"] = bool(_config.get("adbEnabled", True)) and ADB_AVAILABLE
         _config["isAndroidRuntime"] = _is_android_runtime()
         logger.info(
             "Runtime mode resolved: target=%s isAndroidRuntime=%s adbAvailable=%s",
@@ -235,6 +247,7 @@ def get_config() -> dict:
     with _config_lock:
         if _config:
             _config["adbAvailable"] = ADB_AVAILABLE
+            _config["adbEnabled"] = bool(_config.get("adbEnabled", True)) and ADB_AVAILABLE
             _config["isAndroidRuntime"] = _is_android_runtime()
         return deepcopy(_config)
 
@@ -244,6 +257,7 @@ def update_config(new_config: dict) -> dict:
     with _config_lock:
         _config.update(new_config)
         _config["adbAvailable"] = ADB_AVAILABLE
+        _config["adbEnabled"] = bool(_config.get("adbEnabled", True)) and ADB_AVAILABLE
         _config["isAndroidRuntime"] = _is_android_runtime()
         # Ensure requirement videos have IDs and strip legacy devicePath
         for video in _config.get("requirementVideos", []):

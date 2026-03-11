@@ -1,12 +1,13 @@
 import asyncio
 import logging
 import socket
+import time
 
 import aiohttp
 from typing import Dict, List, Optional
 
 from .adb_executor import ADB_PORT, adb_executor
-from .config import ADB_AVAILABLE, detect_android_hotspot_subnet, get_config
+from .config import ADB_AVAILABLE, detect_android_hotspot_subnet, get_config, is_adb_enabled
 from .device_manager import device_manager
 from .device_ws_manager import device_ws_manager
 
@@ -14,6 +15,9 @@ logger = logging.getLogger("vrclassroom.discovery")
 
 DISCOVERY_CONCURRENCY = 24
 SCAN_TIMEOUT_SEC = 0.8
+ADB_CONNECT_COOLDOWN_SECONDS = 60
+
+_adb_connect_attempt_ts: Dict[str, float] = {}
 
 
 def detect_subnet() -> str:
@@ -166,6 +170,25 @@ _STATUS_FIELD_MAP = {
 }
 
 
+async def _ensure_adb_connected(ip: str) -> bool:
+    """Connect ADB only when needed to avoid reconnect churn during frequent scans."""
+    if await adb_executor.is_connected(ip):
+        return True
+
+    now = time.monotonic()
+    last_attempt = _adb_connect_attempt_ts.get(ip, 0.0)
+    if now - last_attempt < ADB_CONNECT_COOLDOWN_SECONDS:
+        logger.debug(
+            "Skipping adb connect for %s: cooldown %.1fs remaining",
+            ip,
+            ADB_CONNECT_COOLDOWN_SECONDS - (now - last_attempt),
+        )
+        return False
+
+    _adb_connect_attempt_ts[ip] = now
+    return await adb_executor.connect(ip)
+
+
 async def process_discovered_ip(
     ip: str,
     semaphore: asyncio.Semaphore,
@@ -193,8 +216,8 @@ async def process_discovered_ip(
             extra_kwargs["installed_packages"] = status.get("packages")
 
         adb_connected = False
-        if ADB_AVAILABLE:
-            adb_connected = await adb_executor.connect(ip)
+        if is_adb_enabled():
+            adb_connected = await _ensure_adb_connected(ip)
             if adb_connected:
                 device_id = await _read_stable_id_from_adb(ip)
 
@@ -231,7 +254,7 @@ async def discovery_loop():
 
             known_ips = await device_manager.get_known_ips()
             player_port = config.get("playerPort", 8080)
-            discovery_port = ADB_PORT if ADB_AVAILABLE else player_port
+            discovery_port = ADB_PORT if is_adb_enabled() else player_port
             discovered_ips = await scan_subnet(subnet, discovery_port, preferred_ips=known_ips)
 
             semaphore = asyncio.Semaphore(DISCOVERY_CONCURRENCY)
@@ -242,7 +265,7 @@ async def discovery_loop():
                     logger.warning("Device processing failed: %s", result)
 
             # Also scan for USB devices
-            if ADB_AVAILABLE:
+            if is_adb_enabled():
                 await _scan_usb_devices()
 
             logger.info("Discovery complete: discovered=%d", len(discovered_ips))
@@ -304,7 +327,7 @@ async def handle_self_registration(data: dict):
             await device_manager.apply_device_name_from_device(incoming_device_id, device_name)
 
         # Try ADB connect if not already connected
-        if ADB_AVAILABLE:
+        if is_adb_enabled():
             device = await device_manager.get(incoming_device_id)
             if device and not device.adb_connected:
                 connected = await adb_executor.connect(ip)
