@@ -1,16 +1,15 @@
 import json
 import logging
 import os
-import socket
-import shutil
 import sys
 import uuid
 from copy import deepcopy
 from pathlib import Path
 from threading import Lock
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger("vrclassroom.config")
+
 
 def _desktop_base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -18,30 +17,25 @@ def _desktop_base_dir() -> Path:
     return Path(__file__).parent.parent
 
 
-LEGACY_CONFIG_PATH = _desktop_base_dir() / "config.json"
-LEGACY_DEVICE_NAMES_PATH = _desktop_base_dir() / "device_names.json"
+DESKTOP_CONFIG_PATH = _desktop_base_dir() / "config.json"
+DESKTOP_DEVICE_NAMES_PATH = _desktop_base_dir() / "device_names.json"
+
+PLAYER_HTTP_PORT = 8080
 
 DEFAULT_CONFIG = {
-    "apkPath": "",
-    "apkDownloadUrl": "",
-    "packageId": "com.vrclass.player",
-    "adbActionPrefix": "com.vrclass.player",
+    "mobileAppUrl": "",
+    "playerAppUrl": "",
     "requirementVideos": [],
     "batteryThreshold": 20,
     "scanInterval": 30,
     "networkSubnet": "",
-    "networkSubnetAuto": True,
     "serverPort": 8000,
-    "playerPort": 8080,
     "deviceOfflineTimeout": 30,
-    "updateConcurrency": 5,
-    "ignoreRequirements": False,
-    "adbEnabled": True,
-    "adbAvailable": True,
-    "isAndroidRuntime": False,
 }
 
-DEVICE_VIDEO_DIR = "/sdcard/Movies"
+RUNTIME_ONLY_KEYS = {"isAndroidRuntime"}
+VALID_VIDEO_TYPES = {"360", "2d"}
+VALID_PLACEMENT_MODES = {"default", "locked", "free"}
 
 _config: dict = {}
 _config_lock = Lock()
@@ -50,7 +44,6 @@ _device_names_lock = Lock()
 
 
 def _runtime_target() -> str:
-    """Runtime target selected explicitly by launcher: 'android' or 'desktop'."""
     return os.environ.get("VRCLASSROOM_RUNTIME", "desktop").strip().lower()
 
 
@@ -62,7 +55,6 @@ def _android_private_dir() -> Path:
     private_root = os.environ.get("ANDROID_PRIVATE", "").strip()
     if private_root:
         return Path(private_root)
-    # Fallback for environments where launcher did not provide ANDROID_PRIVATE.
     return Path.home() / ".vrclassroom"
 
 
@@ -70,209 +62,189 @@ def _resolve_runtime_paths() -> Tuple[Path, Path]:
     if _is_android_runtime():
         private_dir = _android_private_dir()
         return private_dir / "config.json", private_dir / "device_names.json"
-    return LEGACY_CONFIG_PATH, LEGACY_DEVICE_NAMES_PATH
+    return DESKTOP_CONFIG_PATH, DESKTOP_DEVICE_NAMES_PATH
 
 
 CONFIG_PATH, DEVICE_NAMES_PATH = _resolve_runtime_paths()
 
 
-def detect_adb_available() -> bool:
-    if _is_android_runtime():
-        return False
-    if os.environ.get("VRCLASSROOM_DISABLE_ADB", "").lower() in {"1", "true", "yes", "on"}:
-        return False
-    return shutil.which("adb") is not None
-
-
-ADB_AVAILABLE = detect_adb_available()
-
-
-def is_adb_enabled() -> bool:
-    """Return whether ADB functionality should be active right now."""
-    if not ADB_AVAILABLE:
-        return False
-    with _config_lock:
-        if not _config:
-            return True
-        return bool(_config.get("adbEnabled", True))
-
-
-def _extract_subnet(ip_addr: str) -> str:
-    parts = ip_addr.split(".")
-    if len(parts) != 4:
-        return ""
-    if any(not part.isdigit() for part in parts):
-        return ""
-    return f"{parts[0]}.{parts[1]}.{parts[2]}"
-
-
-def _detect_android_hotspot_subnet_with_source() -> Tuple[str, str]:
-    """Best-effort detection of active hotspot/LAN subnet on Android runtime."""
-    override = os.environ.get("VRCLASSROOM_ANDROID_SUBNET", "").strip()
-    if override:
-        return override, "env_override"
-
+def _normalize_int(value: Any, default: int, *, minimum: Optional[int] = None, maximum: Optional[int] = None) -> int:
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as route_sock:
-            route_sock.connect(("8.8.8.8", 80))
-            local_ip = route_sock.getsockname()[0]
-        subnet = _extract_subnet(local_ip)
-        if subnet:
-            return subnet, "route"
-    except OSError:
-        pass
+        normalized = int(value)
+    except (TypeError, ValueError):
+        normalized = default
 
-    try:
-        hostname = socket.gethostname()
-        for addr in socket.gethostbyname_ex(hostname)[2]:
-            if not addr or addr.startswith("127."):
-                continue
-            subnet = _extract_subnet(addr)
-            if subnet:
-                return subnet, "hostname"
-    except OSError:
-        pass
-
-    candidates = [
-        "192.168.43",   # Android legacy hotspot
-        "192.168.232",  # Android 11+ hotspot (common)
-        "172.20.10",    # iOS hotspot (shared networks)
-    ]
-
-    return candidates[0], "fallback_candidates"
+    if minimum is not None:
+        normalized = max(minimum, normalized)
+    if maximum is not None:
+        normalized = min(maximum, normalized)
+    return normalized
 
 
-def detect_android_hotspot_subnet() -> str:
-    subnet, _ = _detect_android_hotspot_subnet_with_source()
-    return subnet
+def _normalize_string(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
-def load_config() -> dict:
-    global _config
-    with _config_lock:
-        should_save_config = False
-        detected_subnet = ""
-        detected_subnet_source = "n/a"
+def _normalize_video_type(value: Any) -> str:
+    normalized = _normalize_string(value).lower()
+    if normalized in {"sphere", "360_mono"}:
+        normalized = "360"
+    if normalized == "flat":
+        normalized = "2d"
+    return normalized if normalized in VALID_VIDEO_TYPES else "360"
 
-        logger.info("Config file path resolved to %s", CONFIG_PATH.resolve())
 
-        source_config_path = CONFIG_PATH
-        if _is_android_runtime() and not CONFIG_PATH.exists() and LEGACY_CONFIG_PATH.exists():
-            source_config_path = LEGACY_CONFIG_PATH
-            should_save_config = True
-            logger.info(
-                "Config migration: loading legacy config from %s and moving to %s",
-                LEGACY_CONFIG_PATH,
-                CONFIG_PATH,
-            )
+def _normalize_placement_mode(value: Any) -> str:
+    normalized = _normalize_string(value).lower()
+    return normalized if normalized in VALID_PLACEMENT_MODES else "default"
 
-        if source_config_path.exists():
-            try:
-                with open(source_config_path, "r") as f:
-                    data = json.load(f)
-                # Merge with defaults, ignore unknown fields from old configs gracefully
-                _config = {**deepcopy(DEFAULT_CONFIG)}
-                for key in DEFAULT_CONFIG:
-                    if key in data:
-                        _config[key] = data[key]
-                # Preserve extra keys that might be needed
-                for key in data:
-                    if key not in _config:
-                        _config[key] = data[key]
 
-                if "networkSubnet" in data and "networkSubnetAuto" not in data:
-                    _config["networkSubnetAuto"] = True
-                    should_save_config = True
-                    logger.info(
-                        "Config migration: existing networkSubnet detected without networkSubnetAuto; "
-                        "defaulting to auto mode for Android compatibility"
-                    )
-                logger.info("Config loaded from %s", source_config_path)
-            except (json.JSONDecodeError, OSError) as e:
-                logger.error("Invalid config file, using defaults: %s", e)
-                _config = deepcopy(DEFAULT_CONFIG)
-        else:
-            _config = deepcopy(DEFAULT_CONFIG)
-            _save_config_locked()
-            logger.info("Created default config at %s", CONFIG_PATH)
+def _extract_filename(video: Dict[str, Any]) -> str:
+    filename = _normalize_string(video.get("filename"))
+    if filename:
+        return os.path.basename(filename)
 
-        if _is_android_runtime():
-            detected_subnet, detected_subnet_source = _detect_android_hotspot_subnet_with_source()
-            if _config.get("networkSubnetAuto", True):
-                if _config.get("networkSubnet") != detected_subnet:
-                    _config["networkSubnet"] = detected_subnet
-                    should_save_config = True
-            elif not _config.get("networkSubnet"):
-                _config["networkSubnet"] = detected_subnet
-                should_save_config = True
-                logger.warning(
-                    "networkSubnetAuto=false but networkSubnet is empty; "
-                    "falling back to detected subnet"
-                )
+    legacy_path = _normalize_string(video.get("localPath"))
+    if legacy_path:
+        return os.path.basename(legacy_path)
 
-        _config["adbAvailable"] = ADB_AVAILABLE
-        _config["adbEnabled"] = bool(_config.get("adbEnabled", True)) and ADB_AVAILABLE
-        _config["isAndroidRuntime"] = _is_android_runtime()
-        logger.info(
-            "Runtime mode resolved: target=%s isAndroidRuntime=%s adbAvailable=%s",
-            _runtime_target(),
-            _config["isAndroidRuntime"],
-            _config["adbAvailable"],
-        )
-        if _is_android_runtime():
-            logger.info(
-                "Android subnet detection: subnet=%s source=%s auto=%s",
-                _config.get("networkSubnet", ""),
-                detected_subnet_source,
-                _config.get("networkSubnetAuto", True),
-            )
+    legacy_device_path = _normalize_string(video.get("devicePath"))
+    if legacy_device_path:
+        return os.path.basename(legacy_device_path)
 
-        if should_save_config:
-            _save_config_locked()
-            logger.info("Config persisted to %s", CONFIG_PATH)
+    return ""
 
-        return deepcopy(_config)
+
+def _normalize_video(video: Dict[str, Any]) -> Dict[str, Any]:
+    advanced_settings = video.get("advancedSettings")
+    normalized_video = {
+        "id": _normalize_string(video.get("id")) or str(uuid.uuid4()),
+        "name": _normalize_string(video.get("name")),
+        "filename": _extract_filename(video),
+        "loop": bool(video.get("loop", False)),
+        "videoType": _normalize_video_type(video.get("videoType")),
+        "placementMode": _normalize_placement_mode(video.get("placementMode")),
+    }
+    if advanced_settings is not None:
+        normalized_video["advancedSettings"] = advanced_settings
+    return normalized_video
+
+
+def _serialize_storage_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    return {key: deepcopy(value) for key, value in config.items() if key not in RUNTIME_ONLY_KEYS}
+
+
+def _normalize_config(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    raw = data or {}
+    normalized = deepcopy(DEFAULT_CONFIG)
+
+    mobile_app_url = _normalize_string(raw.get("mobileAppUrl"))
+    if not mobile_app_url:
+        mobile_app_url = _normalize_string(raw.get("apkDownloadUrl"))
+    normalized["mobileAppUrl"] = mobile_app_url
+    normalized["playerAppUrl"] = _normalize_string(raw.get("playerAppUrl"))
+
+    normalized["batteryThreshold"] = _normalize_int(raw.get("batteryThreshold"), 20, minimum=0, maximum=100)
+    normalized["scanInterval"] = _normalize_int(raw.get("scanInterval"), 30, minimum=5, maximum=300)
+    normalized["networkSubnet"] = _normalize_string(raw.get("networkSubnet"))
+    normalized["serverPort"] = _normalize_int(raw.get("serverPort"), 8000, minimum=1, maximum=65535)
+    normalized["deviceOfflineTimeout"] = _normalize_int(raw.get("deviceOfflineTimeout"), 30, minimum=10, maximum=300)
+
+    videos = raw.get("requirementVideos", [])
+    if not isinstance(videos, list):
+        videos = []
+    normalized["requirementVideos"] = [_normalize_video(video) for video in videos if isinstance(video, dict)]
+    normalized["isAndroidRuntime"] = _is_android_runtime()
+    return normalized
 
 
 def _save_config_locked():
     try:
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(CONFIG_PATH, "w") as f:
-            json.dump(_config, f, indent=2)
-    except OSError as e:
-        logger.error("Failed to save config: %s", e)
+        with open(CONFIG_PATH, "w", encoding="utf-8") as file_obj:
+            json.dump(_serialize_storage_config(_config), file_obj, indent=2, ensure_ascii=False)
+    except OSError as exc:
+        logger.error("Failed to save config: %s", exc)
+
+
+def load_config() -> dict:
+    global _config
+    with _config_lock:
+        logger.info("Config file path resolved to %s", CONFIG_PATH.resolve())
+
+        if CONFIG_PATH.exists():
+            try:
+                with open(CONFIG_PATH, "r", encoding="utf-8") as file_obj:
+                    data = json.load(file_obj)
+                _config = _normalize_config(data)
+                logger.info("Config loaded from %s", CONFIG_PATH)
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.error("Invalid config file, using defaults: %s", exc)
+                _config = _normalize_config({})
+                _save_config_locked()
+        else:
+            _config = _normalize_config({})
+            _save_config_locked()
+            logger.info("Created default config at %s", CONFIG_PATH)
+
+        logger.info(
+            "Runtime mode resolved: target=%s isAndroidRuntime=%s",
+            _runtime_target(),
+            _config["isAndroidRuntime"],
+        )
+        return deepcopy(_config)
 
 
 def get_config() -> dict:
     with _config_lock:
-        if _config:
-            _config["adbAvailable"] = ADB_AVAILABLE
-            _config["adbEnabled"] = bool(_config.get("adbEnabled", True)) and ADB_AVAILABLE
-            _config["isAndroidRuntime"] = _is_android_runtime()
+        if not _config:
+            return load_config()
+        _config["isAndroidRuntime"] = _is_android_runtime()
         return deepcopy(_config)
 
 
 def update_config(new_config: dict) -> dict:
     global _config
     with _config_lock:
-        _config.update(new_config)
-        _config["adbAvailable"] = ADB_AVAILABLE
-        _config["adbEnabled"] = bool(_config.get("adbEnabled", True)) and ADB_AVAILABLE
-        _config["isAndroidRuntime"] = _is_android_runtime()
-        # Ensure requirement videos have IDs and strip legacy devicePath
-        for video in _config.get("requirementVideos", []):
-            if not video.get("id"):
-                video["id"] = str(uuid.uuid4())
-            video.pop("devicePath", None)
+        _config = _normalize_config(new_config)
         _save_config_locked()
         logger.info("Config updated")
         return deepcopy(_config)
 
 
-def get_device_video_path(local_path: str) -> str:
-    """Compute the device path for a video: /sdcard/Movies/<filename>."""
-    basename = os.path.basename(local_path)
-    return f"{DEVICE_VIDEO_DIR}/{basename}"
+def import_config(data: Dict[str, Any]) -> dict:
+    return update_config(data)
+
+
+def export_config() -> Dict[str, Any]:
+    with _config_lock:
+        if not _config:
+            load_config()
+        return _serialize_storage_config(_config)
+
+
+def _save_device_names_locked():
+    try:
+        DEVICE_NAMES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(DEVICE_NAMES_PATH, "w", encoding="utf-8") as file_obj:
+            json.dump(_device_names, file_obj, indent=2, ensure_ascii=False)
+    except OSError as exc:
+        logger.error("Failed to save device names: %s", exc)
+
+
+def _normalize_device_names(data: Any) -> Dict[str, str]:
+    if not isinstance(data, dict):
+        return {}
+
+    normalized: Dict[str, str] = {}
+    for device_id, name in data.items():
+        normalized_id = _normalize_string(device_id)
+        normalized_name = _normalize_string(name)
+        if normalized_id and normalized_name:
+            normalized[normalized_id] = normalized_name
+    return normalized
 
 
 def load_device_names() -> dict:
@@ -280,10 +252,25 @@ def load_device_names() -> dict:
     with _device_names_lock:
         if DEVICE_NAMES_PATH.exists():
             try:
-                with open(DEVICE_NAMES_PATH, "r") as f:
-                    _device_names = json.load(f)
+                with open(DEVICE_NAMES_PATH, "r", encoding="utf-8") as file_obj:
+                    _device_names = _normalize_device_names(json.load(file_obj))
             except (json.JSONDecodeError, OSError):
                 _device_names = {}
+        return dict(_device_names)
+
+
+def export_device_names() -> Dict[str, str]:
+    with _device_names_lock:
+        if not _device_names:
+            load_device_names()
+        return dict(_device_names)
+
+
+def replace_device_names(data: Dict[str, Any]) -> Dict[str, str]:
+    global _device_names
+    with _device_names_lock:
+        _device_names = _normalize_device_names(data)
+        _save_device_names_locked()
         return dict(_device_names)
 
 
@@ -294,11 +281,14 @@ def get_device_name(device_id: str) -> Optional[str]:
 
 def set_device_name(device_id: str, name: str):
     global _device_names
+    normalized_id = _normalize_string(device_id)
+    normalized_name = _normalize_string(name)
+    if not normalized_id:
+        return
+
     with _device_names_lock:
-        _device_names[device_id] = name
-        try:
-            DEVICE_NAMES_PATH.parent.mkdir(parents=True, exist_ok=True)
-            with open(DEVICE_NAMES_PATH, "w") as f:
-                json.dump(_device_names, f, indent=2)
-        except OSError as e:
-            logger.error("Failed to save device names: %s", e)
+        if normalized_name:
+            _device_names[normalized_id] = normalized_name
+        else:
+            _device_names.pop(normalized_id, None)
+        _save_device_names_locked()

@@ -365,27 +365,29 @@ namespace VRClassroom
                 string mode = data.mode;
                 bool loop = data.loop;
                 bool autoRecenterOnOpen = data.autoRecenterOnOpen;
+                string placementMode = data.placementMode;
                 VideoAdvancedSettings advancedSettings = data.advancedSettings;
                 if (advancedSettings == null)
                 {
                     advancedSettings = GetVideoAdvancedSettings(file);
                 }
 
-                Debug.Log($"[LanServer] POST /open: file={file}, mode={mode ?? "(default)"}, loop={loop}, autoRecenterOnOpen={autoRecenterOnOpen}, advancedSettings={(advancedSettings != null ? "provided" : "none")}");
+                Debug.Log($"[LanServer] POST /open: file={file}, mode={mode ?? "(default)"}, loop={loop}, placementMode={placementMode ?? "(default)"}, autoRecenterOnOpen={autoRecenterOnOpen}, advancedSettings={(advancedSettings != null ? "provided" : "none")}");
 
                 QueueCommand(() =>
                 {
-                    Debug.Log($"[LanServer] Executing: open file={file} mode={mode ?? "(default)"} loop={loop}");
+                    Debug.Log($"[LanServer] Executing: open file={file} mode={mode ?? "(default)"} loop={loop} placementMode={placementMode ?? "(default)"}");
                     ViewMode targetMode = viewModeManager != null ? viewModeManager.CurrentMode : PlayerConfig.DefaultViewMode;
                     if (!string.IsNullOrEmpty(mode) && viewModeManager != null)
                     {
-                        targetMode = ADBCommandRouter.ParseMode(mode);
+                        targetMode = ViewModeParser.Parse(mode);
                         viewModeManager.SetMode(targetMode);
                     }
 
                     if (viewModeManager != null)
                     {
                         viewModeManager.ApplyAdvancedSettingsOverride(targetMode, advancedSettings);
+                        viewModeManager.ApplyPlacementOverride(targetMode, placementMode);
                     }
 
                     if (videoPlayer != null)
@@ -840,6 +842,7 @@ namespace VRClassroom
             public string file;
             public string mode;
             public bool loop;
+            public string placementMode;
             public bool autoRecenterOnOpen = true;
             public VideoAdvancedSettings advancedSettings;
         }

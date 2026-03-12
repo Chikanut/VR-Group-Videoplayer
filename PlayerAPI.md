@@ -1,245 +1,117 @@
 # VR Classroom Player API
 
-Плеєр підтримує два канали керування:
+Плеєр керується через локальний HTTP API на порту `8080` та через WebSocket-команди від control panel.
 
-- **HTTP Server** — вбудований HTTP-сервер на порту `8080`, доступний по локальній мережі
-- **ADB Broadcast** — широкомовні інтенти через `adb shell am broadcast`
-
-Пакет додатку: `com.vrclass.player`
-ADB action-prefix (єдиний namespace для команд): `com.vrclass.player`
-Компонент receiver: `com.vrclass.player/.CommandReceiver`
-Відео шлях на пристрої: `/sdcard/Movies/`
+- Порт плеєра: `8080`
+- Каталог відео на пристрої: `/sdcard/Movies/`
+- У командах `open` потрібно передавати лише **ім'я файлу**, без повного шляху
 
 ---
-
-## Стани плеєра
-
-| Стан | Опис |
-|------|------|
-| `idle` | Нічого не завантажено |
-| `loading` | Відео готується до відтворення |
-| `ready` | Відео готове (автоматично переходить у `playing`) |
-| `playing` | Відтворення |
-| `paused` | Пауза |
-| `completed` | Відтворення завершено |
-| `error` | Помилка |
 
 ## Режими перегляду
 
 | Значення | Режим |
-|----------|-------|
+|---|---|
 | `360` або `sphere` | Сферичне 360° відео |
 | `2d` або `flat` | Плоске 2D відео |
 
-Режим за замовчуванням: `360` (Sphere360)
+## Placement Override
+
+Для `open` можна додатково передати `placementMode`:
+
+| Значення | Поведінка |
+|---|---|
+| `default` | Використати стандартну логіку режиму |
+| `locked` | Прив'язати відео до камери |
+| `free` | Розмістити відео у вільному просторі |
+
+Старі версії плеєра просто ігнорують `placementMode`.
 
 ---
 
-## Команди
+## Основні команди
 
-### OPEN — Відкрити та відтворити відео
+### `POST /open`
 
-Відкриває файл з `/sdcard/Movies/` та автоматично починає відтворення.
+Відкриває файл з `/sdcard/Movies/` та автоматично запускає відтворення.
 
-**Параметри:**
-| Параметр | Тип | Обов'язковий | Опис |
-|----------|-----|:------------:|------|
-| `file` | string | так | Ім'я файлу (напр. `lesson01.mp4`) |
-| `mode` | string | ні | Режим перегляду: `360`, `sphere`, `2d`, `flat` |
-
-**Server:**
 ```bash
 curl -X POST http://<IP>:8080/open \
   -H "Content-Type: application/json" \
-  -d '{"file":"lesson01.mp4","mode":"360"}'
+  -d '{
+    "file":"lesson01.mp4",
+    "mode":"2d",
+    "loop":false,
+    "placementMode":"free"
+  }'
 ```
 
-**ADB:**
-```bash
-adb shell am broadcast -a com.vrclass.player.OPEN \
-  -n com.vrclass.player/.CommandReceiver \
-  --es file "lesson01.mp4" \
-  --es mode "360"
-```
+Параметри:
 
----
+| Поле | Тип | Опис |
+|---|---|---|
+| `file` | string | Ім'я файлу, наприклад `lesson01.mp4` |
+| `mode` | string | `360` або `2d` |
+| `loop` | bool | Чи повторювати відео |
+| `placementMode` | string | `default`, `locked`, `free` |
+| `advancedSettings` | object | Необов'язкові override transform/material налаштування |
+| `autoRecenterOnOpen` | bool | За замовчуванням `true` |
 
-### PLAY — Продовжити відтворення
+### `POST /play`
 
-Продовжує відтворення з паузи або після завершення.
-
-**Server:**
 ```bash
 curl -X POST http://<IP>:8080/play
 ```
 
-**ADB:**
-```bash
-adb shell am broadcast -a com.vrclass.player.PLAY -n com.vrclass.player/.CommandReceiver
-```
+### `POST /pause`
 
----
-
-### PAUSE — Поставити на паузу
-
-**Server:**
 ```bash
 curl -X POST http://<IP>:8080/pause
 ```
 
-**ADB:**
-```bash
-adb shell am broadcast -a com.vrclass.player.PAUSE -n com.vrclass.player/.CommandReceiver
-```
+### `POST /stop`
 
----
-
-### STOP — Зупинити відтворення
-
-Повністю зупиняє відтворення, очищує екран та скидає стан у `idle`.
-
-**Server:**
 ```bash
 curl -X POST http://<IP>:8080/stop
 ```
 
-**ADB:**
-```bash
-adb shell am broadcast -a com.vrclass.player.STOP -n com.vrclass.player/.CommandReceiver
-```
+### `POST /restart`
 
----
+Перезапускає поточне відео.
 
-### RESTART — Перезапустити відео
-
-Перемотує на початок та починає відтворення поточного відео.
-
-**Server:**
 ```bash
 curl -X POST http://<IP>:8080/restart
 ```
 
-**ADB:**
-```bash
-adb shell am broadcast -a com.vrclass.player.RESTART -n com.vrclass.player/.CommandReceiver
-```
+### `POST /recenter`
 
----
-
-### RECENTER — Перецентрувати VR-вид
-
-Скидає орієнтацію камери до поточного напрямку погляду користувача.
-
-**Server:**
 ```bash
 curl -X POST http://<IP>:8080/recenter
 ```
 
-**ADB:**
+### `POST /volume`
+
 ```bash
-adb shell am broadcast -a com.vrclass.player.RECENTER -n com.vrclass.player/.CommandReceiver
+curl -X POST http://<IP>:8080/volume \
+  -H "Content-Type: application/json" \
+  -d '{"globalVolume":0.8,"personalVolume":0.6}'
 ```
 
----
+### `GET /status`
 
-### SET_MODE — Змінити режим перегляду
-
-**Параметри:**
-| Параметр | Тип | Обов'язковий | Опис |
-|----------|-----|:------------:|------|
-| `mode` | string | так | `360`, `sphere`, `2d`, `flat` |
-
-**Server:** не має окремого ендпоінту — використовуйте параметр `mode` в `/open`.
-
-**ADB:**
-```bash
-adb shell am broadcast -a com.vrclass.player.SET_MODE \
-  -n com.vrclass.player/.CommandReceiver \
-  --es mode "360"
-```
-
----
-
-### SET_LOOP — Увімкнути/вимкнути повтор
-
-**Параметри:**
-| Параметр | Тип | Обов'язковий | Опис |
-|----------|-----|:------------:|------|
-| `loop` | string | так | `true` або `false` |
-
-**Server:** немає окремого ендпоінту.
-
-**ADB:**
-```bash
-adb shell am broadcast -a com.vrclass.player.SET_LOOP \
-  -n com.vrclass.player/.CommandReceiver \
-  --es loop "true"
-```
-
----
-
-### LOCK — Заблокувати керування плеєром
-
-Блокує UI-керування на шлемі. Учень не зможе змінювати відтворення.
-
-**Server:**
-```bash
-curl -X POST http://<IP>:8080/lock
-```
-
-**ADB:** немає окремої команди.
-
----
-
-### UNLOCK — Розблокувати керування
-
-**Server:**
-```bash
-curl -X POST http://<IP>:8080/unlock
-```
-
-**ADB:** немає окремої команди.
-
----
-
-### EMERGENCY STOP — Аварійна зупинка
-
-Зупиняє відтворення та розблоковує керування одночасно.
-
-**Server:**
-```bash
-curl -X POST http://<IP>:8080/emergencystop
-```
-
-**ADB:** немає окремої команди.
-
----
-
-### GET_STATUS — Отримати статус пристрою
-
-**Server:**
 ```bash
 curl http://<IP>:8080/status
 ```
 
-**ADB:**
-```bash
-adb shell am broadcast -a com.vrclass.player.GET_STATUS -n com.vrclass.player/.CommandReceiver
-```
-> ADB-варіант виводить статус у Android logcat (тег `VRPlayer`):
-> ```bash
-> adb logcat -s VRPlayer
-> ```
+Приклад відповіді:
 
-**Формат відповіді (JSON):**
 ```json
 {
-  "deviceId": "a1b2",
+  "deviceId": "quest-01",
   "ip": "192.168.1.42",
-  "online": true,
   "state": "playing",
   "file": "lesson01.mp4",
-  "mode": "360",
+  "mode": "2d",
   "time": 45.2,
   "duration": 180.0,
   "loop": false,
@@ -250,109 +122,74 @@ adb shell am broadcast -a com.vrclass.player.GET_STATUS -n com.vrclass.player/.C
 }
 ```
 
-| Поле | Тип | Опис |
-|------|-----|------|
-| `deviceId` | string | Коротке ID пристрою (останні 4 символи `deviceUniqueIdentifier` або з `device_id` у PlayerPrefs) |
-| `ip` | string | Локальна IP-адреса |
-| `online` | bool | Завжди `true` (пристрій відповідає) |
-| `state` | string | Поточний стан плеєра |
-| `file` | string | Ім'я поточного файлу |
-| `mode` | string | `360` або `2d` |
-| `time` | float | Поточна позиція в секундах |
-| `duration` | float | Тривалість відео в секундах |
-| `loop` | bool | Чи увімкнено повтор |
-| `locked` | bool | Чи заблоковано керування |
-| `battery` | int | Рівень заряду (0-100, або -1 якщо недоступно) |
-| `batteryCharging` | bool | Чи заряджається |
-| `uptimeMinutes` | int | Час роботи додатку в хвилинах |
+### `GET /files`
 
----
+Повертає список файлів у `/sdcard/Movies/`.
 
-### BATTERY — Отримати заряд батареї
-
-**Server:**
 ```bash
-curl http://<IP>:8080/battery
+curl http://<IP>:8080/files
 ```
 
-**Відповідь:**
+Приклад:
+
 ```json
 {
-  "battery": 85,
-  "charging": false
+  "files": [
+    {
+      "name": "lesson01.mp4",
+      "path": "/sdcard/Movies/lesson01.mp4",
+      "size": 123456789,
+      "hasAdvancedSettings": false
+    }
+  ]
 }
 ```
 
-**ADB:** немає окремої команди (інформація є в `/status`).
+### `PUT /name`
 
----
+Задає відображувану назву пристрою.
 
-### TOGGLE_DEBUG — Перемкнути панель налагодження
+```bash
+curl -X PUT http://<IP>:8080/name \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Front Row 1"}'
+```
 
-Показує або ховає екранну панель з логами. Також можна відкрити 3 швидкими натисканнями кнопки B на правому контролері.
+### `GET /debug` / `POST /debug`
 
-**Server (GET — перемкнути):**
+Перемикає debug-панель.
+
 ```bash
 curl http://<IP>:8080/debug
-```
-
-**Server (POST — перемкнути або задати стан):**
-```bash
-# Перемкнути
 curl -X POST http://<IP>:8080/debug
-
-# Увімкнути
-curl -X POST http://<IP>:8080/debug \
-  -H "Content-Type: application/json" \
-  -d '{"state":"on"}'
-
-# Вимкнути
-curl -X POST http://<IP>:8080/debug \
-  -H "Content-Type: application/json" \
-  -d '{"state":"off"}'
 ```
 
-**ADB:**
+### `PUT /server-ip`
+
+Зберігає адресу control panel для WebSocket-підключення.
+
 ```bash
-adb shell am broadcast -a com.vrclass.player.TOGGLE_DEBUG -n com.vrclass.player/.CommandReceiver
+curl -X PUT http://<IP>:8080/server-ip \
+  -H "Content-Type: application/json" \
+  -d '{"serverIp":"192.168.1.10:8000"}'
 ```
 
 ---
 
-## Зведена таблиця
+## HTTP відповіді
 
-| Команда | HTTP Server | ADB Broadcast |
-|---------|:-----------:|:-------------:|
-| Відкрити відео | `POST /open` | `OPEN` |
-| Відтворити | `POST /play` | `PLAY` |
-| Пауза | `POST /pause` | `PAUSE` |
-| Зупинити | `POST /stop` | `STOP` |
-| Перезапустити | `POST /restart` | `RESTART` |
-| Перецентрувати | `POST /recenter` | `RECENTER` |
-| Змінити режим | (через `/open`) | `SET_MODE` |
-| Увімкнути повтор | — | `SET_LOOP` |
-| Заблокувати | `POST /lock` | — |
-| Розблокувати | `POST /unlock` | — |
-| Аварійна зупинка | `POST /emergencystop` | — |
-| Отримати статус | `GET /status` | `GET_STATUS` |
-| Батарея | `GET /battery` | — |
-| Дебаг-панель | `GET/POST /debug` | `TOGGLE_DEBUG` |
+Більшість POST/PUT ендпоінтів повертають:
 
-## Відповіді HTTP-сервера
-
-Всі POST-ендпоінти повертають `Content-Type: application/json`.
-
-| Код | Відповідь | Опис |
-|-----|-----------|------|
-| `200` | `{"ok":true}` | Команда прийнята |
-| `400` | `{"error":"..."}` | Невалідний запит (відсутні параметри, невалідний JSON) |
-| `404` | `{"error":"not found"}` | Невідомий маршрут |
-| `500` | `{"error":"..."}` | Внутрішня помилка сервера |
-
-## Status Push (автоматичне надсилання статусу)
-
-Якщо в `PlayerPrefs` встановлено `instructor_ip`, плеєр автоматично надсилає JSON-статус кожні 2 секунди на:
+```json
+{"ok": true}
 ```
-POST http://<instructor_ip>:9090/device_status
+
+Типові помилки:
+
+```json
+{"error": "missing body"}
 ```
-Це дозволяє інструкторській панелі отримувати оновлення без постійного опитування.
+
+```json
+{"error": "invalid json: ..."}
+```

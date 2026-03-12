@@ -6,8 +6,6 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
-
-
 class VideoTransformSettings(BaseModel):
     localPosition: Dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.0, "z": 0.0})
     localRotation: Dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.0, "z": 0.0})
@@ -31,31 +29,22 @@ class VideoAdvancedSettings(BaseModel):
 class RequirementVideo(BaseModel):
     id: str = ""
     name: str = ""
-    localPath: str = ""
+    filename: str = ""
     loop: bool = False
     videoType: str = "360"
+    placementMode: str = "default"
     advancedSettings: Optional[VideoAdvancedSettings] = None
 
 
 class ConfigModel(BaseModel):
-    apkPath: str = ""
-    apkDownloadUrl: str = ""
-    packageId: str = "com.vrclass.player"
-    adbActionPrefix: str = "com.vrclass.player"
-    requirementVideos: List[RequirementVideo] = []
+    mobileAppUrl: str = ""
+    playerAppUrl: str = ""
+    requirementVideos: List[RequirementVideo] = Field(default_factory=list)
     batteryThreshold: int = 20
     scanInterval: int = 30
     networkSubnet: str = ""
-    networkSubnetAuto: bool = True
     serverPort: int = 8000
-    playerPort: int = 8080
     deviceOfflineTimeout: int = 30
-    statusPollInterval: int = 5
-    requirementsPollInterval: int = 15
-    updateConcurrency: int = 5
-    ignoreRequirements: bool = False
-    fastResyncOnFocus: bool = True
-    adbEnabled: bool = True
 
 
 class DeviceRegistration(BaseModel):
@@ -71,10 +60,10 @@ class DeviceState:
         self.device_id: str = device_id
         self.ip: str = ip
         self.name: str = ""
+        self.reported_name: str = ""
         self.battery: int = -1
         self.battery_charging: bool = False
         self.online: bool = True
-        self.adb_connected: bool = False
         self.player_connected: bool = False
         self.player_version: str = ""
         self.requirements_met: Optional[bool] = None  # None = not checked yet
@@ -88,13 +77,9 @@ class DeviceState:
         self.locked: bool = False
         self.uptime_minutes: int = 0
         self.last_seen: float = time.time()
-        self.installed_packages: List[str] = []
         self.android_id: str = ""
         self.device_model: str = ""
         self.mac_address: str = ""
-        self.update_in_progress: bool = False
-        self.update_progress: Optional[Dict] = None
-        self.usb_connected: bool = False
         self.personal_volume: float = 1.0
         self.effective_volume: float = 1.0
         self.missed_discovery_cycles: int = 0
@@ -107,7 +92,6 @@ class DeviceState:
             "battery": self.battery,
             "batteryCharging": self.battery_charging,
             "online": self.online,
-            "adbConnected": self.adb_connected,
             "playerConnected": self.player_connected,
             "playerVersion": self.player_version,
             "requirementsMet": self.requirements_met,
@@ -121,13 +105,9 @@ class DeviceState:
             "locked": self.locked,
             "uptimeMinutes": self.uptime_minutes,
             "lastSeen": self.last_seen,
-            "installedPackages": self.installed_packages,
             "androidId": self.android_id,
             "deviceModel": self.device_model,
             "macAddress": self.mac_address,
-            "updateInProgress": self.update_in_progress,
-            "updateProgress": self.update_progress,
-            "usbConnected": self.usb_connected,
             "personalVolume": self.personal_volume,
             "effectiveVolume": self.effective_volume,
         }
@@ -144,13 +124,6 @@ class OpenCommand(BaseModel):
 
 class DeviceNameUpdate(BaseModel):
     name: str
-
-
-class UsbInitOptions(BaseModel):
-    enableWirelessAdb: bool = True
-    updateApp: bool = True
-    updateContent: bool = True
-
 
 class VolumeUpdate(BaseModel):
     volume: float = Field(ge=0.0, le=1.0)

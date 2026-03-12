@@ -19,6 +19,17 @@ export async function updateConfig(config) {
   });
 }
 
+export async function getDeviceNames() {
+  return request('/device-names');
+}
+
+export async function replaceDeviceNames(deviceNames) {
+  return request('/device-names', {
+    method: 'PUT',
+    body: JSON.stringify(deviceNames),
+  });
+}
+
 export async function getDevices() {
   return request('/devices');
 }
@@ -42,14 +53,6 @@ export async function getRequirements(id) {
   return request(`/devices/${id}/requirements`);
 }
 
-export async function updateDevice(id) {
-  return request(`/devices/${id}/update`, { method: 'POST' });
-}
-
-export async function updateAllDevices() {
-  return request('/devices/update-all', { method: 'POST' });
-}
-
 export async function pingDevice(id) {
   return request(`/devices/${id}/ping`, { method: 'POST' });
 }
@@ -68,41 +71,8 @@ export async function playbackCommand(command, deviceIds = []) {
   });
 }
 
-export async function browseFiles(path = '', filter = '') {
-  const params = new URLSearchParams();
-  if (path) params.set('path', path);
-  if (filter) params.set('filter', filter);
-  return request(`/browse?${params.toString()}`);
-}
-
-export async function getUsbDevices() {
-  return request('/usb-devices');
-}
-
-export async function updateUsbDevice(serial, options = {}) {
-  return request(`/usb-devices/${serial}/update`, {
-    method: 'POST',
-    body: JSON.stringify(options),
-  });
-}
-
-export async function launchPlayer(deviceIds = []) {
-  return request('/devices/launch-player', {
-    method: 'POST',
-    body: JSON.stringify({ deviceIds }),
-  });
-}
-
-export async function launchPlayerSingle(deviceId) {
-  return request(`/devices/${deviceId}/launch-player`, { method: 'POST' });
-}
-
 export async function toggleDeviceDebug(deviceId) {
   return request(`/devices/${deviceId}/debug`, { method: 'POST' });
-}
-
-export async function restartApp(deviceId) {
-  return request(`/devices/${deviceId}/restart-app`, { method: 'POST' });
 }
 
 export async function getGlobalVolume() {

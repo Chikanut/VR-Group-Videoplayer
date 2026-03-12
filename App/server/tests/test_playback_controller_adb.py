@@ -1,50 +1,55 @@
 import unittest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from App.server import playback_controller
 
 
-class PlaybackControllerADBTests(unittest.IsolatedAsyncioTestCase):
-    async def test_send_via_adb_builds_action_from_adb_prefix(self):
+class PlaybackControllerOpenTests(unittest.IsolatedAsyncioTestCase):
+    async def test_open_video_sends_filename_mode_and_placement(self):
+        device = SimpleNamespace(
+            device_id="quest-1",
+            name="Quest 1",
+            online=True,
+            player_connected=True,
+            requirements_detail=[{"type": "video", "id": "video-1", "present": True}],
+        )
+
         with patch.object(
             playback_controller,
             "get_config",
             return_value={
-                "packageId": "com.example.player",
-                "adbActionPrefix": "com.vrclass.player",
+                "requirementVideos": [
+                    {
+                        "id": "video-1",
+                        "name": "Lesson 01",
+                        "filename": "lesson_01.mp4",
+                        "videoType": "2d",
+                        "placementMode": "free",
+                        "loop": True,
+                    }
+                ]
             },
-        ):
-            with patch.object(playback_controller.adb_executor, "shell", new=AsyncMock(return_value=(True, "ok"))) as shell_mock:
-                await playback_controller._send_via_adb("192.168.0.10", "PLAY")
-
-        shell_mock.assert_awaited_once_with(
-            "192.168.0.10",
-            "am broadcast -a com.vrclass.player.PLAY -n com.example.player/.CommandReceiver",
-        )
-
-    async def test_send_via_adb_handles_play_stop_recenter(self):
-        with patch.object(
+        ), patch.object(
             playback_controller,
-            "get_config",
-            return_value={
-                "packageId": "com.demo.player",
-                "adbActionPrefix": "com.vrclass.player.",
-            },
-        ):
-            with patch.object(playback_controller.adb_executor, "shell", new=AsyncMock(return_value=(True, "ok"))) as shell_mock:
-                await playback_controller._send_via_adb("10.0.0.2", "play")
-                await playback_controller._send_via_adb("10.0.0.2", "STOP")
-                await playback_controller._send_via_adb("10.0.0.2", "Recenter")
+            "_resolve_devices",
+            new=AsyncMock(return_value=[device]),
+        ), patch.object(
+            playback_controller,
+            "_send_command_to_device",
+            new=AsyncMock(return_value={"success": True}),
+        ) as send_mock:
+            result = await playback_controller.open_video("video-1", [])
 
-        built_commands = [call.args[1] for call in shell_mock.await_args_list]
-        self.assertEqual(
-            built_commands,
-            [
-                "am broadcast -a com.vrclass.player.PLAY -n com.demo.player/.CommandReceiver",
-                "am broadcast -a com.vrclass.player.STOP -n com.demo.player/.CommandReceiver",
-                "am broadcast -a com.vrclass.player.RECENTER -n com.demo.player/.CommandReceiver",
-            ],
-        )
+        self.assertEqual(result["failed"], [])
+        self.assertEqual(result["missing"], [])
+        self.assertEqual(result["success"], [{"deviceId": "quest-1"}])
+
+        payload = send_mock.await_args.args[3]
+        self.assertEqual(payload["file"], "lesson_01.mp4")
+        self.assertEqual(payload["mode"], "2d")
+        self.assertEqual(payload["placementMode"], "free")
+        self.assertEqual(payload["loop"], True)
 
 
 if __name__ == "__main__":

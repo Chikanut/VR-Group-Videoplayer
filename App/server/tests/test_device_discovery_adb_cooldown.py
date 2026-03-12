@@ -1,31 +1,52 @@
+import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
 
 from App.server import device_discovery
 
 
-class DeviceDiscoveryAdbCooldownTests(unittest.IsolatedAsyncioTestCase):
-    async def asyncSetUp(self):
-        device_discovery._adb_connect_attempt_ts.clear()
+class DeviceDiscoveryProcessingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_process_discovered_ip_updates_player_device(self):
+        semaphore = asyncio.Semaphore(1)
 
-    async def test_skips_connect_when_already_connected(self):
-        with patch.object(device_discovery.adb_executor, "is_connected", new=AsyncMock(return_value=True)) as is_connected_mock, \
-             patch.object(device_discovery.adb_executor, "connect", new=AsyncMock(return_value=True)) as connect_mock:
-            connected = await device_discovery._ensure_adb_connected("192.168.1.10")
+        with patch.object(
+            device_discovery,
+            "_probe_player_http",
+            new=AsyncMock(return_value={
+                "deviceId": "quest-1",
+                "deviceName": "Quest Front Row",
+                "battery": 74,
+                "state": "idle",
+            }),
+        ), patch.object(
+            device_discovery.device_manager,
+            "add_or_update",
+            new=AsyncMock(),
+        ) as add_or_update_mock, patch.object(
+            device_discovery.device_manager,
+            "mark_discovery_seen",
+            new=AsyncMock(),
+        ) as mark_seen_mock, patch.object(
+            device_discovery.device_manager,
+            "apply_device_name_from_device",
+            new=AsyncMock(),
+        ) as apply_name_mock, patch(
+            "App.server.requirements_manager.check_requirements",
+            new=AsyncMock(),
+        ) as requirements_mock, patch.object(
+            device_discovery.device_ws_manager,
+            "is_connected",
+            return_value=True,
+        ):
+            await device_discovery.process_discovered_ip("192.168.1.10", semaphore)
 
-        self.assertTrue(connected)
-        is_connected_mock.assert_awaited_once_with("192.168.1.10")
-        connect_mock.assert_not_awaited()
-
-    async def test_applies_connect_cooldown_for_failed_attempts(self):
-        with patch.object(device_discovery.adb_executor, "is_connected", new=AsyncMock(return_value=False)), \
-             patch.object(device_discovery.adb_executor, "connect", new=AsyncMock(return_value=False)) as connect_mock:
-            first = await device_discovery._ensure_adb_connected("192.168.1.11")
-            second = await device_discovery._ensure_adb_connected("192.168.1.11")
-
-        self.assertFalse(first)
-        self.assertFalse(second)
-        connect_mock.assert_awaited_once_with("192.168.1.11")
+        add_or_update_mock.assert_awaited_once()
+        self.assertEqual(add_or_update_mock.await_args.kwargs["player_connected"], True)
+        self.assertEqual(add_or_update_mock.await_args.args[0], "quest-1")
+        self.assertEqual(add_or_update_mock.await_args.args[1], "192.168.1.10")
+        mark_seen_mock.assert_awaited_once_with("quest-1")
+        apply_name_mock.assert_awaited_once_with("quest-1", "Quest Front Row")
+        requirements_mock.assert_awaited_once_with("quest-1")
 
 
 if __name__ == "__main__":

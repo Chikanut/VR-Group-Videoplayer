@@ -50,6 +50,12 @@ android {
         main {
             python.srcDirs = ["src/main/python", "../../../"]
             python.exclude "android/**"
+            python.exclude "config.json"
+            python.exclude "device_names.json"
+            python.exclude "frontend/**"
+            python.exclude "node_modules/**"
+            python.exclude "venv/**"
+            python.exclude "**/__pycache__/**"
             python.exclude "**/.gradle/**"
             python.exclude "**/build/**"
         }

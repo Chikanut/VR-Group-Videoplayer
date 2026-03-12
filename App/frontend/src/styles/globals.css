@@ -95,6 +95,7 @@ body {
   display: flex;
   align-items: center;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .top-panel-title {
@@ -122,6 +123,7 @@ body {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 
@@ -129,7 +131,8 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 220px;
+  flex-wrap: wrap;
+  min-width: min(220px, 100%);
   color: var(--text-dim);
   font-size: 0.8rem;
 }
@@ -345,7 +348,8 @@ body {
 
   .top-panel-controls {
     width: 100%;
-    overflow-x: auto;
+    overflow: visible;
+    justify-content: flex-start;
   }
 }
 
@@ -798,8 +802,9 @@ body {
 
 .settings-header {
   display: flex;
-  align-items: center;
-  gap: 16px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
   margin-bottom: 24px;
 }
 
@@ -881,29 +886,49 @@ body {
 
 .video-requirement-row {
   display: flex;
-  align-items: flex-end;
-  /* Вирівнюємо все по нижній лінії (щоб кнопка Remove була на рівні полів) */
-  gap: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
   padding: 16px;
-  background: var(--bg-card);
+  background: var(--bg-input);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
 
 .video-req-fields {
   display: flex;
-  flex: 1;
-  /* Забирає весь простір ліворуч від кнопки Remove */
   gap: 12px;
   flex-wrap: wrap;
-  /* Якщо екран вузький, поля перейдуть на новий рядок */
 }
 
 .video-req-fields .form-group {
   flex: 1;
   min-width: 150px;
   margin-bottom: 0;
+}
+
+.video-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.video-card-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.video-advanced-details {
+  width: 100%;
+}
+
+.video-advanced-details summary {
+  cursor: pointer;
+  font-weight: 600;
 }
 
 /* ─── Alerts ────────────────────────────────────────────────────────────────── */
@@ -1045,6 +1070,17 @@ body {
   margin-bottom: 12px;
 }
 
+.settings-action-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.hidden-file-input {
+  display: none;
+}
+
 .checkbox-label {
   display: flex !important;
   flex-direction: row !important;
@@ -1166,4 +1202,31 @@ body {
   color: var(--text-dim);
   line-height: 1.4;
   max-width: 300px;
+}
+
+@media (max-width: 700px) {
+  .settings-page {
+    padding: 16px;
+  }
+
+  .settings-section {
+    padding: 16px;
+  }
+
+  .video-card-header {
+    align-items: flex-start;
+  }
+
+  .settings-action-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settings-action-row .btn {
+    width: 100%;
+  }
+
+  .connection-tabs {
+    flex-direction: column;
+  }
 }

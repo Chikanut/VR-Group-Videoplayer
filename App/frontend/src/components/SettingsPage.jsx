@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getConfig, updateConfig } from '../api';
-import FilePicker from './FilePicker';
+import { getConfig, getDeviceNames, replaceDeviceNames, updateConfig } from '../api';
 import { useI18n } from '../i18n';
 import packageJson from '../../package.json';
 
@@ -27,23 +26,70 @@ function createDefaultAdvancedSettings() {
   };
 }
 
+function cloneAdvancedSettings(settings) {
+  return JSON.parse(JSON.stringify(settings || createDefaultAdvancedSettings()));
+}
+
+function stripRuntimeFields(config) {
+  if (!config) {
+    return {};
+  }
+  const { isAndroidRuntime, ...rest } = config;
+  return rest;
+}
+
+function downloadJson(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function createUniqueVideoName(videos, sourceName) {
+  const existingNames = new Set(videos.map((video) => video.name).filter(Boolean));
+  const baseName = sourceName || 'Video';
+  const copyBase = `${baseName} Copy`;
+  if (!existingNames.has(copyBase)) {
+    return copyBase;
+  }
+
+  let index = 2;
+  while (existingNames.has(`${copyBase} ${index}`)) {
+    index += 1;
+  }
+  return `${copyBase} ${index}`;
+}
+
 export default function SettingsPage() {
   const navigate = useNavigate();
   const { t, language, setLanguage } = useI18n();
   const [config, setConfig] = useState(null);
+  const [deviceNames, setDeviceNames] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [filePicker, setFilePicker] = useState(null); // { target, filter, title }
-  const isAndroidRuntime = config?.isAndroidRuntime === true;
+  const configImportRef = useRef(null);
+  const deviceNamesImportRef = useRef(null);
 
   useEffect(() => {
-    loadConfig();
+    loadAll();
   }, []);
 
-  const loadConfig = async () => {
-    const data = await getConfig();
-    setConfig(data);
+  const loadAll = async () => {
+    const [configData, deviceNamesData] = await Promise.all([
+      getConfig(),
+      getDeviceNames(),
+    ]);
+    setConfig(configData);
+    setDeviceNames(deviceNamesData || {});
+  };
+
+  const showSuccess = (message) => {
+    setSuccess(message);
+    setTimeout(() => setSuccess(''), 3000);
   };
 
   const handleSave = async () => {
@@ -52,31 +98,34 @@ export default function SettingsPage() {
     setSaving(true);
 
     const videos = config.requirementVideos || [];
-    const names = videos.map((v) => v.name).filter(Boolean);
-    const paths = videos.map((v) => v.localPath).filter(Boolean);
+    const names = videos.map((video) => video.name?.trim()).filter(Boolean);
+    const filenames = videos.map((video) => video.filename?.trim()).filter(Boolean);
+
     if (new Set(names).size !== names.length) {
       setError(t('Duplicate video names found'));
       setSaving(false);
       return;
     }
-    if (new Set(paths).size !== paths.length) {
-      setError(isAndroidRuntime ? t('Duplicate video filenames found') : t('Duplicate video paths found'));
+
+    if (new Set(filenames).size !== filenames.length) {
+      setError(t('Duplicate video filenames found'));
       setSaving(false);
       return;
     }
 
     try {
-      await updateConfig(config);
-      setSuccess(t('Settings saved successfully'));
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (e) {
+      const updated = await updateConfig(stripRuntimeFields(config));
+      setConfig(updated);
+      showSuccess(t('Settings saved successfully'));
+    } catch {
       setError(t('Failed to save settings'));
     }
+
     setSaving(false);
   };
 
   const updateField = (field, value) => {
-    setConfig({ ...config, [field]: value });
+    setConfig((current) => ({ ...current, [field]: value }));
   };
 
   const addVideo = () => {
@@ -84,11 +133,25 @@ export default function SettingsPage() {
     videos.push({
       id: generateId(),
       name: '',
-      localPath: '',
+      filename: '',
       loop: false,
       videoType: '360',
+      placementMode: 'default',
       advancedSettings: createDefaultAdvancedSettings(),
     });
+    updateField('requirementVideos', videos);
+  };
+
+  const duplicateVideo = (index) => {
+    const videos = [...(config.requirementVideos || [])];
+    const source = videos[index];
+    const duplicate = {
+      ...JSON.parse(JSON.stringify(source)),
+      id: generateId(),
+      name: createUniqueVideoName(videos, source?.name),
+      advancedSettings: cloneAdvancedSettings(source?.advancedSettings),
+    };
+    videos.splice(index + 1, 0, duplicate);
     updateField('requirementVideos', videos);
   };
 
@@ -156,24 +219,30 @@ export default function SettingsPage() {
     updateField('requirementVideos', videos);
   };
 
-  const openFilePicker = (target, filter, title) => {
-    setFilePicker({ target, filter, title });
-  };
-
-  const handleFileSelected = (path) => {
-    const { target } = filePicker;
-    if (target === 'apkPath') {
-      updateField('apkPath', path);
-    } else if (target.startsWith('video_')) {
-      const idx = parseInt(target.split('_')[1]);
-      updateVideo(idx, 'localPath', path);
-      const videos = config.requirementVideos || [];
-      if (videos[idx] && !videos[idx].name) {
-        const name = path.split(/[/\\]/).pop().replace(/\.[^.]+$/, '');
-        updateVideo(idx, 'name', name);
-      }
+  const handleImportFile = async (event, type) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) {
+      return;
     }
-    setFilePicker(null);
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      if (type === 'config') {
+        const updated = await updateConfig(data);
+        setConfig(updated);
+        showSuccess(t('Config imported successfully'));
+        return;
+      }
+
+      const updatedNames = await replaceDeviceNames(data);
+      setDeviceNames(updatedNames || {});
+      showSuccess(t('Device names imported successfully'));
+    } catch {
+      setError(type === 'config' ? t('Failed to import config') : t('Failed to import device names'));
+    }
   };
 
   if (!config) {
@@ -191,70 +260,87 @@ export default function SettingsPage() {
           {t('Back')}
         </button>
         <h1>{t('Settings')}</h1>
-        <div className="form-group" style={{ minWidth: 220, margin: 0 }}>
-          <label>{t('Language')}</label>
-          <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-            <option value="uk">{t('Ukrainian')}</option>
-            <option value="en">{t('English')}</option>
-          </select>
-        </div>
-        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-          {saving ? t('Saving...') : t('Save')}
-        </button>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
       {success && <div className="alert alert-success">{success}</div>}
 
-      {!isAndroidRuntime && (
       <section className="settings-section">
-        <h2>APK Configuration</h2>
-        <div className="form-group">
-          <label>APK File Path (on server PC)</label>
-          <div className="input-with-button">
+        <h2>{t('General')}</h2>
+        <div className="settings-grid">
+          <div className="form-group">
+            <label>{t('Language')}</label>
+            <select value={language} onChange={(event) => setLanguage(event.target.value)}>
+              <option value="uk">{t('Ukrainian')}</option>
+              <option value="en">{t('English')}</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>{t('Phone Control App Link')}</label>
             <input
               type="text"
-              value={config.apkPath || ''}
-              readOnly
-              placeholder="Click Browse to select APK file"
+              value={config.mobileAppUrl || ''}
+              onChange={(event) => updateField('mobileAppUrl', event.target.value)}
+              placeholder="https://example.com/control-panel.apk"
             />
-            <button
-              className="btn btn-small"
-              onClick={() => openFilePicker('apkPath', '.apk', 'Select APK File')}
-            >
-              Browse
-            </button>
+            <span className="form-hint">{t('Used in the Connection popup as a QR code and direct download link for the mobile control panel app.')}</span>
+          </div>
+
+          <div className="form-group">
+            <label>{t('Player App Link')}</label>
+            <input
+              type="text"
+              value={config.playerAppUrl || ''}
+              onChange={(event) => updateField('playerAppUrl', event.target.value)}
+              placeholder="https://example.com/player.apk"
+            />
+            <span className="form-hint">{t('Used in the Connection popup as a QR code and direct download link for the headset player app.')}</span>
           </div>
         </div>
-        <div className="form-group">
-          <label>Package ID</label>
-          <input
-            type="text"
-            value={config.packageId || ''}
-            onChange={(e) => updateField('packageId', e.target.value)}
-            placeholder="com.vrclassroom.player"
-          />
+
+        <div className="settings-action-row">
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+            {saving ? t('Saving...') : t('Save')}
+          </button>
+          <button className="btn" onClick={() => downloadJson('config.json', stripRuntimeFields(config))}>
+            {t('Export Config')}
+          </button>
+          <button className="btn" onClick={() => downloadJson('device_names.json', deviceNames)}>
+            {t('Export Device Names')}
+          </button>
+          <button className="btn" onClick={() => configImportRef.current?.click()}>
+            {t('Import Config')}
+          </button>
+          <button className="btn" onClick={() => deviceNamesImportRef.current?.click()}>
+            {t('Import Device Names')}
+          </button>
         </div>
-        <div className="form-group">
-          <label>APK Download URL (for QR code)</label>
-          <input
-            type="text"
-            value={config.apkDownloadUrl || ''}
-            onChange={(e) => updateField('apkDownloadUrl', e.target.value)}
-            placeholder="https://example.com/path/to/player.apk"
-          />
-          <p className="form-hint">Used in CONNECTION window to generate QR code for Android APK download.</p>
-        </div>
+
+        <input
+          ref={configImportRef}
+          type="file"
+          accept=".json,application/json"
+          className="hidden-file-input"
+          onChange={(event) => handleImportFile(event, 'config')}
+        />
+        <input
+          ref={deviceNamesImportRef}
+          type="file"
+          accept=".json,application/json"
+          className="hidden-file-input"
+          onChange={(event) => handleImportFile(event, 'deviceNames')}
+        />
       </section>
-      )}
 
       <section className="settings-section">
-        <h2>Requirement Videos</h2>
+        <h2>{t('Requirement Videos')}</h2>
         <p className="settings-note">
-          {isAndroidRuntime ? "Enter only filename. The player will search in /sdcard/Movies/." : "Videos are automatically saved to /sdcard/Movies/ on the device."}
+          {t('Save only the video filename. The app sends that filename to the player, and the player opens it from /sdcard/Movies/.')}
         </p>
+
         <div className="video-requirements-list">
-          {(config.requirementVideos || []).map((video, idx) => {
+          {(config.requirementVideos || []).map((video, index) => {
             const advancedSettings = {
               ...createDefaultAdvancedSettings(),
               ...(video.advancedSettings || {}),
@@ -293,440 +379,339 @@ export default function SettingsPage() {
             };
 
             return (
-              <div key={video.id || idx} className="video-requirement-row">
-                <div className="video-req-fields">
+              <div key={video.id || index} className="video-requirement-row">
+                <div className="video-card-header">
+                  <strong>{video.name || t('New video')}</strong>
+                  <div className="video-card-actions">
+                    <button className="btn btn-small" onClick={() => duplicateVideo(index)}>
+                      {t('Duplicate')}
+                    </button>
+                    <button className="btn btn-danger btn-small" onClick={() => removeVideo(index)}>
+                      {t('Remove')}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="settings-grid">
                   <div className="form-group">
-                    <label>Name</label>
+                    <label>{t('Name')}</label>
                     <input
                       type="text"
                       value={video.name || ''}
-                      onChange={(e) => updateVideo(idx, 'name', e.target.value)}
+                      onChange={(event) => updateVideo(index, 'name', event.target.value)}
                       placeholder="Lesson 01"
                     />
                   </div>
+
                   <div className="form-group">
-                    <label>{isAndroidRuntime ? 'Video filename on player device' : 'Source File (on server PC)'}</label>
-                    {isAndroidRuntime ? (
-                      <input
-                        type="text"
-                        value={video.localPath || ''}
-                        onChange={(e) => updateVideo(idx, 'localPath', e.target.value)}
-                        placeholder="lesson_01.mp4"
-                      />
-                    ) : (
-                      <div className="input-with-button">
-                        <input
-                          type="text"
-                          value={video.localPath || ''}
-                          readOnly
-                          placeholder="Click Browse to select video"
-                        />
-                        <button
-                          className="btn btn-small"
-                          onClick={() => openFilePicker(`video_${idx}`, '.mp4,.mkv,.avi,.mov,.webm', 'Select Video File')}
-                        >
-                          Browse
-                        </button>
-                      </div>
-                    )}
+                    <label>{t('Filename')}</label>
+                    <input
+                      type="text"
+                      value={video.filename || ''}
+                      onChange={(event) => updateVideo(index, 'filename', event.target.value)}
+                      placeholder="lesson_01.mp4"
+                    />
                   </div>
+
                   <div className="form-group form-group-small">
-                    <label>Type</label>
+                    <label>{t('Type')}</label>
                     <select
                       value={video.videoType || '360'}
-                      onChange={(e) => updateVideo(idx, 'videoType', e.target.value)}
+                      onChange={(event) => updateVideo(index, 'videoType', event.target.value)}
                     >
                       <option value="360">360</option>
                       <option value="2d">2D</option>
                     </select>
                   </div>
+
+                  <div className="form-group">
+                    <label>{t('Placement')}</label>
+                    <select
+                      value={video.placementMode || 'default'}
+                      onChange={(event) => updateVideo(index, 'placementMode', event.target.value)}
+                    >
+                      <option value="default">{t('Default')}</option>
+                      <option value="locked">{t('Locked to camera')}</option>
+                      <option value="free">{t('Free in space')}</option>
+                    </select>
+                    <span className="form-hint">{t('Older player versions ignore this and keep their default behavior.')}</span>
+                  </div>
+
                   <div className="form-group form-group-small">
-                    <label>Loop</label>
+                    <label>{t('Loop')}</label>
                     <input
                       type="checkbox"
                       checked={video.loop || false}
-                      onChange={(e) => updateVideo(idx, 'loop', e.target.checked)}
+                      onChange={(event) => updateVideo(index, 'loop', event.target.checked)}
                     />
                   </div>
-
-                  <details className="form-group" style={{ width: '100%' }}>
-                    <summary style={{ cursor: 'pointer', fontWeight: 600 }}>Advanced Settings</summary>
-
-                    <div className="form-group" style={{ marginTop: 12 }}>
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={advancedSettings.overrideTransformSettings}
-                          onChange={(e) =>
-                            updateVideoAdvancedSetting(idx, ['overrideTransformSettings'], e.target.checked)
-                          }
-                        />
-                        <span>Override Transform Settings</span>
-                      </label>
-                    </div>
-
-                    {advancedSettings.overrideTransformSettings && (
-                      <>
-                        <div className="settings-grid">
-                          <div className="form-group">
-                            <label>Position X</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={advancedSettings.transformSettings.localPosition.x}
-                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localPosition', 'x'], parseFloat(e.target.value) || 0)}
-                            />
-                          </div>
-                          <div className="form-group">
-                            <label>Position Y</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={advancedSettings.transformSettings.localPosition.y}
-                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localPosition', 'y'], parseFloat(e.target.value) || 0)}
-                            />
-                          </div>
-                          <div className="form-group">
-                            <label>Position Z</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={advancedSettings.transformSettings.localPosition.z}
-                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localPosition', 'z'], parseFloat(e.target.value) || 0)}
-                            />
-                          </div>
-                          <div className="form-group">
-                            <label>Rotation X</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={advancedSettings.transformSettings.localRotation.x}
-                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localRotation', 'x'], parseFloat(e.target.value) || 0)}
-                            />
-                          </div>
-                          <div className="form-group">
-                            <label>Rotation Y</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={advancedSettings.transformSettings.localRotation.y}
-                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localRotation', 'y'], parseFloat(e.target.value) || 0)}
-                            />
-                          </div>
-                          <div className="form-group">
-                            <label>Rotation Z</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={advancedSettings.transformSettings.localRotation.z}
-                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localRotation', 'z'], parseFloat(e.target.value) || 0)}
-                            />
-                          </div>
-                          <div className="form-group">
-                            <label>Scale X</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={advancedSettings.transformSettings.localScale.x}
-                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localScale', 'x'], parseFloat(e.target.value) || 1)}
-                            />
-                          </div>
-                          <div className="form-group">
-                            <label>Scale Y</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={advancedSettings.transformSettings.localScale.y}
-                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localScale', 'y'], parseFloat(e.target.value) || 1)}
-                            />
-                          </div>
-                          <div className="form-group">
-                            <label>Scale Z</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={advancedSettings.transformSettings.localScale.z}
-                              onChange={(e) => updateVideoAdvancedSetting(idx, ['transformSettings', 'localScale', 'z'], parseFloat(e.target.value) || 1)}
-                            />
-                          </div>
-                        </div>
-                      </>
-                    )}
-
-                    <div className="form-group" style={{ marginTop: 12 }}>
-                      <label className="checkbox-label">
-                        <input
-                          type="checkbox"
-                          checked={advancedSettings.overrideMaterialSettings}
-                          onChange={(e) =>
-                            updateVideoAdvancedSetting(idx, ['overrideMaterialSettings'], e.target.checked)
-                          }
-                        />
-                        <span>Override Material Settings</span>
-                      </label>
-                    </div>
-
-                    {advancedSettings.overrideMaterialSettings && (
-                      <div className="settings-grid">
-                        <div className="form-group">
-                          <label>Tint R</label>
-                          <input
-                            type="number"
-                            min="0"
-                            max="1"
-                            step="0.01"
-                            value={advancedSettings.materialSettings.tint.r}
-                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'tint', 'r'], parseFloat(e.target.value) || 0)}
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>Tint G</label>
-                          <input
-                            type="number"
-                            min="0"
-                            max="1"
-                            step="0.01"
-                            value={advancedSettings.materialSettings.tint.g}
-                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'tint', 'g'], parseFloat(e.target.value) || 0)}
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>Tint B</label>
-                          <input
-                            type="number"
-                            min="0"
-                            max="1"
-                            step="0.01"
-                            value={advancedSettings.materialSettings.tint.b}
-                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'tint', 'b'], parseFloat(e.target.value) || 0)}
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>Tint A</label>
-                          <input
-                            type="number"
-                            min="0"
-                            max="1"
-                            step="0.01"
-                            value={advancedSettings.materialSettings.tint.a}
-                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'tint', 'a'], parseFloat(e.target.value) || 1)}
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>Brightness</label>
-                          <input
-                            type="number"
-                            min="0"
-                            max="2"
-                            step="0.01"
-                            value={advancedSettings.materialSettings.brightness}
-                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'brightness'], parseFloat(e.target.value) || 0)}
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>Tiling X</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={advancedSettings.materialSettings.textureTiling.x}
-                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'textureTiling', 'x'], parseFloat(e.target.value) || 0)}
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>Tiling Y</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={advancedSettings.materialSettings.textureTiling.y}
-                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'textureTiling', 'y'], parseFloat(e.target.value) || 0)}
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>Offset X</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={advancedSettings.materialSettings.textureOffset.x}
-                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'textureOffset', 'x'], parseFloat(e.target.value) || 0)}
-                          />
-                        </div>
-                        <div className="form-group">
-                          <label>Offset Y</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={advancedSettings.materialSettings.textureOffset.y}
-                            onChange={(e) => updateVideoAdvancedSetting(idx, ['materialSettings', 'textureOffset', 'y'], parseFloat(e.target.value) || 0)}
-                          />
-                        </div>
-                      </div>
-                    )}
-                  </details>
                 </div>
-                <button
-                  className="btn btn-danger btn-small"
-                  onClick={() => removeVideo(idx)}
-                >
-                  Remove
-                </button>
+
+                <details className="form-group video-advanced-details">
+                  <summary>{t('Advanced Settings')}</summary>
+
+                  <div className="form-group" style={{ marginTop: 12 }}>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={advancedSettings.overrideTransformSettings}
+                        onChange={(event) => updateVideoAdvancedSetting(index, ['overrideTransformSettings'], event.target.checked)}
+                      />
+                      <span>{t('Override Transform Settings')}</span>
+                    </label>
+                  </div>
+
+                  {advancedSettings.overrideTransformSettings && (
+                    <div className="settings-grid">
+                      <div className="form-group">
+                        <label>{t('Position X')}</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={advancedSettings.transformSettings.localPosition.x}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['transformSettings', 'localPosition', 'x'], parseFloat(event.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Position Y')}</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={advancedSettings.transformSettings.localPosition.y}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['transformSettings', 'localPosition', 'y'], parseFloat(event.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Position Z')}</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={advancedSettings.transformSettings.localPosition.z}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['transformSettings', 'localPosition', 'z'], parseFloat(event.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Rotation X')}</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={advancedSettings.transformSettings.localRotation.x}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['transformSettings', 'localRotation', 'x'], parseFloat(event.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Rotation Y')}</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={advancedSettings.transformSettings.localRotation.y}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['transformSettings', 'localRotation', 'y'], parseFloat(event.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Rotation Z')}</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={advancedSettings.transformSettings.localRotation.z}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['transformSettings', 'localRotation', 'z'], parseFloat(event.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Scale X')}</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={advancedSettings.transformSettings.localScale.x}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['transformSettings', 'localScale', 'x'], parseFloat(event.target.value) || 1)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Scale Y')}</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={advancedSettings.transformSettings.localScale.y}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['transformSettings', 'localScale', 'y'], parseFloat(event.target.value) || 1)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Scale Z')}</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={advancedSettings.transformSettings.localScale.z}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['transformSettings', 'localScale', 'z'], parseFloat(event.target.value) || 1)}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="form-group" style={{ marginTop: 12 }}>
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={advancedSettings.overrideMaterialSettings}
+                        onChange={(event) => updateVideoAdvancedSetting(index, ['overrideMaterialSettings'], event.target.checked)}
+                      />
+                      <span>{t('Override Material Settings')}</span>
+                    </label>
+                  </div>
+
+                  {advancedSettings.overrideMaterialSettings && (
+                    <div className="settings-grid">
+                      <div className="form-group">
+                        <label>{t('Tint R')}</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value={advancedSettings.materialSettings.tint.r}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['materialSettings', 'tint', 'r'], parseFloat(event.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Tint G')}</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value={advancedSettings.materialSettings.tint.g}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['materialSettings', 'tint', 'g'], parseFloat(event.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Tint B')}</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value={advancedSettings.materialSettings.tint.b}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['materialSettings', 'tint', 'b'], parseFloat(event.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Tint A')}</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value={advancedSettings.materialSettings.tint.a}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['materialSettings', 'tint', 'a'], parseFloat(event.target.value) || 1)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Brightness')}</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="2"
+                          step="0.01"
+                          value={advancedSettings.materialSettings.brightness}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['materialSettings', 'brightness'], parseFloat(event.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Tiling X')}</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={advancedSettings.materialSettings.textureTiling.x}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['materialSettings', 'textureTiling', 'x'], parseFloat(event.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Tiling Y')}</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={advancedSettings.materialSettings.textureTiling.y}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['materialSettings', 'textureTiling', 'y'], parseFloat(event.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Offset X')}</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={advancedSettings.materialSettings.textureOffset.x}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['materialSettings', 'textureOffset', 'x'], parseFloat(event.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Offset Y')}</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={advancedSettings.materialSettings.textureOffset.y}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['materialSettings', 'textureOffset', 'y'], parseFloat(event.target.value) || 0)}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </details>
               </div>
             );
           })}
         </div>
+
         <button className="btn" onClick={addVideo}>
-          + Add Video
+          + {t('Add Video')}
         </button>
       </section>
 
       <section className="settings-section">
-        <h2>System Settings</h2>
+        <h2>{t('System Settings')}</h2>
         <div className="settings-grid">
           <div className="form-group">
-            <label>Battery Warning Threshold (%)</label>
+            <label>{t('Battery Warning Threshold (%)')}</label>
             <input
               type="number"
               min="0"
               max="100"
               value={config.batteryThreshold || 20}
-              onChange={(e) => updateField('batteryThreshold', parseInt(e.target.value) || 0)}
+              onChange={(event) => updateField('batteryThreshold', parseInt(event.target.value, 10) || 0)}
             />
           </div>
+
           <div className="form-group">
-            <label>Network Scan Interval (seconds)</label>
+            <label>{t('Network Scan Interval (seconds)')}</label>
             <input
               type="number"
               min="5"
               max="300"
               value={config.scanInterval || 30}
-              onChange={(e) => updateField('scanInterval', parseInt(e.target.value) || 30)}
+              onChange={(event) => updateField('scanInterval', parseInt(event.target.value, 10) || 30)}
             />
           </div>
+
           <div className="form-group">
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={config.adbEnabled ?? true}
-                onChange={(e) => updateField('adbEnabled', e.target.checked)}
-                disabled={(config.adbAvailable === false) || isAndroidRuntime}
-              />
-              <span>Enable ADB Features</span>
-            </label>
-            <span className="form-hint">
-              Disable to use only HTTP/WebSocket device control without ADB discovery/commands.
-            </span>
-          </div>
-          <div className="form-group">
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={config.networkSubnetAuto ?? true}
-                onChange={(e) => updateField('networkSubnetAuto', e.target.checked)}
-              />
-              <span>Network Subnet Auto Detect (Android)</span>
-            </label>
-            <span className="form-hint">
-              When enabled, subnet is refreshed from detected Android network on every startup.
-            </span>
-          </div>
-          <div className="form-group">
-            <label>Network Subnet (manual mode)</label>
+            <label>{t('Network Subnet')}</label>
             <input
               type="text"
               value={config.networkSubnet || ''}
-              onChange={(e) => {
-                updateField('networkSubnet', e.target.value);
-                updateField('networkSubnetAuto', false);
-              }}
+              onChange={(event) => updateField('networkSubnet', event.target.value)}
               placeholder="192.168.1"
-              disabled={config.networkSubnetAuto ?? true}
             />
+            <span className="form-hint">{t('Leave empty to auto-detect the local subnet.')}</span>
           </div>
+
           <div className="form-group">
-            <label>Player HTTP Port</label>
-            <input
-              type="number"
-              value={config.playerPort || 8080}
-              onChange={(e) => updateField('playerPort', parseInt(e.target.value) || 8080)}
-            />
-          </div>
-          <div className="form-group">
-            <label>Device Offline Timeout (seconds)</label>
+            <label>{t('Device Offline Timeout (seconds)')}</label>
             <input
               type="number"
               min="10"
               max="300"
               value={config.deviceOfflineTimeout || 30}
-              onChange={(e) => updateField('deviceOfflineTimeout', parseInt(e.target.value) || 30)}
+              onChange={(event) => updateField('deviceOfflineTimeout', parseInt(event.target.value, 10) || 30)}
             />
-          </div>
-          <div className="form-group">
-            <label>Status Poll Interval (seconds)</label>
-            <input
-              type="number"
-              min="1"
-              max="60"
-              value={config.statusPollInterval || 5}
-              onChange={(e) => updateField('statusPollInterval', parseInt(e.target.value) || 5)}
-            />
-          </div>
-          <div className="form-group">
-            <label>Requirements Poll Interval (seconds)</label>
-            <input
-              type="number"
-              min="5"
-              max="120"
-              value={config.requirementsPollInterval || 15}
-              onChange={(e) => updateField('requirementsPollInterval', parseInt(e.target.value) || 15)}
-            />
-          </div>
-          <div className="form-group">
-            <label>Update Concurrency</label>
-            <input
-              type="number"
-              min="1"
-              max="20"
-              value={config.updateConcurrency || 5}
-              onChange={(e) => updateField('updateConcurrency', parseInt(e.target.value) || 5)}
-            />
-          </div>
-          <div className="form-group">
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={config.fastResyncOnFocus ?? true}
-                onChange={(e) => updateField('fastResyncOnFocus', e.target.checked)}
-              />
-              <span>Fast Resync on Focus</span>
-            </label>
-            <span className="form-hint">
-              Reconnect UI updates and force a quick device status sync when app/tab regains focus
-            </span>
-          </div>
-
-          <div className="form-group">
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={config.ignoreRequirements || false}
-                onChange={(e) => updateField('ignoreRequirements', e.target.checked)}
-              />
-              <span>Ignore Requirements</span>
-            </label>
-            <span className="form-hint">
-              Allow playback commands even if videos/APK are not confirmed on device
-            </span>
           </div>
         </div>
       </section>
-
-      {filePicker && (
-        <FilePicker
-          title={filePicker.title}
-          filter={filePicker.filter}
-          onSelect={handleFileSelected}
-          onClose={() => setFilePicker(null)}
-        />
-      )}
 
       <footer className="settings-footer">
         <span>Version: {packageJson.version}</span>

@@ -16,14 +16,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: Check ADB
-adb version >nul 2>&1
-if errorlevel 1 (
-    echo [WARNING] ADB not found in PATH. Device management will not work.
-    echo Download Android Platform Tools and add to PATH.
-    echo.
-)
-
 :: Install Python dependencies if needed
 if not exist "App\venv" (
     echo [SETUP] Creating virtual environment...

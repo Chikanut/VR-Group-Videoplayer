@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 
-from .config import get_config, get_device_name, load_device_names, set_device_name
+from .config import PLAYER_HTTP_PORT, get_device_name, load_device_names, set_device_name
 from .device_ws_manager import device_ws_manager
 from .models import DeviceState
 from .websocket_manager import ws_manager
@@ -105,7 +105,7 @@ class DeviceManager:
 
     async def get_known_ips(self) -> List[str]:
         async with self._lock:
-            return [d.ip for d in self._devices.values() if d.ip and d.ip != "USB"]
+            return [d.ip for d in self._devices.values() if d.ip and d.ip != "unknown"]
 
     async def get_all(self) -> List[Dict[str, Any]]:
         async with self._lock:
@@ -140,7 +140,7 @@ class DeviceManager:
             device = self._devices.get(device_id)
             if not device:
                 return False
-            device.name = name
+            device.name = name or device.reported_name or device.device_id
             device_ip = device.ip
             player_connected = device.player_connected
 
@@ -148,11 +148,11 @@ class DeviceManager:
         await ws_manager.broadcast({
             "type": "device_update",
             "deviceId": device_id,
-            "changes": {"name": name},
+            "changes": {"name": name or device.reported_name or device.device_id},
         })
 
         if player_connected and device_ip:
-            await self._push_name_to_device(device_ip, name)
+            await self._push_name_to_device(device_ip, name or device.reported_name or "")
 
         return True
 
@@ -162,23 +162,24 @@ class DeviceManager:
         if saved:
             return
         should_broadcast = False
+        effective_name = device_name
         async with self._lock:
             device = self._devices.get(device_id)
-            if device and not device.name:
+            if device:
+                device.reported_name = device_name
+            if device and device.name != device_name:
                 device.name = device_name
                 should_broadcast = True
         if should_broadcast:
             await ws_manager.broadcast({
                 "type": "device_update",
                 "deviceId": device_id,
-                "changes": {"name": device_name},
+                "changes": {"name": effective_name},
             })
 
     async def _push_name_to_device(self, ip: str, name: str):
         """Push a name to the device via HTTP PUT /name."""
-        config = get_config()
-        player_port = config.get("playerPort", 8080)
-        url = f"http://{ip}:{player_port}/name"
+        url = f"http://{ip}:{PLAYER_HTTP_PORT}/name"
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.put(
@@ -197,10 +198,6 @@ class DeviceManager:
         async with self._lock:
             return [d for d in self._devices.values() if d.online and d.player_connected]
 
-    async def get_online_adb_devices(self) -> List[DeviceState]:
-        async with self._lock:
-            return [d for d in self._devices.values() if d.online and d.adb_connected]
-
     def get_snapshot(self) -> List[Dict[str, Any]]:
         return [d.to_dict() for d in self._devices.values()]
 
@@ -212,17 +209,37 @@ class DeviceManager:
                 device.missed_discovery_cycles = 0
 
     async def increment_missed_discovery(self):
-        """Increment missed_discovery_cycles for all online ADB devices not seen in this scan."""
+        """Increment missed_discovery_cycles for all online devices not seen in this scan."""
         async with self._lock:
             for d in self._devices.values():
-                if d.online and d.adb_connected:
+                if d.online:
                     d.missed_discovery_cycles += 1
+
+    async def sync_device_names(self):
+        async with self._lock:
+            updates = []
+            for device in self._devices.values():
+                saved_name = get_device_name(device.device_id)
+                next_name = saved_name or device.reported_name or device.device_id
+                if device.name != next_name:
+                    device.name = next_name
+                    updates.append((device.device_id, next_name))
+
+        for device_id, name in updates:
+            await ws_manager.broadcast({
+                "type": "device_update",
+                "deviceId": device_id,
+                "changes": {"name": name},
+            })
 
     async def _offline_check_loop(self):
         """Unified offline detection: WS heartbeat timeout + discovery miss."""
         while True:
             try:
                 await asyncio.sleep(10)
+                timeout = 30
+                from .config import get_config
+
                 config = get_config()
                 timeout = config.get("deviceOfflineTimeout", 30)
                 now = time.time()
@@ -233,27 +250,21 @@ class DeviceManager:
                         if not d.online:
                             continue
 
-                        # WS-connected device: if WS dropped but still marked as player_connected
                         if d.player_connected and not device_ws_manager.is_connected(d.device_id):
-                            # HTTP-probed player: rely on discovery cycle to refresh
-                            # Only mark disconnected if not seen by discovery for 2+ cycles
                             if d.missed_discovery_cycles >= 2:
-                                devices_to_update.append((d, {"player_connected": False}))
+                                devices_to_update.append((d, {"online": False, "player_connected": False}))
                                 continue
                         elif d.player_connected and device_ws_manager.is_connected(d.device_id):
-                            # WS-connected: heartbeat timeout (15s)
                             if (now - d.last_seen) > 15:
                                 devices_to_update.append((d, {"player_connected": False}))
                                 continue
 
-                        # Device not seen by discovery for 2+ cycles -> offline
                         if d.missed_discovery_cycles >= 2 and not d.player_connected:
-                            devices_to_update.append((d, {"online": False, "adb_connected": False}))
+                            devices_to_update.append((d, {"online": False, "player_connected": False}))
                             continue
 
-                        # General timeout fallback
                         if (now - d.last_seen) > timeout:
-                            devices_to_update.append((d, {"online": False, "player_connected": False, "adb_connected": False}))
+                            devices_to_update.append((d, {"online": False, "player_connected": False}))
 
                 for d, updates in devices_to_update:
                     await self.add_or_update(d.device_id, d.ip, **updates)

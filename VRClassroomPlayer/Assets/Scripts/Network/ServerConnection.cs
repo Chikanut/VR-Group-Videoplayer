@@ -26,6 +26,7 @@ namespace VRClassroom
             public string action;
             public string file;
             public string mode;
+            public string placementMode;
             public bool loop;
             public bool autoRecenterOnOpen = true;
             public float globalVolume;
@@ -464,25 +465,9 @@ namespace VRClassroom
                     return;
                 }
 
-                Debug.Log($"[ServerConnection] Command received: {command.action}");
-                    LogWarning("message_dropped", null, $"reason=invalid json, rawLength={rawLength}, preview={preview}");
-                
                 string commandId = ResolveCommandId(command);
                 LogInfo("message_received", commandId,
                     $"rawLength={rawLength}, preview={preview}, msgType={SafeValue(command.type)}, action={SafeValue(command.action)}");
-
-                if (!string.Equals(command.type, "command", StringComparison.Ordinal))
-                {
-                    LogWarning("message_dropped", commandId,
-                        $"reason=unexpected type, msgType={SafeValue(command.type)}, action={SafeValue(command.action)}");
-                    return;
-                }
-
-                if (string.IsNullOrWhiteSpace(command.action))
-                {
-                    LogWarning("message_dropped", commandId, "reason=missing action");
-                    return;
-                }
 
                 LogInfo("command_received", commandId, $"action={command.action}");
                 LogInfo("queue_enqueue", commandId, $"action={command.action}");
@@ -507,15 +492,16 @@ namespace VRClassroom
                         {
                             string file = command.file;
                             string mode = command.mode;
+                            string placementMode = command.placementMode;
                             bool loop = command.loop;
                             bool autoRecenterOnOpen = command.autoRecenterOnOpen;
                             LogInfo("command_start", commandId,
-                                $"action=open, file={SafeValue(file)}, mode={SafeValue(mode)}, loop={loop}");
+                                $"action=open, file={SafeValue(file)}, mode={SafeValue(mode)}, placementMode={SafeValue(placementMode)}, loop={loop}");
 
                             ViewMode targetMode = viewModeManager != null ? viewModeManager.CurrentMode : PlayerConfig.DefaultViewMode;
                             if (viewModeManager != null && !string.IsNullOrEmpty(mode))
                             {
-                                targetMode = ADBCommandRouter.ParseMode(mode);
+                                targetMode = ViewModeParser.Parse(mode);
                                 if (targetMode != viewModeManager.CurrentMode)
                                     viewModeManager.SetMode(targetMode);
                             }
@@ -523,6 +509,7 @@ namespace VRClassroom
                             if (viewModeManager != null)
                             {
                                 viewModeManager.ApplyAdvancedSettingsOverride(targetMode, command.advancedSettings);
+                                viewModeManager.ApplyPlacementOverride(targetMode, placementMode);
                             }
 
                             if (autoRecenterOnOpen)
@@ -550,7 +537,7 @@ namespace VRClassroom
                                     videoPlayer.Open(file);
                                 }
                                 LogInfo("command_end", commandId,
-                                    $"action=open, file={SafeValue(file)}, mode={SafeValue(mode)}, loop={loop}, openInvoked={openInvoked}");
+                                    $"action=open, file={SafeValue(file)}, mode={SafeValue(mode)}, placementMode={SafeValue(placementMode)}, loop={loop}, openInvoked={openInvoked}");
                                 break;
                             }
                         };
@@ -594,7 +581,7 @@ namespace VRClassroom
                             LogInfo("command_start", commandId, $"action=set_mode, mode={SafeValue(mode)}");
                             if (viewModeManager != null && !string.IsNullOrEmpty(mode))
                             {
-                                ViewMode vm = ADBCommandRouter.ParseMode(mode);
+                                ViewMode vm = ViewModeParser.Parse(mode);
                                 viewModeManager.SetMode(vm);
                             }
                             LogInfo("command_end", commandId, $"action=set_mode, mode={SafeValue(mode)}");

@@ -8,8 +8,7 @@ namespace VRClassroom
     /// <summary>
     /// On-screen debug log panel for VR. Captures Unity debug logs and displays them
     /// on a world-space canvas anchored to the right side of the VR camera view.
-    /// Toggle via: HTTP GET/POST /debug, ADB broadcast TOGGLE_DEBUG, or 3 quick
-    /// taps on the right controller trigger.
+    /// Toggle via: HTTP GET/POST /debug or 3 quick taps on the right controller trigger.
     /// </summary>
     public class DebugLogPanel : MonoBehaviour
     {
@@ -176,10 +175,9 @@ namespace VRClassroom
 
             // Capture logs from our components
             if (message.StartsWith("[LanServer]", StringComparison.Ordinal)) return true;
-            if (message.StartsWith("[ADBCommandRouter]", StringComparison.Ordinal)) return true;
-            if (message.StartsWith("[ADBReceiverBridge]", StringComparison.Ordinal)) return true;
             if (message.StartsWith("[VideoPlayerController]", StringComparison.Ordinal)) return true;
             if (message.StartsWith("[ViewModeManager]", StringComparison.Ordinal)) return true;
+            if (message.StartsWith("[ViewModeParser]", StringComparison.Ordinal)) return true;
             if (message.StartsWith("[OrientationManager]", StringComparison.Ordinal)) return true;
             if (message.StartsWith("[StatusReporter]", StringComparison.Ordinal)) return true;
             if (message.StartsWith("[PlayerStateManager]", StringComparison.Ordinal)) return true;

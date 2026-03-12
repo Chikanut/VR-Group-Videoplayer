@@ -31,10 +31,5 @@ namespace VRClassroom
         /// RenderTexture resolution for video output.
         /// </summary>
         public const int RenderTextureSize = 2048;
-
-        /// <summary>
-        /// ADB broadcast action prefix.
-        /// </summary>
-        public const string AdbActionPrefix = "com.vrclass.player.";
     }
 }

@@ -13,13 +13,6 @@ if ! command -v python3 &>/dev/null; then
     exit 1
 fi
 
-# Check ADB
-if ! command -v adb &>/dev/null; then
-    echo "[WARNING] ADB not found in PATH. Device management will not work."
-    echo "Install Android Platform Tools."
-    echo
-fi
-
 # Create venv if needed
 if [ ! -d "App/venv" ]; then
     echo "[SETUP] Creating virtual environment..."

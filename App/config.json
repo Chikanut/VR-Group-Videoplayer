@@ -1,15 +1,14 @@
 {
-  "apkPath": "D:\\UnityProjects\\VRGroupViewer\\VR Group Videoplayer\\VRClassroomPlayer\\Builds\\VRClassroomVideoPlayer.apk",
-  "apkDownloadUrl": "https://drive.google.com/file/d/1bzkL8nKm0a7UxVlygO3GqJbHiYHD86FZ/view?usp=drive_link",
-  "packageId": "com.vrclass.player",
-  "adbActionPrefix": "com.vrclass.player",
+  "mobileAppUrl": "",
+  "playerAppUrl": "",
   "requirementVideos": [
     {
       "id": "50550c47-a082-4b1e-b3fb-97809f8f57b5",
-      "name": "\u041f\u0435\u0440\u0448\u0438\u0439 \u0431\u0456\u0439 (8 \u0445\u0432)",
-      "localPath": "C:\\Users\\eugen\\Desktop\\Working Files\\GSPP\\VR Videos\\FIRST BATTLE\\First Battle short (8 min).mp4",
+      "name": "Перший бій (8 хв)",
+      "filename": "First Battle short (8 min).mp4",
       "loop": false,
       "videoType": "360",
+      "placementMode": "default",
       "advancedSettings": {
         "overrideTransformSettings": true,
         "overrideMaterialSettings": true,
@@ -51,10 +50,11 @@
     },
     {
       "id": "e7b639ea-6850-436e-b154-8ff56ed7dc40",
-      "name": "\u041f\u0435\u0440\u0448\u0438\u0439 \u0431\u0456\u0439 (17 \u0445\u0432)",
-      "localPath": "C:\\Users\\eugen\\Desktop\\Working Files\\GSPP\\VR Videos\\FIRST BATTLE\\First Battle only action (17 min).mp4",
+      "name": "Перший бій (17 хв)",
+      "filename": "First Battle only action (17 min).mp4",
       "loop": false,
       "videoType": "360",
+      "placementMode": "default",
       "advancedSettings": {
         "overrideTransformSettings": true,
         "overrideMaterialSettings": true,
@@ -96,10 +96,11 @@
     },
     {
       "id": "edbaf63a-1bfa-474d-b470-e902edb4701a",
-      "name": "\u041f\u0435\u0440\u0448\u0438\u0439 \u0431\u0456\u0439 (\u043f\u043e\u0432\u043d\u0430 \u0432\u0435\u0440\u0441\u0456\u044f)",
-      "localPath": "C:\\Users\\eugen\\Desktop\\Working Files\\GSPP\\VR Videos\\FIRST BATTLE\\First Battle full with comments (31 min).mp4",
+      "name": "Перший бій (повна версія)",
+      "filename": "First Battle full with comments (31 min).mp4",
       "loop": false,
       "videoType": "360",
+      "placementMode": "default",
       "advancedSettings": {
         "overrideTransformSettings": true,
         "overrideMaterialSettings": true,
@@ -141,10 +142,11 @@
     },
     {
       "id": "fa86cdd8-00a9-4416-941f-c7bbe5077383",
-      "name": "\u0414\u0428\u0412 \u041c\u0443\u0437\u0435\u0439",
-      "localPath": "C:\\Users\\eugen\\Desktop\\Working Files\\GSPP\\VR Videos\\NPP\\DSHV history.mp4",
+      "name": "ДШВ Музей",
+      "filename": "DSHV history.mp4",
       "loop": false,
       "videoType": "2d",
+      "placementMode": "free",
       "advancedSettings": {
         "overrideTransformSettings": false,
         "overrideMaterialSettings": false,
@@ -186,10 +188,11 @@
     },
     {
       "id": "a9dccb55-28b4-4f09-b633-6238ef0209f4",
-      "name": "\u0411\u0443\u0447\u0430",
-      "localPath": "C:\\Users\\eugen\\Desktop\\Working Files\\GSPP\\VR Videos\\NPP\\VR_Bucha.mp4",
+      "name": "Буча",
+      "filename": "VR_Bucha.mp4",
       "loop": false,
       "videoType": "360",
+      "placementMode": "default",
       "advancedSettings": {
         "overrideTransformSettings": true,
         "overrideMaterialSettings": true,
@@ -231,18 +234,8 @@
     }
   ],
   "batteryThreshold": 20,
-  "scanInterval": 10,
+  "scanInterval": 5,
   "networkSubnet": "",
-  "networkSubnetAuto": true,
   "serverPort": 8000,
-  "playerPort": 8080,
-  "deviceOfflineTimeout": 15,
-  "updateConcurrency": 5,
-  "ignoreRequirements": true,
-  "adbEnabled": false,
-  "adbAvailable": true,
-  "isAndroidRuntime": false,
-  "statusPollInterval": 5,
-  "requirementsPollInterval": 10,
-  "fastResyncOnFocus": true
+  "deviceOfflineTimeout": 15
 }

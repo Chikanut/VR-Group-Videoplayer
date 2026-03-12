@@ -21,6 +21,7 @@ namespace VRClassroom
         private readonly Dictionary<ViewMode, Material> _materials = new Dictionary<ViewMode, Material>();
         private readonly Dictionary<ViewMode, ViewModeConfig> _configLookup = new Dictionary<ViewMode, ViewModeConfig>();
         private readonly Dictionary<ViewMode, VideoAdvancedSettings> _runtimeOverrides = new Dictionary<ViewMode, VideoAdvancedSettings>();
+        private readonly Dictionary<ViewMode, string> _placementOverrides = new Dictionary<ViewMode, string>();
 
         private void Awake()
         {
@@ -121,6 +122,20 @@ namespace VRClassroom
             else
             {
                 _runtimeOverrides.Remove(mode);
+            }
+
+            ApplyResolvedSettings(mode);
+        }
+
+        public void ApplyPlacementOverride(ViewMode mode, string placementMode)
+        {
+            if (string.IsNullOrWhiteSpace(placementMode) || placementMode.Equals("default", StringComparison.OrdinalIgnoreCase))
+            {
+                _placementOverrides.Remove(mode);
+            }
+            else
+            {
+                _placementOverrides[mode] = placementMode;
             }
 
             ApplyResolvedSettings(mode);
@@ -236,6 +251,18 @@ namespace VRClassroom
                 localPosition = overrideSettings.transformSettings.localPosition;
                 localRotation = overrideSettings.transformSettings.localRotation;
                 localScale = overrideSettings.transformSettings.localScale;
+            }
+
+            if (_placementOverrides.TryGetValue(mode, out string placementMode))
+            {
+                if (placementMode.Equals("locked", StringComparison.OrdinalIgnoreCase))
+                {
+                    parentToCam = true;
+                }
+                else if (placementMode.Equals("free", StringComparison.OrdinalIgnoreCase))
+                {
+                    parentToCam = false;
+                }
             }
 
             obj.transform.SetParent(parentToCam ? vrCamera : transform);

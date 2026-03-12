@@ -9,7 +9,6 @@ export function useWebSocket() {
   const reconnectTimer = useRef(null);
 
   const {
-    config,
     setConnected,
     setLoading,
     handleSnapshot,
@@ -20,8 +19,6 @@ export function useWebSocket() {
   } = useDeviceStore();
 
   useEffect(() => {
-    const isFastResyncEnabled = () => (config?.fastResyncOnFocus ?? true);
-
     function connect() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const host = window.location.host;
@@ -77,8 +74,6 @@ export function useWebSocket() {
     }
 
     function reconnectNow() {
-      if (!isFastResyncEnabled()) return;
-
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current);
         reconnectTimer.current = null;
@@ -113,7 +108,6 @@ export function useWebSocket() {
       if (wsRef.current) wsRef.current.close();
     };
   }, [
-    config?.fastResyncOnFocus,
     setConnected,
     setLoading,
     handleSnapshot,
