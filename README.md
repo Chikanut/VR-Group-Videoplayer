@@ -1,69 +1,104 @@
 # VR Group Videoplayer
 
-VR Group Videoplayer is a two-part classroom VR video system:
+VR Group Videoplayer is a classroom video playback system for Meta Quest headsets. It helps one instructor or lab administrator prepare videos, discover headsets on the local network, and start synchronized playback from a simple control panel.
 
-1. `App/` — instructor control panel built with FastAPI + React
-2. `VRClassroomPlayer/` — Unity player app running on Meta Quest
+This repository is the public home for downloads, setup guides, and technical reference material.
 
-The system now uses **HTTP + WebSocket only**. ADB and USB provisioning logic have been removed from both the control panel and the player.
+## Downloads
 
-## Main Flow
+Download the latest public build from [GitHub Releases](https://github.com/Chikanut/VR-Group-Videoplayer/releases/latest).
 
-- The control panel scans the local subnet for players on port `8080`
-- Players expose HTTP endpoints and connect back over WebSocket
-- The dashboard shows device state, battery, playback, and file availability
-- Videos are configured by **filename only**
-- When playback starts, the control panel sends just the filename
-- The player opens that filename from `/sdcard/Movies/`
+Release assets use these stable names:
 
-## Current Feature Set
+| File | Use it for |
+|---|---|
+| `VRClassroomPlayer-Quest.apk` | Install on each Meta Quest headset |
+| `VRClassroomControlPanel-Android.apk` | Run the control panel on an Android phone or tablet |
+| `VRClassroomControlPanel-Windows.exe` | Run the control panel on a Windows PC |
 
-- Network discovery of Quest players
-- Live dashboard with playback/battery/device state
-- Playback control for all devices or a single device
-- Per-device and global volume control
-- Configurable required videos by filename
-- Import/export of `config.json` and `device_names.json`
-- Player app download link with QR code in the connection popup
-- Per-video placement override:
-  - `default`
-  - `locked`
-  - `free`
+If you are not sure where to start, download:
 
-## Repository Structure
+- `VRClassroomPlayer-Quest.apk` for every headset
+- one control panel app for the instructor device: Android or Windows
 
-```text
-App/                 Control panel (FastAPI + React)
-VRClassroomPlayer/   Unity player for Meta Quest
-PlayerAPI.md         Player HTTP API reference
+## What This System Does
+
+- discovers VR players on the same local network
+- shows which headset is online and ready
+- lets you configure lessons by video filename
+- starts, pauses, stops, and recenters playback across the class
+- supports both flat 2D and 360 video playback
+
+## Who It Is For
+
+- schools and training centers using Meta Quest headsets
+- teachers who need one-screen playback control
+- lab administrators who prepare devices before a lesson
+
+## How It Works
+
+1. Install the Quest player on each headset.
+2. Install the control panel on a Windows PC or Android device.
+3. Put lesson videos onto each headset in `/sdcard/Movies/`.
+4. Connect all devices to the same local network.
+5. Open the control panel, discover devices, configure video filenames, and start playback.
+
+```mermaid
+flowchart LR
+    A["Instructor device<br/>Windows or Android control panel"] --> B["Local network"]
+    B --> C["Quest headset 1<br/>Player app"]
+    B --> D["Quest headset 2<br/>Player app"]
+    B --> E["Quest headset N<br/>Player app"]
 ```
 
-## Quick Start
+## Documentation
 
-### Control Panel
+### English
 
-```bash
-cd App
-pip install -r requirements.txt
-cd frontend
-npm install
-npm run build
-cd ..
-python run.py
-```
+- [Overview](docs/en/overview.md)
+- [Downloads](docs/en/downloads.md)
+- [Quick Start](docs/en/quick-start.md)
+- [Set Up the Control Panel](docs/en/setup-control-panel.md)
+- [Set Up the Quest Player](docs/en/setup-player.md)
+- [Prepare Videos](docs/en/prepare-videos.md)
+- [Daily Use](docs/en/daily-use.md)
+- [Networking and Troubleshooting](docs/en/networking-troubleshooting.md)
 
-### Player
+### Українська
 
-Open `VRClassroomPlayer/` in Unity, build for Quest, and install the APK on the headset.
+- [Огляд](docs/uk/overview.md)
+- [Завантаження](docs/uk/downloads.md)
+- [Швидкий старт](docs/uk/quick-start.md)
+- [Налаштування панелі керування](docs/uk/setup-control-panel.md)
+- [Налаштування Quest player](docs/uk/setup-player.md)
+- [Підготовка відео](docs/uk/prepare-videos.md)
+- [Щоденне використання](docs/uk/daily-use.md)
+- [Мережа та усунення проблем](docs/uk/networking-troubleshooting.md)
 
-## Key Paths and Ports
+## Need Help?
 
-- Control panel: `http://localhost:8000`
-- Player HTTP API: `http://<device-ip>:8080`
-- Player video directory: `/sdcard/Movies/`
+If devices are not discovered:
 
-## Notes
+- confirm all devices are on the same Wi-Fi or LAN
+- make sure the control panel and headsets are in the same subnet
+- check Windows firewall or router isolation settings
 
-- The Android control-panel wrapper no longer bakes the repo's current `config.json` or `device_names.json` into the app.
-- Older player versions safely ignore the new `placementMode` field.
-- The control panel repo `App/config.json` is now a default template rather than a machine-specific runtime config.
+If playback does not start:
+
+- make sure the same filename exists on the headset
+- confirm the headset player app is open and online
+- verify the selected mode matches the video type
+
+If a video appears missing:
+
+- copy the file to `/sdcard/Movies/`
+- use only the filename in the control panel, not the full path
+- re-open the player app or refresh the device state
+
+See the full troubleshooting guides in [English](docs/en/networking-troubleshooting.md) and [Ukrainian](docs/uk/networking-troubleshooting.md).
+
+## For Maintainers
+
+- [Release checklist](docs/releasing.md)
+- [Release notes template](docs/release-notes-template.md)
+- [Technical player API reference](PlayerAPI.md)
