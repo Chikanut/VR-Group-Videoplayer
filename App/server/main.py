@@ -90,6 +90,11 @@ app.add_middleware(
 )
 
 
+@app.get("/api/health")
+async def health_check():
+    return {"ok": True}
+
+
 @app.get("/api/config")
 async def get_config_endpoint():
     return get_config()
@@ -431,7 +436,16 @@ def _get_local_ip() -> str:
 def _resolve_frontend_dist() -> Path:
     if getattr(sys, "frozen", False):
         return Path(getattr(sys, "_MEIPASS", Path.cwd())) / "frontend" / "dist"
-    return Path(__file__).parent.parent / "frontend" / "dist"
+
+    candidate_paths = [
+        Path(__file__).parent.parent / "frontend" / "dist",
+        Path(__file__).parent.parent / "android_web_dist",
+    ]
+    for path in candidate_paths:
+        if path.exists():
+            return path
+
+    return candidate_paths[0]
 
 
 FRONTEND_DIST = _resolve_frontend_dist()

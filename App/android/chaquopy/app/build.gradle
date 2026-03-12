@@ -4,6 +4,78 @@ plugins {
     id 'com.chaquo.python'
 }
 
+def generatedPythonDir = layout.buildDirectory.dir("generated/python")
+
+tasks.register("prepareFrontendDistForAndroid", Sync) {
+    group = "build"
+    description = "Copies the built React frontend into the embedded Python package for Android."
+
+    def frontendDistDir = project.file("../../../frontend/dist")
+    from(frontendDistDir)
+    into(generatedPythonDir.map { it.dir("android_web_dist") })
+
+    doFirst {
+        if (!frontendDistDir.exists() || !new File(frontendDistDir, "index.html").exists()) {
+            throw new GradleException(
+                "Frontend dist is missing. Run 'npm run build' in App/frontend before building the Android app."
+            )
+        }
+    }
+}
+
+tasks.register("checkEmbeddedPythonCompatibility") {
+    group = "verification"
+    description = "Checks embedded Python sources for syntax incompatible with the Android Python 3.8 runtime."
+
+    doLast {
+        def script = project.file("check_embedded_python_compat.py")
+        def sourceDirs = [
+            project.file("src/main/python").absolutePath,
+            project.file("../../../server").absolutePath,
+        ]
+        def lastError = null
+        def executed = false
+
+        for (String commandName : ["python", "python3"]) {
+            try {
+                def result = exec {
+                    ignoreExitValue true
+                    commandLine([commandName, script.absolutePath] + sourceDirs)
+                }
+
+                executed = true
+                if (result.exitValue != 0) {
+                    throw new GradleException("Embedded Python compatibility check failed. See output above.")
+                }
+                break
+            } catch (Exception ex) {
+                lastError = ex
+                if (executed) {
+                    throw ex
+                }
+            }
+        }
+
+        if (!executed) {
+            throw new GradleException(
+                "Unable to run embedded Python compatibility check with python or python3.",
+                lastError
+            )
+        }
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn("checkEmbeddedPythonCompatibility")
+    dependsOn("prepareFrontendDistForAndroid")
+}
+
+tasks.configureEach { task ->
+    if (task.name =~ /^merge.*PythonSources$/) {
+        task.dependsOn("prepareFrontendDistForAndroid")
+    }
+}
+
 android {
     namespace 'com.vrclassroom.controlpanel'
     compileSdk 34
@@ -48,7 +120,7 @@ android {
 
     sourceSets {
         main {
-            python.srcDirs = ["src/main/python", "../../../"]
+            python.srcDirs = ["src/main/python", generatedPythonDir.get().asFile.absolutePath, "../../../"]
             python.exclude "android/**"
             python.exclude "config.json"
             python.exclude "device_names.json"

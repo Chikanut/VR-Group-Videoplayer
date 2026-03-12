@@ -9,6 +9,52 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <LinearLayout
+        android:id="@+id/startupOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#E61A1D26"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <ProgressBar
+            android:id="@+id/startupProgress"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:indeterminate="true"
+            android:indeterminateTint="#FFFFFF" />
+
+        <TextView
+            android:id="@+id/startupStatusText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/server_starting_title"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/startupDetailText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:maxLines="10"
+            android:text="@string/server_starting_detail"
+            android:textColor="#D7E1FF"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/startupRestartButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="@string/restart_server"
+            android:visibility="gone" />
+    </LinearLayout>
+
     <ImageButton
         android:id="@+id/toggleDebugOverlayButton"
         android:layout_width="44dp"

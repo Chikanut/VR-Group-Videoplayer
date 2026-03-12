@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Set
 
 import aiohttp
 
@@ -11,7 +11,7 @@ from .device_manager import device_manager
 logger = logging.getLogger("vrclassroom.requirements")
 
 
-async def _load_device_files(device_ip: str) -> set[str]:
+async def _load_device_files(device_ip: str) -> Set[str]:
     async with aiohttp.ClientSession() as session:
         url = f"http://{device_ip}:{PLAYER_HTTP_PORT}/files"
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
@@ -19,7 +19,7 @@ async def _load_device_files(device_ip: str) -> set[str]:
                 raise RuntimeError(f"HTTP {resp.status}")
             data = await resp.json()
 
-    filenames: set[str] = set()
+    filenames: Set[str] = set()
     for file_info in data.get("files", []):
         filename = str(file_info.get("name", "")).strip()
         path = str(file_info.get("path", "")).strip()

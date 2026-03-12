@@ -260,9 +260,15 @@ def load_device_names() -> dict:
 
 
 def export_device_names() -> Dict[str, str]:
+    global _device_names
+    with _device_names_lock:
+        if _device_names:
+            return dict(_device_names)
+
+    loaded = load_device_names()
     with _device_names_lock:
         if not _device_names:
-            load_device_names()
+            _device_names = dict(loaded)
         return dict(_device_names)
 
 

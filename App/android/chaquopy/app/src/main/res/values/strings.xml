@@ -1,3 +1,14 @@
 <resources>
     <string name="app_name">VR Control Panel</string>
+    <string name="restart_server">Restart server</string>
+    <string name="server_starting_title">Starting local server</string>
+    <string name="server_starting_detail">Waiting for the embedded FastAPI server to become ready.</string>
+    <string name="server_running_detail">Embedded server thread is running. Waiting for /api/health...</string>
+    <string name="server_stopped_detail">Embedded server is not running yet. Waiting for restart.</string>
+    <string name="server_failed_title">Server failed to start</string>
+    <string name="server_failed_fallback_detail">The embedded Python server crashed during startup. Use Restart server to try again.</string>
+    <string name="server_timeout_title">Server startup timed out</string>
+    <string name="server_timeout_detail">Timed out after %1$d seconds waiting for /api/health.</string>
+    <string name="export_saved_message">Saved %1$s to Downloads/VRClassroom</string>
+    <string name="export_failed_message">Failed to save exported file</string>
 </resources>

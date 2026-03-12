@@ -39,13 +39,23 @@ function stripRuntimeFields(config) {
 }
 
 function downloadJson(filename, data) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const payload = JSON.stringify(data, null, 2);
+
+  if (window.AndroidBridge?.saveJsonFile) {
+    const saved = window.AndroidBridge.saveJsonFile(filename, payload);
+    if (saved) {
+      return true;
+    }
+  }
+
+  const blob = new Blob([payload], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+  return true;
 }
 
 function createUniqueVideoName(videos, sourceName) {
@@ -79,12 +89,17 @@ export default function SettingsPage() {
   }, []);
 
   const loadAll = async () => {
-    const [configData, deviceNamesData] = await Promise.all([
-      getConfig(),
-      getDeviceNames(),
-    ]);
-    setConfig(configData);
-    setDeviceNames(deviceNamesData || {});
+    setError('');
+    try {
+      const [configData, deviceNamesData] = await Promise.all([
+        getConfig(),
+        getDeviceNames(),
+      ]);
+      setConfig(configData);
+      setDeviceNames(deviceNamesData || {});
+    } catch {
+      setError(t('Failed to load settings'));
+    }
   };
 
   const showSuccess = (message) => {
