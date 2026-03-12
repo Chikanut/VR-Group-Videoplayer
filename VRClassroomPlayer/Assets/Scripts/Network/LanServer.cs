@@ -43,6 +43,7 @@ namespace VRClassroom
             if (statusReporter == null) Debug.LogError("[LanServer] StatusReporter reference is NOT assigned!");
             if (debugLogPanel == null) Debug.LogWarning("[LanServer] DebugLogPanel reference is not assigned (debug toggle will not work).");
             LoadVideoAdvancedSettings();
+            AndroidMediaScanner.ScanDirectory(PlayerConfig.VideoPath);
             StartServer();
         }
 
@@ -324,6 +325,9 @@ namespace VRClassroom
                         case "/debug":
                             HandlePostDebugToggle(response, body);
                             return;
+                        case "/media/scan":
+                            HandlePostMediaScan(response, body);
+                            return;
                     }
                 }
 
@@ -472,6 +476,33 @@ namespace VRClassroom
             });
 
             SendJson(response, 200, "{\"ok\":true}");
+        }
+
+        private void HandlePostMediaScan(HttpListenerResponse response, string body)
+        {
+            string[] filesToScan;
+            try
+            {
+                MediaScanRequest data = null;
+                if (!string.IsNullOrEmpty(body))
+                {
+                    data = JsonUtility.FromJson<MediaScanRequest>(body);
+                }
+                filesToScan = ResolveMediaScanTargets(data?.files);
+            }
+            catch (Exception e)
+            {
+                SendJson(response, 400, "{\"error\":\"invalid json: " + EscapeJson(e.Message) + "\"}");
+                return;
+            }
+
+            int queued = filesToScan.Length;
+            QueueCommand(() =>
+            {
+                AndroidMediaScanner.ScanFiles(filesToScan);
+            });
+
+            SendJson(response, 200, "{\"ok\":true,\"queued\":" + queued + "}");
         }
 
         private void HandlePostVolume(HttpListenerResponse response, string body)
@@ -691,6 +722,25 @@ namespace VRClassroom
             return Path.GetFileName(file ?? string.Empty).Trim();
         }
 
+        private static string[] ResolveMediaScanTargets(string[] files)
+        {
+            if (files == null || files.Length == 0)
+            {
+                return Directory.Exists(PlayerConfig.VideoPath)
+                    ? Directory.GetFiles(PlayerConfig.VideoPath)
+                    : Array.Empty<string>();
+            }
+
+            return files
+                .Where(file => !string.IsNullOrWhiteSpace(file))
+                .Select(file => file.Replace("\\", "/").Trim())
+                .Select(file => file.StartsWith("/")
+                    ? file
+                    : PlayerConfig.VideoPath.TrimEnd('/') + "/" + Path.GetFileName(file))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
         private static VideoAdvancedSettings CloneAdvancedSettings(VideoAdvancedSettings source)
         {
             if (source == null)
@@ -865,6 +915,12 @@ namespace VRClassroom
         private class VideoSettingsStorage
         {
             public VideoSettingsItem[] items;
+        }
+
+        [Serializable]
+        private class MediaScanRequest
+        {
+            public string[] files;
         }
 
         [Serializable]

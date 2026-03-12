@@ -102,6 +102,38 @@ App/*.spec
 App/.env.*
 App/.envrc
 
+############################################
+# QUEST UPDATER TOOL (tools/quest_updater/)
+############################################
+
+# Python cache
+tools/quest_updater/**/__pycache__/
+tools/quest_updater/*.py[cod]
+
+# Local runtime config
+tools/quest_updater/quest_updater.config.json
+
+# Virtual environments
+tools/quest_updater/.env
+tools/quest_updater/.venv/
+tools/quest_updater/venv/
+tools/quest_updater/ENV/
+tools/quest_updater/env/
+tools/quest_updater/.python-version
+
+# Packaging / build output
+tools/quest_updater/build/
+tools/quest_updater/dist/
+tools/quest_updater/*.spec
+tools/quest_updater/*.manifest
+tools/quest_updater/*.egg-info/
+tools/quest_updater/.eggs/
+tools/quest_updater/pip-wheel-metadata/
+
+# IDEs
+tools/quest_updater/.idea/
+tools/quest_updater/.vscode/
+
 
 ############################################
 # UNITY PROJECT (VRClassroomPlayer/)

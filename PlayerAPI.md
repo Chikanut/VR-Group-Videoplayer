@@ -174,6 +174,22 @@ curl -X PUT http://<IP>:8080/server-ip \
   -d '{"serverIp":"192.168.1.10:8000"}'
 ```
 
+### `POST /media/scan`
+
+Перескановує вказані файли у системній медіатеці Android, щоб вони стали видимими в файлових застосунках і стандартному програвачі Quest.
+
+```bash
+curl -X POST http://<IP>:8080/media/scan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "files":[
+      "/sdcard/Movies/lesson01.mp4"
+    ]
+  }'
+```
+
+Якщо `files` не передати, плеєр пересканує весь каталог `/sdcard/Movies/`.
+
 ---
 
 ## HTTP відповіді
