@@ -1,6 +1,6 @@
 {
-  "mobileAppUrl": "",
-  "playerAppUrl": "",
+  "mobileAppUrl": "https://drive.google.com/file/d/1bzkL8nKm0a7UxVlygO3GqJbHiYHD86FZ/view?usp=drive_link",
+  "playerAppUrl": "https://drive.google.com/file/d/1e6hzmJorYqIbiDOfd7tBuxgh3WWI6M9z/view?usp=drive_link",
   "requirementVideos": [
     {
       "id": "50550c47-a082-4b1e-b3fb-97809f8f57b5",
@@ -39,12 +39,14 @@
           "brightness": 1.0,
           "textureTiling": {
             "x": 1.0,
-            "y": 0.5
+            "y": 1.0
           },
           "textureOffset": {
             "x": 0.0,
-            "y": 0.25
-          }
+            "y": 0.0
+          },
+          "topCrop": 0.236,
+          "bottomCrop": 0.2335
         }
       }
     },
@@ -90,7 +92,9 @@
           "textureOffset": {
             "x": 0.0,
             "y": 0.25
-          }
+          },
+          "topCrop": 0.0,
+          "bottomCrop": 0.0
         }
       }
     },
@@ -136,7 +140,9 @@
           "textureOffset": {
             "x": 0.0,
             "y": 0.25
-          }
+          },
+          "topCrop": 0.0,
+          "bottomCrop": 0.0
         }
       }
     },
@@ -182,7 +188,9 @@
           "textureOffset": {
             "x": 0.0,
             "y": 0.0
-          }
+          },
+          "topCrop": 0.0,
+          "bottomCrop": 0.0
         }
       }
     },
@@ -228,7 +236,9 @@
           "textureOffset": {
             "x": 0.0,
             "y": 0.25
-          }
+          },
+          "topCrop": 0.0,
+          "bottomCrop": 0.0
         }
       }
     }

@@ -22,6 +22,8 @@ function createDefaultAdvancedSettings() {
       brightness: 1,
       textureTiling: { x: 1, y: 1 },
       textureOffset: { x: 0, y: 0 },
+      topCrop: 0,
+      bottomCrop: 0,
     },
   };
 }
@@ -664,6 +666,28 @@ export default function SettingsPage() {
                           step="0.01"
                           value={advancedSettings.materialSettings.textureOffset.y}
                           onChange={(event) => updateVideoAdvancedSetting(index, ['materialSettings', 'textureOffset', 'y'], parseFloat(event.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Top Crop')}</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="0.49"
+                          step="0.001"
+                          value={advancedSettings.materialSettings.topCrop}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['materialSettings', 'topCrop'], parseFloat(event.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>{t('Bottom Crop')}</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="0.49"
+                          step="0.001"
+                          value={advancedSettings.materialSettings.bottomCrop}
+                          onChange={(event) => updateVideoAdvancedSetting(index, ['materialSettings', 'bottomCrop'], parseFloat(event.target.value) || 0)}
                         />
                       </div>
                     </div>

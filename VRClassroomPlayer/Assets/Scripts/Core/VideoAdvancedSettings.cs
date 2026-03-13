@@ -27,5 +27,7 @@ namespace VRClassroom
         public float brightness = 1f;
         public Vector2 textureTiling = Vector2.one;
         public Vector2 textureOffset = Vector2.zero;
+        public float topCrop = 0f;
+        public float bottomCrop = 0f;
     }
 }

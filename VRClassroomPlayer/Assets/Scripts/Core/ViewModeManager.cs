@@ -282,6 +282,8 @@ namespace VRClassroom
             float brightness = config != null ? config.brightness : 1f;
             Vector2 tiling = config != null ? config.textureTiling : Vector2.one;
             Vector2 offset = config != null ? config.textureOffset : Vector2.zero;
+            float topCrop = 0f;
+            float bottomCrop = 0f;
 
             if (overrideSettings != null && overrideSettings.overrideMaterialSettings && overrideSettings.materialSettings != null)
             {
@@ -289,6 +291,8 @@ namespace VRClassroom
                 brightness = overrideSettings.materialSettings.brightness;
                 tiling = overrideSettings.materialSettings.textureTiling;
                 offset = overrideSettings.materialSettings.textureOffset;
+                topCrop = overrideSettings.materialSettings.topCrop;
+                bottomCrop = overrideSettings.materialSettings.bottomCrop;
             }
 
             if (material.HasProperty("_Color"))
@@ -308,6 +312,12 @@ namespace VRClassroom
                 material.SetTextureScale("_BaseMap", tiling);
                 material.SetTextureOffset("_BaseMap", offset);
             }
+
+            if (material.HasProperty("_TopCrop"))
+                material.SetFloat("_TopCrop", topCrop);
+
+            if (material.HasProperty("_BottomCrop"))
+                material.SetFloat("_BottomCrop", bottomCrop);
         }
     }
 }

@@ -17,6 +17,8 @@ class VideoMaterialSettings(BaseModel):
     brightness: float = 1.0
     textureTiling: Dict[str, float] = Field(default_factory=lambda: {"x": 1.0, "y": 1.0})
     textureOffset: Dict[str, float] = Field(default_factory=lambda: {"x": 0.0, "y": 0.0})
+    topCrop: float = 0.0
+    bottomCrop: float = 0.0
 
 
 class VideoAdvancedSettings(BaseModel):

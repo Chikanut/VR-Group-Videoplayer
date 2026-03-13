@@ -33,6 +33,19 @@ if errorlevel 1 (
     exit /b 1
 )
 
+set "FULL_FRONTEND_REBUILD=0"
+set /p FULL_FRONTEND_REBUILD="Run full frontend rebuild (delete node_modules and package-lock.json)? [y/N]: "
+if /I "%FULL_FRONTEND_REBUILD%"=="y" (
+    echo [BUILD] Removing frontend node_modules and package-lock.json...
+    if exist "frontend\node_modules" rmdir /s /q "frontend\node_modules"
+    if exist "frontend\package-lock.json" del /f /q "frontend\package-lock.json"
+)
+
+if exist "frontend\dist" (
+    echo [BUILD] Removing old frontend dist...
+    rmdir /s /q "frontend\dist"
+)
+
 echo [BUILD] Building frontend...
 pushd frontend
 call npm install

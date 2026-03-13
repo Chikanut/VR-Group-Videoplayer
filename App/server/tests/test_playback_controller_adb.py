@@ -51,6 +51,51 @@ class PlaybackControllerOpenTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["placementMode"], "free")
         self.assertEqual(payload["loop"], True)
 
+    async def test_open_video_passes_advanced_material_crop_settings(self):
+        device = SimpleNamespace(
+            device_id="quest-1",
+            name="Quest 1",
+            online=True,
+            player_connected=True,
+            requirements_detail=[{"type": "video", "id": "video-1", "present": True}],
+        )
+
+        with patch.object(
+            playback_controller,
+            "get_config",
+            return_value={
+                "requirementVideos": [
+                    {
+                        "id": "video-1",
+                        "name": "Lesson 01",
+                        "filename": "lesson_01.mp4",
+                        "videoType": "360",
+                        "loop": False,
+                        "advancedSettings": {
+                            "overrideMaterialSettings": True,
+                            "materialSettings": {
+                                "topCrop": 0.041,
+                                "bottomCrop": 0.057,
+                            },
+                        },
+                    }
+                ]
+            },
+        ), patch.object(
+            playback_controller,
+            "_resolve_devices",
+            new=AsyncMock(return_value=[device]),
+        ), patch.object(
+            playback_controller,
+            "_send_command_to_device",
+            new=AsyncMock(return_value={"success": True}),
+        ) as send_mock:
+            await playback_controller.open_video("video-1", [])
+
+        payload = send_mock.await_args.args[3]
+        self.assertEqual(payload["advancedSettings"]["materialSettings"]["topCrop"], 0.041)
+        self.assertEqual(payload["advancedSettings"]["materialSettings"]["bottomCrop"], 0.057)
+
 
 if __name__ == "__main__":
     unittest.main()
