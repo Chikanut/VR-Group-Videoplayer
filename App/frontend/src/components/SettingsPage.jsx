@@ -284,37 +284,15 @@ export default function SettingsPage() {
 
       <section className="settings-section">
         <h2>{t('General')}</h2>
-        <div className="settings-grid">
-          <div className="form-group">
-            <label>{t('Language')}</label>
-            <select value={language} onChange={(event) => setLanguage(event.target.value)}>
-              <option value="uk">{t('Ukrainian')}</option>
-              <option value="en">{t('English')}</option>
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label>{t('Phone Control App Link')}</label>
-            <input
-              type="text"
-              value={config.mobileAppUrl || ''}
-              onChange={(event) => updateField('mobileAppUrl', event.target.value)}
-              placeholder="https://example.com/control-panel.apk"
-            />
-            <span className="form-hint">{t('Used in the Connection popup as a QR code and direct download link for the mobile control panel app.')}</span>
-          </div>
-
-          <div className="form-group">
-            <label>{t('Player App Link')}</label>
-            <input
-              type="text"
-              value={config.playerAppUrl || ''}
-              onChange={(event) => updateField('playerAppUrl', event.target.value)}
-              placeholder="https://example.com/player.apk"
-            />
-            <span className="form-hint">{t('Used in the Connection popup as a QR code and direct download link for the headset player app.')}</span>
-          </div>
-        </div>
+                <div className="settings-grid">
+                  <div className="form-group">
+                    <label>{t('Language')}</label>
+                    <select value={language} onChange={(event) => setLanguage(event.target.value)}>
+                      <option value="uk">{t('Ukrainian')}</option>
+                      <option value="en">{t('English')}</option>
+                    </select>
+                  </div>
+                </div>
 
         <div className="settings-action-row">
           <button className="btn btn-primary" onClick={handleSave} disabled={saving}>

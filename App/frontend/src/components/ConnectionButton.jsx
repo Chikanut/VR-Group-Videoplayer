@@ -2,31 +2,23 @@ import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useI18n } from '../i18n';
 
+const RELEASES_URL = 'https://github.com/Chikanut/VR-Group-Videoplayer/releases';
+
 export default function ConnectionButton() {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [serverUrl, setServerUrl] = useState('');
-  const [mobileAppUrl, setMobileAppUrl] = useState('');
-  const [playerAppUrl, setPlayerAppUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('server');
 
   const fetchServerInfo = async () => {
     setLoading(true);
     try {
-      const [serverRes, configRes] = await Promise.all([
-        fetch('/api/server-info'),
-        fetch('/api/config'),
-      ]);
+      const serverRes = await fetch('/api/server-info');
       const info = await serverRes.json();
-      const config = await configRes.json();
       setServerUrl(info.url || `http://${info.ip}:${info.port}`);
-      setMobileAppUrl(config.mobileAppUrl || '');
-      setPlayerAppUrl(config.playerAppUrl || '');
     } catch {
       setServerUrl(window.location.origin);
-      setMobileAppUrl('');
-      setPlayerAppUrl('');
     }
     setLoading(false);
   };
@@ -38,9 +30,9 @@ export default function ConnectionButton() {
   };
 
   const qrValue = activeTab === 'mobile'
-    ? (mobileAppUrl || 'https://example.com/control-panel-app')
+    ? RELEASES_URL
     : activeTab === 'player'
-      ? (playerAppUrl || 'https://example.com/player-app')
+      ? RELEASES_URL
       : (serverUrl || 'http://localhost:8000');
 
   return (
@@ -101,9 +93,9 @@ export default function ConnectionButton() {
 
                   <p className="connection-url">
                     {activeTab === 'mobile'
-                      ? (mobileAppUrl || t('Set Phone Control App Link in Settings'))
+                      ? RELEASES_URL
                       : activeTab === 'player'
-                        ? (playerAppUrl || t('Set Player App Link in Settings'))
+                        ? RELEASES_URL
                         : serverUrl}
                   </p>
 
@@ -113,11 +105,11 @@ export default function ConnectionButton() {
                     </p>
                   ) : activeTab === 'mobile' ? (
                     <p className="connection-hint">
-                      {t('Open this tab to download the mobile control app. If the link is empty, add Phone Control App Link in Settings first.')}
+                      {t('Open the releases page to download the mobile control app APK.')}
                     </p>
                   ) : (
                     <p className="connection-hint">
-                      {t('Open this tab to download the player app for the headset. If the link is empty, add Player App Link in Settings first.')}
+                      {t('Open the releases page to download the player APK and related builds.')}
                     </p>
                   )}
                 </>
