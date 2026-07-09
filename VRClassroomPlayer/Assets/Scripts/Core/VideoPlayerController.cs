@@ -340,6 +340,26 @@ namespace VRClassroom
         }
 
 
+        public void Seek(float seconds)
+        {
+            if (_videoPlayer == null)
+            {
+                Debug.LogWarning("[VideoPlayerController] Seek ignored: no video player");
+                return;
+            }
+
+            if (!_videoPlayer.canSetTime)
+            {
+                Debug.LogWarning($"[VideoPlayerController] Seek ignored: canSetTime=false (state={CurrentState}, file={CurrentFile})");
+                return;
+            }
+
+            float duration = Duration;
+            float target = duration > 0f ? Mathf.Clamp(seconds, 0f, duration) : Mathf.Max(0f, seconds);
+            _videoPlayer.time = target;
+            Debug.Log($"[VideoPlayerController] Seek to {target:F2}s (requested={seconds:F2}, duration={duration:F2}, state={CurrentState})");
+        }
+
         public void SetVolume(float globalVolume, float personalVolume)
         {
             GlobalVolume = Mathf.Clamp01(globalVolume);

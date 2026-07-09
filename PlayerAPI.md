@@ -97,6 +97,18 @@ curl -X POST http://<IP>:8080/volume \
   -d '{"globalVolume":0.8,"personalVolume":0.6}'
 ```
 
+### `POST /seek`
+
+Встановлює позицію відтворення у секундах. Значення clamp-иться в межах `0..duration`.
+Поточний стан (playing/paused) зберігається. Якщо `canSetTime == false`, плеєр логує
+попередження і команда ігнорується.
+
+```bash
+curl -X POST http://<IP>:8080/seek \
+  -H "Content-Type: application/json" \
+  -d '{"time":30}'
+```
+
 ### `GET /status`
 
 ```bash

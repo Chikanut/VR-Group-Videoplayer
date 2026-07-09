@@ -71,6 +71,13 @@ export async function playbackCommand(command, deviceIds = []) {
   });
 }
 
+export async function playbackSeek(time, deviceIds = []) {
+  return request('/playback/seek', {
+    method: 'POST',
+    body: JSON.stringify({ time, deviceIds }),
+  });
+}
+
 export async function toggleDeviceDebug(deviceId) {
   return request(`/devices/${deviceId}/debug`, { method: 'POST' });
 }

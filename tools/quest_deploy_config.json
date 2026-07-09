@@ -45,6 +45,94 @@
     "2G0YC1ZF800H4S": {
       "name": "Quest 3",
       "last_seen": "2026-03-17T13:11:30.494943"
+    },
+    "340YC20G9Z03TG": {
+      "name": "Quest 3S",
+      "last_seen": "2026-03-23T11:26:08.751916"
+    },
+    "340YC20G7602LD": {
+      "name": "Quest 3S",
+      "last_seen": "2026-03-23T11:29:31.544223"
+    },
+    "340YC20G8C0MS3": {
+      "name": "Quest 3S",
+      "last_seen": "2026-03-23T11:39:45.477301"
+    },
+    "340YC20G7F02NP": {
+      "name": "Quest 3S",
+      "last_seen": "2026-03-23T11:56:02.509756"
+    },
+    "340YC20GBD05VR": {
+      "name": "Quest 3S",
+      "last_seen": "2026-03-23T12:11:20.332853"
+    },
+    "340YC20G7G0077": {
+      "name": "Quest 3S",
+      "last_seen": "2026-03-23T12:24:11.433595"
+    },
+    "340YC10GBV05RW": {
+      "name": "Quest 3S",
+      "last_seen": "2026-03-23T13:09:39.223860"
+    },
+    "340YC20G8C01MN": {
+      "name": "Quest 3S",
+      "last_seen": "2026-03-23T13:21:39.708649"
+    },
+    "340YC20GBD066W": {
+      "name": "Quest 3S",
+      "last_seen": "2026-03-23T13:32:17.447416"
+    },
+    "340YC20GBD02K6": {
+      "name": "Quest 3S",
+      "last_seen": "2026-03-23T13:44:49.401597"
+    },
+    "340YC20G7H028N": {
+      "name": "Quest 3S",
+      "last_seen": "2026-03-23T13:55:46.642185"
+    },
+    "340YC20G7J015N": {
+      "name": "Quest 3S",
+      "last_seen": "2026-03-23T14:10:41.047040"
+    },
+    "340YC20G9Y01LP": {
+      "name": "Quest 3S",
+      "last_seen": "2026-06-26T14:22:12.226135"
+    },
+    "340YC20G7M0BJ8": {
+      "name": "Quest 3S",
+      "last_seen": "2026-06-26T15:03:13.154804"
+    },
+    "340YC20G7600XH": {
+      "name": "Quest 3S",
+      "last_seen": "2026-06-26T15:15:44.299655"
+    },
+    "340YC20G7K03W3": {
+      "name": "Quest 3S",
+      "last_seen": "2026-06-26T15:29:46.714126"
+    },
+    "340YC20GBD01GZ": {
+      "name": "Quest 3S",
+      "last_seen": "2026-06-26T15:29:46.827890"
+    },
+    "340YC20G890H0V": {
+      "name": "Quest 3S",
+      "last_seen": "2026-06-26T16:01:17.109681"
+    },
+    "340YC20G7X068G": {
+      "name": "Quest 3S",
+      "last_seen": "2026-06-26T16:13:09.137068"
+    },
+    "340YC20G84039R": {
+      "name": "Quest 3S",
+      "last_seen": "2026-06-26T16:36:06.630288"
     }
-  }
+  },
+  "wifi_networks": [
+    {
+      "ssid": "oculus_connection_point",
+      "security": "wpa2",
+      "password": "28826423jK"
+    }
+  ],
+  "wifi_auto_deploy": true
 }

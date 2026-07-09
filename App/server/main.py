@@ -29,12 +29,14 @@ from .models import (
     OpenCommand,
     PlaybackCommand,
     RequirementVideo,
+    SeekCommand,
     VolumeUpdate,
 )
 from .playback_controller import (
     get_global_volume,
     open_video,
     ping_device,
+    seek_video,
     send_command,
     set_device_volume,
     set_global_volume,
@@ -248,6 +250,11 @@ async def playback_stop(cmd: PlaybackCommand):
 @app.post("/api/playback/recenter")
 async def playback_recenter(cmd: PlaybackCommand):
     return await send_command("recenter", cmd.deviceIds)
+
+
+@app.post("/api/playback/seek")
+async def playback_seek(cmd: SeekCommand):
+    return await seek_video(cmd.time, cmd.deviceIds)
 
 
 @app.get("/api/playback/volume/global")

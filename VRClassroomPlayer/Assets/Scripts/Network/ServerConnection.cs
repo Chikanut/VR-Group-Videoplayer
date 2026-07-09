@@ -31,6 +31,7 @@ namespace VRClassroom
             public bool autoRecenterOnOpen = true;
             public float globalVolume;
             public float personalVolume;
+            public float time;
             public VideoAdvancedSettings advancedSettings;
         }
 
@@ -573,6 +574,14 @@ namespace VRClassroom
                             videoPlayer?.SetVolume(globalVol, personalVol);
                             LogInfo("command_end", commandId,
                                 $"action=set_volume, globalVolume={globalVol}, personalVolume={personalVol}");
+                            break;
+                        }
+                    case "seek":
+                        {
+                            float seekTime = HasJsonField(raw, "time") ? command.time : 0f;
+                            LogInfo("command_start", commandId, $"action=seek, time={seekTime}");
+                            videoPlayer?.Seek(seekTime);
+                            LogInfo("command_end", commandId, $"action=seek, time={seekTime}");
                             break;
                         }
                     case "set_mode":

@@ -4,6 +4,7 @@ import {
   getRequirements,
   pingDevice,
   playbackCommand,
+  playbackSeek,
   setDeviceName,
   setDeviceVolume,
   toggleDeviceDebug,
@@ -19,6 +20,9 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
   const [loadingReqs, setLoadingReqs] = useState(false);
   const [personalVolume, setPersonalVolume] = useState(1);
   const volumeDebounceRef = useRef(null);
+  const [seekValue, setSeekValue] = useState(0);
+  const [seeking, setSeeking] = useState(false);
+  const seekDebounceRef = useRef(null);
 
   useEffect(() => {
     if (device) {
@@ -27,6 +31,15 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
       setRequirements(device.requirementsDetail || null);
     }
   }, [device]);
+
+  const playbackTime = device?.playbackTime || 0;
+
+  // Follow live playback unless the user is actively dragging the seek slider.
+  useEffect(() => {
+    if (!seeking) {
+      setSeekValue(playbackTime);
+    }
+  }, [playbackTime, seeking]);
 
   const loadRequirements = async () => {
     setLoadingReqs(true);
@@ -200,13 +213,29 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
               </p>
               {device.currentVideo && <p>{t('File')}: {device.currentVideo}</p>}
               {device.playbackDuration > 0 && (
-                <div className="progress-bar large">
-                  <div
-                    className="progress-fill"
-                    style={{ width: `${(device.playbackTime / device.playbackDuration) * 100}%` }}
+                <div className="seek-control device-seek-control">
+                  <input
+                    type="range"
+                    min="0"
+                    max={device.playbackDuration}
+                    step="0.1"
+                    value={seekValue}
+                    disabled={!device.online || !device.playerConnected}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      setSeeking(true);
+                      setSeekValue(value);
+                      if (seekDebounceRef.current) {
+                        clearTimeout(seekDebounceRef.current);
+                      }
+                      seekDebounceRef.current = setTimeout(() => {
+                        playbackSeek(value, [deviceId]);
+                        setSeeking(false);
+                      }, 200);
+                    }}
                   />
-                  <span className="progress-text">
-                    {formatTime(device.playbackTime)} / {formatTime(device.playbackDuration)}
+                  <span className="seek-time">
+                    {formatTime(seekValue)} / {formatTime(device.playbackDuration)}
                   </span>
                 </div>
               )}

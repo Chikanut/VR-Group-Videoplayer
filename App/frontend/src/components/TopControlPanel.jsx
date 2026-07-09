@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useDeviceStore from '../store/deviceStore';
-import { getGlobalVolume, playbackCommand, setGlobalVolume } from '../api';
+import { getGlobalVolume, playbackCommand, playbackSeek, setGlobalVolume } from '../api';
 import { useI18n } from '../i18n';
 
 export default function TopControlPanel({ onPlayAll, panelRef }) {
@@ -15,7 +15,21 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
   const isAndroidRuntime = config?.isAndroidRuntime === true;
   const debounceRef = useRef({});
   const volumeDebounceRef = useRef(null);
+  const seekDebounceRef = useRef(null);
   const [globalVolume, setGlobalVolumeValue] = useState(1);
+  const [seekValue, setSeekValue] = useState(0);
+  const [seeking, setSeeking] = useState(false);
+
+  // Representative device for the global seek slider: the command target with the
+  // longest known duration. Empty deviceIds on seek fans out to all players anyway.
+  const seekTargets = commandTargets.filter((device) => device.playbackDuration > 0);
+  const seekReference = seekTargets.reduce(
+    (best, device) => (!best || device.playbackDuration > best.playbackDuration ? device : best),
+    null,
+  );
+  const seekDuration = seekReference ? seekReference.playbackDuration : 0;
+  const seekCurrent = seekReference ? seekReference.playbackTime : 0;
+  const canSeek = seekTargets.length > 0;
 
   const debounce = useCallback((key, fn) => {
     if (debounceRef.current[key]) {
@@ -39,6 +53,13 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
     };
     loadGlobalVolume();
   }, []);
+
+  // Keep the slider following live playback unless the user is actively dragging it.
+  useEffect(() => {
+    if (!seeking) {
+      setSeekValue(seekCurrent);
+    }
+  }, [seekCurrent, seeking]);
 
   return (
     <header className="top-panel" ref={panelRef}>
@@ -110,10 +131,43 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
           <span>{Math.round(globalVolume * 100)}%</span>
         </div>
 
+        <div className="seek-control global-seek-control">
+          <label htmlFor="global-seek-slider">{t('Seek')}</label>
+          <input
+            id="global-seek-slider"
+            type="range"
+            min="0"
+            max={seekDuration || 1}
+            step="0.1"
+            value={seekValue}
+            disabled={!canSeek}
+            onChange={(event) => {
+              const value = Number(event.target.value);
+              setSeeking(true);
+              setSeekValue(value);
+              if (seekDebounceRef.current) {
+                clearTimeout(seekDebounceRef.current);
+              }
+              seekDebounceRef.current = setTimeout(() => {
+                playbackSeek(value);
+                setSeeking(false);
+              }, 200);
+            }}
+          />
+          <span>{formatTime(seekValue)} / {formatTime(seekDuration)}</span>
+        </div>
+
         <button className="btn btn-secondary" onClick={() => navigate('/settings')}>
           {t('Settings')}
         </button>
       </div>
     </header>
   );
+}
+
+function formatTime(seconds) {
+  const total = Math.max(0, Math.floor(seconds || 0));
+  const minutes = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${minutes}:${secs.toString().padStart(2, '0')}`;
 }

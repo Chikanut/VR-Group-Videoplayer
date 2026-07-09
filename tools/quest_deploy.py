@@ -45,6 +45,8 @@ DEFAULT_CONFIG = {
     "files": [],       # [{"src": "C:/path/file.mp4", "dst": "/sdcard/Movies/"}, ...]
     "apks": [],         # ["C:/path/app.apk", ...]
     "devices": {},      # {"SERIAL": {"name": "Quest 3", "last_seen": "..."}}
+    "wifi_networks": [], # [{"ssid": "MyWifi", "password": "pass", "security": "wpa2"}]
+    "wifi_auto_deploy": False, # застосовувати Wi-Fi перед кожним деплоєм
 }
 
 
@@ -271,6 +273,47 @@ class ADB:
                  "--method", "scan_volume",
                  "--arg", "external_primary", serial=serial, timeout=15)
 
+    def connect_wifi(self, serial, ssid, password, security="wpa2"):
+        """
+        Підключити пристрій до Wi-Fi мережі через ADB.
+        Використовує 'cmd wifi connect-network' (Android 10+, Quest 2/3/Pro).
+        security: wpa2 | wpa3 | open
+        """
+        if security == "open":
+            code, out, err = self.run(
+                "shell", "cmd", "wifi", "connect-network",
+                ssid, "open",
+                serial=serial, timeout=20
+            )
+        else:
+            code, out, err = self.run(
+                "shell", "cmd", "wifi", "connect-network",
+                ssid, security, password,
+                serial=serial, timeout=20
+            )
+        return code, out, err
+
+    def get_wifi_status(self, serial):
+        """Повертає поточну Wi-Fi мережу пристрою."""
+        code, out, err = self.run(
+            "shell", "cmd", "wifi", "status",
+            serial=serial, timeout=10
+        )
+        if code == 0:
+            for line in out.splitlines():
+                if "Wifi is connected" in line or "SSID" in line:
+                    return line.strip()
+        return "Невідомо"
+
+    def enable_wifi(self, serial):
+        """Увімкнути Wi-Fi на пристрої."""
+        return self.run("shell", "cmd", "wifi", "set-wifi-enabled", "enabled",
+                        serial=serial, timeout=10)
+
+    def enable_tcpip(self, serial, port=5555):
+        """Перевести ADB в TCP/IP режим для wireless підключення."""
+        return self.run("tcpip", str(port), serial=serial, timeout=10)
+
 
 # ═══════════════════════════════════════════════════════════
 #  Конфіг
@@ -433,6 +476,53 @@ class QuestDeployApp:
         frame_cfg_btn.pack(anchor="w", pady=5)
         ttk.Button(frame_cfg_btn, text="Відкрити конфіг", command=self.open_config).pack(side="left", padx=3)
         ttk.Button(frame_cfg_btn, text="Перезавантажити конфіг", command=self.reload_config).pack(side="left", padx=3)
+
+        ttk.Separator(tab_settings, orient="horizontal").pack(fill="x", pady=15)
+
+        # ── Wi-Fi мережі ─────────────────────────────────
+        ttk.Label(tab_settings, text="Wi-Fi мережі для пристроїв:", style="Header.TLabel").pack(anchor="w")
+        ttk.Label(tab_settings,
+                  text="Збережені мережі — застосовуються кнопкою «Застосувати Wi-Fi на девайси»",
+                  foreground="gray").pack(anchor="w", pady=(0, 5))
+
+        frame_wifi = ttk.Frame(tab_settings)
+        frame_wifi.pack(fill="both", expand=True, pady=5)
+
+        cols_w = ("ssid", "security", "password")
+        self.wifi_tree = ttk.Treeview(frame_wifi, columns=cols_w, show="headings", height=5)
+        self.wifi_tree.heading("ssid", text="Назва мережі (SSID)")
+        self.wifi_tree.heading("security", text="Безпека")
+        self.wifi_tree.heading("password", text="Пароль")
+        self.wifi_tree.column("ssid", width=220)
+        self.wifi_tree.column("security", width=100)
+        self.wifi_tree.column("password", width=200)
+        self.wifi_tree.pack(side="left", fill="both", expand=True)
+
+        sb_w = ttk.Scrollbar(frame_wifi, orient="vertical", command=self.wifi_tree.yview)
+        sb_w.pack(side="right", fill="y")
+        self.wifi_tree.configure(yscrollcommand=sb_w.set)
+
+        frame_wifi_btn = ttk.Frame(tab_settings)
+        frame_wifi_btn.pack(fill="x", pady=5)
+        ttk.Button(frame_wifi_btn, text="Додати мережу…",
+                   command=self.add_wifi_network).pack(side="left", padx=3)
+        ttk.Button(frame_wifi_btn, text="Видалити вибрану",
+                   command=self.remove_wifi_network).pack(side="left", padx=3)
+        ttk.Separator(frame_wifi_btn, orient="vertical").pack(side="left", fill="y", padx=8)
+        ttk.Button(frame_wifi_btn, text="📶  Застосувати Wi-Fi на девайси",
+                   command=self.apply_wifi_to_devices).pack(side="left", padx=3)
+        ttk.Button(frame_wifi_btn, text="🔗  Увімкнути Wireless ADB (tcpip)",
+                   command=self.enable_wireless_adb).pack(side="left", padx=3)
+
+        frame_wifi_auto = ttk.Frame(tab_settings)
+        frame_wifi_auto.pack(anchor="w", pady=(4, 0))
+        self.wifi_auto_var = tk.BooleanVar(value=self.config.get("wifi_auto_deploy", False))
+        ttk.Checkbutton(
+            frame_wifi_auto,
+            text="Застосовувати Wi-Fi перед кожним деплоєм",
+            variable=self.wifi_auto_var,
+            command=self.save_wifi_auto_setting
+        ).pack(side="left")
 
         # ── Нижня панель: прогрес і лог ──────────────────
         frame_bottom = ttk.Frame(self.root, padding=6)
@@ -659,6 +749,9 @@ class QuestDeployApp:
                 pkg = self.adb.get_package_name_from_apk(apk_path) or "?"
             self.apk_tree.insert("", "end", iid=str(i), values=(apk_path, pkg, size))
 
+        # Wi-Fi
+        self.refresh_wifi_list()
+
     # ── Налаштування ──────────────────────────────────────
 
     def browse_adb(self):
@@ -686,8 +779,178 @@ class QuestDeployApp:
         self.config = load_config()
         self.adb = ADB(self.config.get("adb_path", "adb"))
         self.adb_path_var.set(self.config.get("adb_path", "adb"))
+        self.wifi_auto_var.set(self.config.get("wifi_auto_deploy", False))
         self.refresh_lists()
         self.log("Конфіг перезавантажено")
+
+    def save_wifi_auto_setting(self):
+        self.config["wifi_auto_deploy"] = self.wifi_auto_var.get()
+        save_config(self.config)
+        state = "увімкнено" if self.wifi_auto_var.get() else "вимкнено"
+        self.log(f"Wi-Fi перед деплоєм: {state}")
+
+    # ── Wi-Fi ─────────────────────────────────────────────
+
+    def refresh_wifi_list(self):
+        for item in self.wifi_tree.get_children():
+            self.wifi_tree.delete(item)
+        for i, net in enumerate(self.config.get("wifi_networks", [])):
+            masked = "*" * len(net.get("password", "")) or "(без пароля)"
+            self.wifi_tree.insert("", "end", iid=str(i),
+                                  values=(net["ssid"], net.get("security", "wpa2"), masked))
+
+    def add_wifi_network(self):
+        """Діалог додавання Wi-Fi мережі."""
+        win = tk.Toplevel(self.root)
+        win.title("Додати Wi-Fi мережу")
+        win.geometry("420x250")
+        win.resizable(False, False)
+        win.grab_set()
+
+        ttk.Label(win, text="SSID (назва мережі):").grid(row=0, column=0, sticky="w", padx=15, pady=10)
+        ssid_var = tk.StringVar()
+        ttk.Entry(win, textvariable=ssid_var, width=30).grid(row=0, column=1, padx=10, pady=10)
+
+        ttk.Label(win, text="Тип безпеки:").grid(row=1, column=0, sticky="w", padx=15, pady=5)
+        sec_var = tk.StringVar(value="wpa2")
+        sec_cb = ttk.Combobox(win, textvariable=sec_var,
+                              values=["wpa2", "wpa3", "open"], state="readonly", width=28)
+        sec_cb.grid(row=1, column=1, padx=10, pady=5)
+
+        ttk.Label(win, text="Пароль:").grid(row=2, column=0, sticky="w", padx=15, pady=5)
+        pass_var = tk.StringVar()
+        pass_entry = ttk.Entry(win, textvariable=pass_var, show="●", width=30)
+        pass_entry.grid(row=2, column=1, padx=10, pady=5)
+
+        show_var = tk.BooleanVar(value=False)
+        def toggle_show():
+            pass_entry.config(show="" if show_var.get() else "●")
+        ttk.Checkbutton(win, text="Показати пароль", variable=show_var,
+                        command=toggle_show).grid(row=3, column=1, sticky="w", padx=10)
+
+        def on_sec_change(event=None):
+            if sec_var.get() == "open":
+                pass_entry.config(state="disabled")
+                pass_var.set("")
+            else:
+                pass_entry.config(state="normal")
+        sec_cb.bind("<<ComboboxSelected>>", on_sec_change)
+
+        result = [None]
+
+        def ok():
+            ssid = ssid_var.get().strip()
+            if not ssid:
+                messagebox.showwarning("Увага", "Введіть SSID!", parent=win)
+                return
+            if sec_var.get() != "open" and not pass_var.get().strip():
+                messagebox.showwarning("Увага", "Введіть пароль або оберіть тип 'open'!", parent=win)
+                return
+            result[0] = {
+                "ssid": ssid,
+                "security": sec_var.get(),
+                "password": pass_var.get()
+            }
+            win.destroy()
+
+        btn_frame = ttk.Frame(win)
+        btn_frame.grid(row=4, column=0, columnspan=2, pady=15)
+        ttk.Button(btn_frame, text="Додати", command=ok).pack(side="left", padx=10)
+        ttk.Button(btn_frame, text="Скасувати", command=win.destroy).pack(side="left")
+
+        win.wait_window()
+
+        if result[0]:
+            self.config.setdefault("wifi_networks", []).append(result[0])
+            save_config(self.config)
+            self.refresh_wifi_list()
+            self.log(f"Wi-Fi мережу додано: {result[0]['ssid']}")
+
+    def remove_wifi_network(self):
+        sel = self.wifi_tree.selection()
+        if not sel:
+            return
+        indices = sorted([int(s) for s in sel], reverse=True)
+        networks = self.config.get("wifi_networks", [])
+        for i in indices:
+            if 0 <= i < len(networks):
+                removed = networks.pop(i)
+                self.log(f"Wi-Fi мережу видалено: {removed['ssid']}")
+        save_config(self.config)
+        self.refresh_wifi_list()
+
+    def apply_wifi_to_devices(self):
+        """Застосувати всі збережені Wi-Fi мережі на вибрані пристрої."""
+        networks = self.config.get("wifi_networks", [])
+        if not networks:
+            messagebox.showwarning("Увага", "Немає збережених Wi-Fi мереж.\nДодайте мережу у вкладці Налаштування.")
+            return
+
+        devices = self.get_selected_devices()
+        if not devices:
+            devices = list(self.dev_tree.get_children())
+        if not devices:
+            messagebox.showwarning("Увага", "Немає підключених пристроїв.")
+            return
+
+        def _apply():
+            self.log(f"═══ Застосування Wi-Fi: {len(networks)} мереж на {len(devices)} пристроїв ═══")
+            for serial in devices:
+                model = self.config.get("devices", {}).get(serial, {}).get("name", serial)
+                self.log(f"── Пристрій: {model} ({serial}) ──")
+
+                # Увімкнути Wi-Fi
+                self.adb.enable_wifi(serial)
+
+                for net in networks:
+                    ssid = net["ssid"]
+                    pwd = net.get("password", "")
+                    sec = net.get("security", "wpa2")
+                    self.log(f"  ⏳ Підключаю до: {ssid} ({sec})…")
+                    code, out, err = self.adb.connect_wifi(serial, ssid, pwd, sec)
+                    combined = (out + err).lower()
+                    if code == 0 and any(x in combined for x in ["success", "connected", "saving"]):
+                        self.log(f"  ✓ Підключено: {ssid}")
+                    elif "already" in combined:
+                        self.log(f"  ⏭ Вже підключено: {ssid}")
+                    else:
+                        self.log(f"  ✗ Помилка ({ssid}): {err or out or 'невідома'}")
+
+            self.log("═══ Застосування Wi-Fi завершено ═══")
+
+        Thread(target=_apply, daemon=True).start()
+
+    def enable_wireless_adb(self):
+        """Перевести всі підключені пристрої в tcpip режим для wireless ADB."""
+        devices = self.get_selected_devices()
+        if not devices:
+            devices = list(self.dev_tree.get_children())
+        if not devices:
+            messagebox.showwarning("Увага", "Немає підключених пристроїв.")
+            return
+
+        def _enable():
+            self.log("═══ Увімкнення Wireless ADB (порт 5555) ═══")
+            for serial in devices:
+                model = self.config.get("devices", {}).get(serial, {}).get("name", serial)
+                code, out, err = self.adb.enable_tcpip(serial, 5555)
+                if code == 0:
+                    # Отримати IP пристрою
+                    _, ip_out, _ = self.adb.run(
+                        "shell", "ip", "route", "get", "8.8.8.8",
+                        serial=serial, timeout=10
+                    )
+                    ip = ""
+                    m = re.search(r'src\s+([\d.]+)', ip_out)
+                    if m:
+                        ip = m.group(1)
+                    hint = f"  → adb connect {ip}:5555" if ip else ""
+                    self.log(f"  ✓ {model} ({serial}): tcpip:5555 увімкнено{hint}")
+                else:
+                    self.log(f"  ✗ {model} ({serial}): {err or out}")
+            self.log("Тепер можна від'єднати USB і підключитись через Wi-Fi.")
+
+        Thread(target=_enable, daemon=True).start()
 
     # ═══════════════════════════════════════════════════════
     #  Deploy
@@ -737,6 +1000,25 @@ class QuestDeployApp:
             model = self.config.get("devices", {}).get(serial, {}).get("name", serial)
             self.log(f"── Пристрій: {model} ({serial}) ──")
             self.update_device_status(serial, "Розгортання…")
+
+            # ── Wi-Fi (якщо увімкнено автозастосування) ──
+            if self.config.get("wifi_auto_deploy", False):
+                networks = self.config.get("wifi_networks", [])
+                if networks:
+                    self.log(f"  📶 Застосування Wi-Fi ({len(networks)} мереж)…")
+                    self.adb.enable_wifi(serial)
+                    for net in networks:
+                        ssid = net["ssid"]
+                        code, out, err = self.adb.connect_wifi(
+                            serial, ssid, net.get("password", ""), net.get("security", "wpa2")
+                        )
+                        combined = (out + err).lower()
+                        if code == 0 and any(x in combined for x in ["success", "connected", "saving"]):
+                            self.log(f"  ✓ Wi-Fi: {ssid}")
+                        elif "already" in combined:
+                            self.log(f"  ⏭ Wi-Fi вже: {ssid}")
+                        else:
+                            self.log(f"  ✗ Wi-Fi помилка ({ssid}): {err or out or '?'}")
 
             # ── Встановлення APK ──
             for apk_path in apks:

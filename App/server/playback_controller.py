@@ -159,6 +159,31 @@ async def send_command(command: str, device_ids: List[str]) -> Dict[str, Any]:
     return {"success": success_list, "failed": failed_list}
 
 
+async def seek_video(time: float, device_ids: List[str]) -> Dict[str, Any]:
+    """Seek target devices to a position in seconds. Empty device_ids seeks all players."""
+    target = max(0.0, float(time))
+    devices = await _resolve_devices(device_ids)
+    if not devices:
+        return {"success": [], "failed": [], "message": "No online devices available"}
+
+    payload = {"time": target}
+    tasks = [(device, _send_command_to_device(device, "seek", "/seek", payload)) for device in devices]
+    results = await asyncio.gather(*[task for _, task in tasks], return_exceptions=True)
+
+    success_list = []
+    failed_list = []
+
+    for (device, _), result in zip(tasks, results):
+        if isinstance(result, Exception):
+            failed_list.append({"deviceId": device.device_id, "error": str(result)})
+        elif result.get("success"):
+            success_list.append({"deviceId": device.device_id})
+        else:
+            failed_list.append({"deviceId": device.device_id, "error": result.get("error", "Unknown error")})
+
+    return {"time": target, "success": success_list, "failed": failed_list}
+
+
 async def ping_device(device_id: str) -> Dict[str, Any]:
     """Send a ping (beep) to a single device."""
     device = await device_manager.get(device_id)

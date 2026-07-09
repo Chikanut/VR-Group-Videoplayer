@@ -124,6 +124,11 @@ class OpenCommand(BaseModel):
     deviceIds: List[str] = []
 
 
+class SeekCommand(BaseModel):
+    deviceIds: List[str] = []
+    time: float = Field(ge=0.0)
+
+
 class DeviceNameUpdate(BaseModel):
     name: str
 
