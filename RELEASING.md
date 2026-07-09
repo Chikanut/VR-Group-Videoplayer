@@ -87,7 +87,7 @@ There is no headless build script — build from the Unity Editor:
 2. Confirm no compile errors in the Console.
 3. Bump `bundleVersion` and `AndroidBundleVersionCode` (section 2).
 4. **File → Build Settings → Android** → ensure `MainPlayer` scene is in the list → **Build**.
-5. Save as **`VRPlayer.apk`** (package `com.vrclassroom.player`).
+5. Save as **`VRPlayer.apk`** (package `com.vrclass.player`).
 
 Keep the APK somewhere stable, e.g. `tools\builds\VRPlayer-1.6.0.apk`.
 
@@ -196,7 +196,7 @@ Use **`tools/QuestDeployManager.exe`** (or `python tools/quest_deploy.py`).
 >   tool uses internally, but bypasses its "already installed → skip" guard.
 > - **Clean reinstall:** uninstall first, then deploy —
 >   ```powershell
->   adb uninstall com.vrclassroom.player
+>   adb uninstall com.vrclass.player
 >   ```
 >   Videos in `/sdcard/Movies/` are **not** removed by uninstall.
 
@@ -253,7 +253,7 @@ The `.exe` is stateless; **all** user data lives in the two JSON files beside it
 - **Control Panel:** keep the previous `VRClassroomControl.exe`. To roll back, swap the
   binary back — config files are unchanged and remain compatible (the schema only grew).
 - **Quest:** `adb install -r` the previous APK **only if** its `versionCode` is ≥ the
-  installed one; otherwise `adb uninstall com.vrclassroom.player` then install the old APK.
+  installed one; otherwise `adb uninstall com.vrclass.player` then install the old APK.
 - **Repo:** `git checkout v1.5.5` (or revert the release commit). Tags are immutable
   references to each shipped build.
 

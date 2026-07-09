@@ -30,6 +30,25 @@ You can use the control panel to:
 - recenter the view
 - set a global volume
 - adjust one headset volume separately
+- **seek (jump to any moment in the video)** — new in 1.6.0
+
+## Seek / Scrub the Video (new in 1.6.0)
+
+You can now move playback to any point in the video — for example to skip an intro or replay a scene — without restarting.
+
+### For all headsets at once
+
+Use the **Seek** slider in the top control panel. Dragging it jumps every connected headset to the same moment, so the whole class stays together.
+
+![The Seek slider in the top control panel jumps all headsets to the same moment](../assets/top-panel-seek.svg)
+
+### For one headset only
+
+Open a single headset (click its tile) and use the **Seek** slider inside the device window. This scrubs only that headset and leaves the others untouched — handy if one student needs to catch up.
+
+![The per-headset Seek slider inside the device window scrubs only that headset](../assets/device-dialog-seek.svg)
+
+> The slider follows playback on its own and shows the current time and total length (for example `1:12 / 3:40`). It is greyed out until a video is open and its length is known.
 
 ## Recenter
 

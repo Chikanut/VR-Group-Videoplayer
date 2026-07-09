@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 380" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5ac8fa"/>
+      <stop offset="1" stop-color="#bfe9ff"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="9" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 Z" fill="#5b7fff"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="900" height="380" fill="#0f1117"/>
+
+  <!-- BEFORE -->
+  <text x="200" y="36" fill="#e2e4ea" font-size="20" font-weight="700" text-anchor="middle">BEFORE</text>
+  <text x="200" y="58" fill="#8a8fa0" font-size="13" text-anchor="middle">black bars above and below the picture</text>
+
+  <g>
+    <rect x="40" y="72" width="320" height="240" rx="6" fill="#000"/>
+    <!-- visible picture band -->
+    <rect x="40" y="128" width="320" height="128" fill="url(#sky)"/>
+    <rect x="40" y="228" width="320" height="28" fill="#3a8f4d"/>
+    <circle cx="300" cy="160" r="20" fill="#ffd45e"/>
+    <!-- black bar labels -->
+    <text x="200" y="104" fill="#ff8a8a" font-size="14" font-weight="600" text-anchor="middle">black border</text>
+    <text x="200" y="288" fill="#ff8a8a" font-size="14" font-weight="600" text-anchor="middle">black border</text>
+    <rect x="40" y="72" width="320" height="240" rx="6" fill="none" stroke="#2d3148" stroke-width="2"/>
+  </g>
+
+  <!-- ARROW + setting -->
+  <line x1="392" y1="192" x2="512" y2="192" stroke="#5b7fff" stroke-width="3" marker-end="url(#arrow)"/>
+  <rect x="378" y="118" width="148" height="52" rx="8" fill="#1a1d27" stroke="#5b7fff" stroke-width="1.5"/>
+  <text x="452" y="139" fill="#e2e4ea" font-size="13" font-weight="600" text-anchor="middle">Top Crop 0.03</text>
+  <text x="452" y="158" fill="#e2e4ea" font-size="13" font-weight="600" text-anchor="middle">Bottom Crop 0.03</text>
+  <text x="452" y="228" fill="#8a8fa0" font-size="13" text-anchor="middle">crop away the bars,</text>
+  <text x="452" y="246" fill="#8a8fa0" font-size="13" text-anchor="middle">stretch to fill</text>
+
+  <!-- AFTER -->
+  <text x="700" y="36" fill="#e2e4ea" font-size="20" font-weight="700" text-anchor="middle">AFTER</text>
+  <text x="700" y="58" fill="#8a8fa0" font-size="13" text-anchor="middle">picture fills the whole view</text>
+
+  <g>
+    <rect x="540" y="72" width="320" height="240" rx="6" fill="url(#sky)"/>
+    <rect x="540" y="264" width="320" height="48" fill="#3a8f4d"/>
+    <circle cx="800" cy="128" r="26" fill="#ffd45e"/>
+    <rect x="540" y="72" width="320" height="240" rx="6" fill="none" stroke="#34c759" stroke-width="2"/>
+    <text x="700" y="300" fill="#0f1117" font-size="14" font-weight="700" text-anchor="middle">no black bars</text>
+  </g>
+
+  <text x="450" y="356" fill="#8a8fa0" font-size="13" text-anchor="middle">Settings &#8594; open the video &#8594; Advanced Settings &#8594; Override Material Settings</text>
+</svg>

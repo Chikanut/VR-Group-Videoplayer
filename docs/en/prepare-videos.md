@@ -49,5 +49,6 @@ When the control panel checks devices, the configured filename should be reporte
 ## Related Guides
 
 - [Quick Start](quick-start.md)
+- [Settings & Video Tuning](settings-and-video-tuning.md)
 - [Daily Use](daily-use.md)
 - [Networking and Troubleshooting](networking-troubleshooting.md)

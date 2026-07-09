@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 250" font-family="Segoe UI, Arial, sans-serif">
+  <rect x="0" y="0" width="980" height="250" fill="#0f1117"/>
+
+  <!-- top panel bar -->
+  <rect x="16" y="20" width="948" height="70" rx="12" fill="#1a1d27" stroke="#2d3148" stroke-width="1.5"/>
+
+  <!-- title -->
+  <text x="36" y="52" fill="#e2e4ea" font-size="16" font-weight="700">VR Classroom</text>
+  <text x="36" y="72" fill="#8a8fa0" font-size="12">8/8 online</text>
+
+  <!-- buttons -->
+  <g font-size="12" text-anchor="middle">
+    <rect x="150" y="40" width="74" height="30" rx="6" fill="#34c759"/>
+    <text x="187" y="60" fill="#06210f" font-weight="700">Play All</text>
+
+    <rect x="232" y="40" width="74" height="30" rx="6" fill="#262a3a" stroke="#2d3148"/>
+    <text x="269" y="60" fill="#e2e4ea">Pause All</text>
+
+    <rect x="314" y="40" width="80" height="30" rx="6" fill="#262a3a" stroke="#2d3148"/>
+    <text x="354" y="60" fill="#e2e4ea">Resume All</text>
+
+    <rect x="402" y="40" width="70" height="30" rx="6" fill="#262a3a" stroke="#2d3148"/>
+    <text x="437" y="60" fill="#e2e4ea">Stop All</text>
+
+    <rect x="480" y="40" width="92" height="30" rx="6" fill="#262a3a" stroke="#2d3148"/>
+    <text x="526" y="60" fill="#e2e4ea">Recenter All</text>
+  </g>
+
+  <!-- global volume -->
+  <text x="586" y="46" fill="#8a8fa0" font-size="11">Global volume</text>
+  <line x1="586" y1="62" x2="678" y2="62" stroke="#2d3148" stroke-width="4" stroke-linecap="round"/>
+  <line x1="586" y1="62" x2="660" y2="62" stroke="#5b7fff" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="660" cy="62" r="6" fill="#5b7fff"/>
+  <text x="686" y="66" fill="#e2e4ea" font-size="11">80%</text>
+
+  <!-- Settings button -->
+  <rect x="878" y="40" width="72" height="30" rx="6" fill="#262a3a" stroke="#2d3148"/>
+  <text x="914" y="60" fill="#e2e4ea" font-size="12" text-anchor="middle">Settings</text>
+
+  <!-- NEW seek control (highlighted) -->
+  <rect x="720" y="34" width="150" height="42" rx="8" fill="#141a2e" stroke="#ffb833" stroke-width="2"/>
+  <text x="730" y="48" fill="#ffb833" font-size="11" font-weight="600">Seek</text>
+  <line x1="730" y1="64" x2="828" y2="64" stroke="#2d3148" stroke-width="4" stroke-linecap="round"/>
+  <line x1="730" y1="64" x2="772" y2="64" stroke="#ffb833" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="772" cy="64" r="6" fill="#ffb833"/>
+  <text x="836" y="68" fill="#e2e4ea" font-size="10">1:12 / 3:40</text>
+
+  <!-- New badge callout -->
+  <path d="M795,90 L795,128" stroke="#ffb833" stroke-width="2"/>
+  <rect x="640" y="128" width="320" height="78" rx="10" fill="#2a2410" stroke="#ffb833" stroke-width="1.5"/>
+  <text x="656" y="152" fill="#ffe0a3" font-size="13" font-weight="700">New in 1.6.0 &#183; Global Seek</text>
+  <text x="656" y="174" fill="#ffe0a3" font-size="12">Drag to jump every headset to the same</text>
+  <text x="656" y="190" fill="#ffe0a3" font-size="12">moment in the video at once.</text>
+
+  <text x="36" y="150" fill="#e2e4ea" font-size="13" font-weight="600">Top control panel</text>
+  <text x="36" y="172" fill="#8a8fa0" font-size="12">These buttons control every connected</text>
+  <text x="36" y="188" fill="#8a8fa0" font-size="12">headset together.</text>
+</svg>

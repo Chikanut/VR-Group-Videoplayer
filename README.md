@@ -61,6 +61,7 @@ flowchart LR
 - [Set Up the Control Panel](docs/en/setup-control-panel.md)
 - [Set Up the Quest Player](docs/en/setup-player.md)
 - [Prepare Videos](docs/en/prepare-videos.md)
+- [Settings & Video Tuning](docs/en/settings-and-video-tuning.md)
 - [Daily Use](docs/en/daily-use.md)
 - [Networking and Troubleshooting](docs/en/networking-troubleshooting.md)
 
@@ -72,6 +73,7 @@ flowchart LR
 - [Налаштування панелі керування](docs/uk/setup-control-panel.md)
 - [Налаштування Quest player](docs/uk/setup-player.md)
 - [Підготовка відео](docs/uk/prepare-videos.md)
+- [Налаштування та тюнінг відео](docs/uk/settings-and-video-tuning.md)
 - [Щоденне використання](docs/uk/daily-use.md)
 - [Мережа та усунення проблем](docs/uk/networking-troubleshooting.md)
 

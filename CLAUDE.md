@@ -155,7 +155,7 @@ Unity Player → HTTP self-registration → FastAPI Server → WebSocket → Web
 | Server port | 8000 | `config.py` |
 | Player HTTP port | 8080 | `PlayerConfig.cs` |
 | Video path on device | `/sdcard/Movies/` | `PlayerConfig.cs` |
-| Package ID | `com.vrclassroom.player` | `config.py` |
+| Package ID | `com.vrclass.player` | `ProjectSettings.asset` (`applicationIdentifier`) |
 | Default view mode | Sphere360 | `PlayerConfig.cs` |
 | Max RenderTexture | 4096x4096 | `VideoPlayerController.cs` |
 

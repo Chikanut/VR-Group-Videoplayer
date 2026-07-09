@@ -49,5 +49,6 @@
 ## Пов'язані гайди
 
 - [Швидкий старт](quick-start.md)
+- [Налаштування та тюнінг відео](settings-and-video-tuning.md)
 - [Щоденне використання](daily-use.md)
 - [Мережа та усунення проблем](networking-troubleshooting.md)

@@ -13,6 +13,7 @@ It is designed for schools, labs, museums, and training spaces where the operato
 - prepare a lesson list by video filename
 - launch playback on one headset or the whole class
 - pause, stop, restart, recenter, and adjust volume
+- seek (jump to any moment) for all headsets or one, and tune each video's look
 - use flat 2D or 360 video content
 
 ## Main Components
