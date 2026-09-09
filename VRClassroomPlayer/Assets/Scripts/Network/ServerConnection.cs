@@ -26,6 +26,12 @@ namespace VRClassroom
             public string action;
             public string file;
             public string mode;
+            // Stereo 3D / 180 (optional; old servers do not send them)
+            public string format;
+            public string projection;
+            public string stereo;
+            public bool swapEyes;
+            public float forwardYaw;
             public string placementMode;
             public bool loop;
             public bool autoRecenterOnOpen = true;
@@ -517,58 +523,35 @@ namespace VRClassroom
                 {
                     case "open":
                         {
-                            string file = command.file;
-                            string mode = command.mode;
-                            string placementMode = command.placementMode;
-                            bool loop = command.loop;
-                            bool autoRecenterOnOpen = command.autoRecenterOnOpen;
                             LogInfo("command_start", commandId,
-                                $"action=open, file={SafeValue(file)}, mode={SafeValue(mode)}, placementMode={SafeValue(placementMode)}, loop={loop}");
+                                $"action=open, file={SafeValue(command.file)}, mode={SafeValue(command.mode)}, format={SafeValue(command.format)}, projection={SafeValue(command.projection)}, stereo={SafeValue(command.stereo)}, swapEyes={command.swapEyes}, forwardYaw={command.forwardYaw}, placementMode={SafeValue(command.placementMode)}, loop={command.loop}");
 
-                            ViewMode targetMode = viewModeManager != null ? viewModeManager.CurrentMode : PlayerConfig.DefaultViewMode;
-                            if (viewModeManager != null && !string.IsNullOrEmpty(mode))
+                            if (string.IsNullOrEmpty(command.file))
                             {
-                                targetMode = ViewModeParser.Parse(mode);
-                                if (targetMode != viewModeManager.CurrentMode)
-                                    viewModeManager.SetMode(targetMode);
-                            }
-
-                            if (viewModeManager != null)
-                            {
-                                viewModeManager.ApplyAdvancedSettingsOverride(targetMode, command.advancedSettings);
-                                viewModeManager.ApplyPlacementOverride(targetMode, placementMode);
-                            }
-
-                            if (autoRecenterOnOpen)
-                            {
-                                orientationManager?.Recenter();
-                            }
-
-                            if (videoPlayer != null)
-                            {
-                                bool openInvoked = false;
-                                if (videoPlayer != null && !string.IsNullOrEmpty(file))
-                                {
-                                    videoPlayer.IsLooping = loop;
-                                    openInvoked = true;
-                                }
-
-                                if (string.IsNullOrEmpty(file))
-                                {
-                                    Debug.LogWarning("[ServerConnection] OPEN command ignored: 'file' is missing or empty");
-                                    break;
-                                }
-
-                                if (videoPlayer != null)
-                                {
-                                    videoPlayer.Open(file);
-                                }
-                                LogInfo("command_end", commandId,
-                                    $"action=open, file={SafeValue(file)}, mode={SafeValue(mode)}, placementMode={SafeValue(placementMode)}, loop={loop}, openInvoked={openInvoked}");
+                                Debug.LogWarning("[ServerConnection] OPEN command ignored: 'file' is missing or empty");
                                 break;
                             }
-                        };
-                        break;
+
+                            var request = new VideoOpenRequest
+                            {
+                                file = command.file,
+                                mode = command.mode,
+                                format = command.format,
+                                projection = command.projection,
+                                stereo = command.stereo,
+                                swapEyes = command.swapEyes,
+                                forwardYaw = command.forwardYaw,
+                                loop = command.loop,
+                                placementMode = command.placementMode,
+                                autoRecenterOnOpen = command.autoRecenterOnOpen,
+                                advancedSettings = command.advancedSettings,
+                            };
+
+                            VideoFormat resolved = VideoOpenExecutor.Execute(request, viewModeManager, videoPlayer, orientationManager);
+                            LogInfo("command_end", commandId,
+                                $"action=open, file={SafeValue(command.file)}, format={(resolved != null ? resolved.ToString() : "n/a")}, placementMode={SafeValue(command.placementMode)}, loop={command.loop}, openInvoked={videoPlayer != null}");
+                            break;
+                        }
                     case "play":
                         LogInfo("command_start", commandId, "action=play");
                         videoPlayer?.Play();
@@ -616,8 +599,17 @@ namespace VRClassroom
                             LogInfo("command_start", commandId, $"action=set_mode, mode={SafeValue(mode)}");
                             if (viewModeManager != null && !string.IsNullOrEmpty(mode))
                             {
-                                ViewMode vm = ViewModeParser.Parse(mode);
-                                viewModeManager.SetMode(vm);
+                                // Accepts legacy "360"/"2d" as well as full ids like "180_sbs".
+                                if (VideoFormatParser.TryParseFormatId(mode, out var format))
+                                {
+                                    format.swapEyes = command.swapEyes;
+                                    format.forwardYaw = command.forwardYaw;
+                                    viewModeManager.SetFormat(format);
+                                }
+                                else
+                                {
+                                    viewModeManager.SetMode(ViewModeParser.Parse(mode));
+                                }
                             }
                             LogInfo("command_end", commandId, $"action=set_mode, mode={SafeValue(mode)}");
                             break;

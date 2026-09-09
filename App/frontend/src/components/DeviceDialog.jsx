@@ -10,10 +10,13 @@ import {
   toggleDeviceDebug,
 } from '../api';
 import { useI18n } from '../i18n';
+import { deviceCompatWarnings, deviceFormatLabel, formatBytes, formatLabel, resolveVideoFormat } from '../videoFormats';
 
 export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
   const { t } = useI18n();
   const device = useDeviceStore((state) => state.devices[deviceId]);
+  const config = useDeviceStore((state) => state.config);
+  const configuredVideos = config?.requirementVideos || [];
   const [editName, setEditName] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [requirements, setRequirements] = useState(null);
@@ -117,11 +120,59 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
                 <td>{t('Player')}</td>
                 <td className={device.playerConnected ? 'text-ok' : 'text-warn'}>
                   {device.playerConnected ? `${t('Connected')} (v${device.playerVersion || '-'})` : t('Player offline')}
+                  {device.playerConnected && device.stereoCapable === false && (
+                    <span className="badge badge-warn" style={{ marginLeft: 8 }} title={t('Older player versions play 3D and 180° content as mono 360.')}>
+                      {t('No 3D')}
+                    </span>
+                  )}
                 </td>
               </tr>
+              {device.decoderCaps && device.decoderCaps.available && (
+                <tr>
+                  <td>{t('Decoder')}</td>
+                  <td>
+                    HEVC {device.decoderCaps.hevcMaxWidth}x{device.decoderCaps.hevcMaxHeight}
+                    {device.decoderCaps.hevcMain10 ? ' Main10' : ' 8-bit'}
+                    {device.decoderCaps.hevcMaxLevel ? ` L${device.decoderCaps.hevcMaxLevel}` : ''}
+                    {device.decoderCaps.hevcSupports8192x4096 ? ` | 8K${device.decoderCaps.hevcMaxFrameRateAt8K ? `@${device.decoderCaps.hevcMaxFrameRateAt8K}` : ''}` : ''}
+                  </td>
+                </tr>
+              )}
+              {device.decoderCaps && device.decoderCaps.storageFreeBytes > 0 && (
+                <tr>
+                  <td>{t('Free storage')}</td>
+                  <td>{formatBytes(device.decoderCaps.storageFreeBytes)} / {formatBytes(device.decoderCaps.storageTotalBytes)}</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
+
+        {device.playerConnected && configuredVideos.length > 0 && (() => {
+          const issues = configuredVideos
+            .map((video) => ({ video, warnings: deviceCompatWarnings(video, device, t) }))
+            .filter((item) => item.warnings.length > 0);
+          return (
+            <div className="dialog-section">
+              <h3>{t('Compatibility')}</h3>
+              {issues.length === 0 ? (
+                <p className="dialog-playback-info">{t('All configured videos are compatible with this headset.')}</p>
+              ) : (
+                <div className="req-list">
+                  {issues.map(({ video, warnings }) => (
+                    <div key={video.id} className="req-item req-item-fail">
+                      <span>⚠</span>
+                      <span className="req-name">
+                        {video.name || video.filename} ({formatLabel(resolveVideoFormat(video), t)})
+                      </span>
+                      <span className="req-type">{warnings.join('; ')}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         <div className="dialog-section">
           <h3>{t('Requirements')}</h3>
@@ -208,7 +259,9 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
           {device.playbackState !== 'idle' && (
             <div className="dialog-playback-info">
               <p>
-                {t('State')}: <strong>{device.playbackState}</strong> | {t('Mode')}: <strong>{device.currentMode}</strong>
+                {t('State')}: <strong>{device.playbackState}</strong> | {t('Format')}: <strong>{deviceFormatLabel(device, t) || device.currentMode}</strong>
+                {device.swapEyes && ` | ${t('Swap eyes')}`}
+                {device.videoWidth > 0 && ` | ${device.videoWidth}x${device.videoHeight}`}
                 {device.loop && ` | ${t('Loop')}`}
               </p>
               {device.currentVideo && <p>{t('File')}: {device.currentVideo}</p>}

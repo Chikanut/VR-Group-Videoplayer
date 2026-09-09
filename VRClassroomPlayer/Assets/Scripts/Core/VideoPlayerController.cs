@@ -16,9 +16,21 @@ namespace VRClassroom
         public event Action OnVideoCompleted;
         public event Action<RenderTexture> OnRenderTextureResized;
 
+        /// <summary>Real source resolution, known after prepare (width, height).</summary>
+        public event Action<int, int> OnVideoSizeKnown;
+
         public PlayerState CurrentState { get; private set; } = PlayerState.Idle;
         public string CurrentFile { get; private set; } = string.Empty;
         public RenderTexture TargetTexture { get; private set; }
+
+        /// <summary>Source video width in pixels (0 until prepared).</summary>
+        public int VideoWidth { get; private set; }
+
+        /// <summary>Source video height in pixels (0 until prepared).</summary>
+        public int VideoHeight { get; private set; }
+
+        /// <summary>Name of the playback backend reported in /status ("unity").</summary>
+        public string BackendName => PlayerConfig.VideoBackendName;
         public float GlobalVolume { get; private set; } = 1f;
         public float PersonalVolume { get; private set; } = 1f;
         public float EffectiveVolume => Mathf.Clamp01(GlobalVolume * PersonalVolume);
@@ -289,7 +301,12 @@ namespace VRClassroom
             }
 
             Debug.Log("[VideoPlayerController] File exists, preparing playback...");
+            Debug.Log($"[VideoPlayerController] Render limits: maxTextureDimension={PlayerRenderSettings.MaxTextureDimension}, " +
+                      $"SystemInfo.maxTextureSize={SystemInfo.maxTextureSize}, systemMemory={SystemInfo.systemMemorySize}MB, " +
+                      $"graphicsMemory={SystemInfo.graphicsMemorySize}MB, currentRT={TargetTexture?.width}x{TargetTexture?.height}");
             CurrentFile = filename;
+            VideoWidth = 0;
+            VideoHeight = 0;
             _videoPlayer.url = "file://" + fullPath;
 
             SetState(PlayerState.Loading);
@@ -336,6 +353,8 @@ namespace VRClassroom
 
             ClearRenderTexture();
             CurrentFile = string.Empty;
+            VideoWidth = 0;
+            VideoHeight = 0;
             SetState(PlayerState.Idle);
         }
 
@@ -389,8 +408,12 @@ namespace VRClassroom
 
             ApplyEffectiveVolume();
 
+            VideoWidth = (int)source.width;
+            VideoHeight = (int)source.height;
+            OnVideoSizeKnown?.Invoke(VideoWidth, VideoHeight);
+
             // Resize RenderTexture to match video resolution
-            ResizeRenderTexture((int)source.width, (int)source.height);
+            ResizeRenderTexture(VideoWidth, VideoHeight);
 
             SetState(PlayerState.Ready);
             OnVideoLoaded?.Invoke(CurrentFile);
@@ -409,10 +432,16 @@ namespace VRClassroom
                 return;
             }
 
-            // Clamp to reasonable limits for Quest hardware
-            const int maxDimension = 4096;
+            // Clamp to the configured limit (PlayerConfig.MaxRenderTextureDimension, overridable
+            // via PUT /render-settings) and never above what the GPU supports. A stereo 8K
+            // source clamped to 4096 keeps 2048x4096 per eye; see the spec for the trade-off.
+            int maxDimension = PlayerRenderSettings.MaxTextureDimension;
             int targetWidth = Math.Min(videoWidth, maxDimension);
             int targetHeight = Math.Min(videoHeight, maxDimension);
+            if (targetWidth != videoWidth || targetHeight != videoHeight)
+            {
+                Debug.LogWarning($"[VideoPlayerController] Video {videoWidth}x{videoHeight} exceeds maxTextureDimension={maxDimension}; RenderTexture clamped to {targetWidth}x{targetHeight}.");
+            }
 
             if (TargetTexture != null && TargetTexture.width == targetWidth && TargetTexture.height == targetHeight)
             {

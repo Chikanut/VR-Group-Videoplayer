@@ -31,5 +31,30 @@ namespace VRClassroom
         /// RenderTexture resolution for video output.
         /// </summary>
         public const int RenderTextureSize = 2048;
+
+        /// <summary>
+        /// Largest RenderTexture side for the Unity VideoPlayer backend. 4096 keeps 8K
+        /// stereo sources at 2048x4096 per eye; raising it to 8192 needs the Phase 0 device
+        /// verification (memory bandwidth). Can be overridden at runtime through
+        /// PUT /render-settings (see <see cref="PlayerRenderSettings"/>).
+        /// </summary>
+        public const int MaxRenderTextureDimension = 4096;
+
+        /// <summary>
+        /// Longitude/latitude segments of the procedural VR180 hemisphere. Below 64 straight
+        /// lines (walls, door frames) show visible facets.
+        /// </summary>
+        public const int HemisphereMeshSegments = 64;
+
+        /// <summary>
+        /// Radius (world units) of the VR180 hemisphere; matches the 100-unit sphere.
+        /// </summary>
+        public const float HemisphereRadius = 100f;
+
+        /// <summary>
+        /// Rendering backend name reported in /status. "native" is reserved for the
+        /// OVROverlay + Android MediaPlayer backend (Phase 3).
+        /// </summary>
+        public const string VideoBackendName = "unity";
     }
 }

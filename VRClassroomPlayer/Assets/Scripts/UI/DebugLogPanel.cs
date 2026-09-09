@@ -178,6 +178,11 @@ namespace VRClassroom
             if (message.StartsWith("[VideoPlayerController]", StringComparison.Ordinal)) return true;
             if (message.StartsWith("[ViewModeManager]", StringComparison.Ordinal)) return true;
             if (message.StartsWith("[ViewModeParser]", StringComparison.Ordinal)) return true;
+            if (message.StartsWith("[VideoFormatParser]", StringComparison.Ordinal)) return true;
+            if (message.StartsWith("[VideoOpenExecutor]", StringComparison.Ordinal)) return true;
+            if (message.StartsWith("[DecoderCapabilities]", StringComparison.Ordinal)) return true;
+            if (message.StartsWith("[VideoRenderShaderFactory]", StringComparison.Ordinal)) return true;
+            if (message.StartsWith("[PlayerRenderSettings]", StringComparison.Ordinal)) return true;
             if (message.StartsWith("[OrientationManager]", StringComparison.Ordinal)) return true;
             if (message.StartsWith("[StatusReporter]", StringComparison.Ordinal)) return true;
             if (message.StartsWith("[PlayerStateManager]", StringComparison.Ordinal)) return true;

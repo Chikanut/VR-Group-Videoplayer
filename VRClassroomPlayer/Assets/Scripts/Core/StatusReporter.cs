@@ -36,6 +36,10 @@ namespace VRClassroom
             string state = "idle";
             string file = "";
             string mode = "2d";
+            VideoFormat format = VideoFormat.None;
+            int videoWidth = 0;
+            int videoHeight = 0;
+            string backend = PlayerConfig.VideoBackendName;
             float time = 0f;
             float duration = 0f;
             bool loop = false;
@@ -54,11 +58,16 @@ namespace VRClassroom
                 globalVolume = videoPlayer.GlobalVolume;
                 personalVolume = videoPlayer.PersonalVolume;
                 effectiveVolume = videoPlayer.EffectiveVolume;
+                videoWidth = videoPlayer.VideoWidth;
+                videoHeight = videoPlayer.VideoHeight;
+                backend = videoPlayer.BackendName;
             }
 
             if (viewModeManager != null)
             {
-                mode = viewModeManager.CurrentMode == ViewMode.Sphere360 ? "360" : "2d";
+                format = viewModeManager.CurrentFormat ?? VideoFormat.None;
+                // Legacy field: "360" for any spherical content (incl. 180°), "2d" otherwise.
+                mode = format.LegacyMode;
             }
 
             var stateManager = PlayerStateManager.Instance;
@@ -76,7 +85,7 @@ namespace VRClassroom
             string macAddress = GetMacAddress();
             int uptimeMinutes = Mathf.FloorToInt(Time.realtimeSinceStartup / 60f);
 
-            var sb = new StringBuilder(512);
+            var sb = new StringBuilder(1024);
             sb.Append('{');
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"deviceId\":\"{0}\",", EscapeJson(deviceId));
             if (!string.IsNullOrEmpty(deviceName))
@@ -89,6 +98,17 @@ namespace VRClassroom
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"state\":\"{0}\",", EscapeJson(state));
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"file\":\"{0}\",", EscapeJson(file));
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"mode\":\"{0}\",", EscapeJson(mode));
+            // Stereo 3D / 180 fields (servers < 1.7 ignore them).
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"format\":\"{0}\",", EscapeJson(format.FormatId));
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"projection\":\"{0}\",", VideoFormatParser.ProjectionId(format.projection));
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"stereo\":\"{0}\",", VideoFormatParser.StereoId(format.stereo));
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"swapEyes\":{0},", format.swapEyes ? "true" : "false");
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"forwardYaw\":{0:F1},", format.forwardYaw);
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"videoWidth\":{0},", videoWidth);
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"videoHeight\":{0},", videoHeight);
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"backend\":\"{0}\",", EscapeJson(backend));
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"maxTextureDimension\":{0},", PlayerRenderSettings.MaxTextureDimension);
+            sb.Append("\"decoderCaps\":").Append(DecoderCapabilities.ToJson()).Append(',');
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"time\":{0:F1},", time);
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"duration\":{0:F1},", duration);
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"loop\":{0},", loop ? "true" : "false");

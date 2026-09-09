@@ -28,14 +28,69 @@ class VideoAdvancedSettings(BaseModel):
     materialSettings: VideoMaterialSettings = Field(default_factory=VideoMaterialSettings)
 
 
+class VideoProbeInfo(BaseModel):
+    """Technical data read from the video file headers (see video_probe.py)."""
+    width: int = 0
+    height: int = 0
+    fps: float = 0.0
+    codec: str = ""
+    bitDepth: int = 0
+    chromaFormat: str = ""
+    profile: str = ""
+    tier: str = ""
+    level: str = ""
+    bitrateMbps: float = 0.0
+    durationSec: float = 0.0
+    sizeBytes: int = 0
+    container: str = ""
+    faststart: bool = False
+    colorPrimaries: int = 0
+    colorTransfer: int = 0
+    colorMatrix: int = 0
+    pixelAspect: str = ""
+    audioCodec: str = ""
+    audioChannels: int = 0
+    audioSampleRate: int = 0
+    trackTypes: List[str] = Field(default_factory=list)
+    metadataProjection: str = ""   # verbatim from the file, NOT trusted
+    metadataStereo: str = ""
+    metadataSource: str = ""
+    projectionBounds: Dict[str, float] = Field(default_factory=dict)
+    detectedType: str = ""         # result of auto-detection
+    detectionSource: str = ""      # "manual" | "filename" | "aspect+metadata" | "aspect" | "metadata" | "default"
+    autoDetectedType: str = ""     # auto-detection result even when a manual format was given
+    autoDetectionSource: str = ""
+    warnings: List[str] = Field(default_factory=list)
+
+
 class RequirementVideo(BaseModel):
     id: str = ""
     name: str = ""
     filename: str = ""
     loop: bool = False
+    # Canonical formatId: 2d | 360 | 360_sbs | 360_tb | 180 | 180_sbs | 180_tb | auto.
+    # Aliases (sphere, flat, 180_LR, 360_OU ...) are normalized by config.py.
     videoType: str = "360"
     placementMode: str = "default"
+    swapEyes: bool = False
+    forwardYaw: float = 0.0
+    detectedType: str = ""
+    detectionSource: str = ""
+    probe: Optional[VideoProbeInfo] = None
     advancedSettings: Optional[VideoAdvancedSettings] = None
+
+
+class VideoProbeRequest(BaseModel):
+    """POST /api/videos/probe body: a path on the control-panel machine."""
+    path: str
+    filename: str = ""      # override the name used for suffix detection (defaults to basename)
+    videoType: str = "auto"  # manual format, or "auto" to detect
+
+
+class VideoDetectRequest(BaseModel):
+    """POST /api/videos/detect body: filename-only detection (no file access)."""
+    filename: str
+    videoType: str = "auto"
 
 
 class ConfigModel(BaseModel):
@@ -72,7 +127,15 @@ class DeviceState:
         self.requirements_detail: List[Dict] = []
         self.playback_state: str = "idle"  # idle/playing/paused/loading/completed/error
         self.current_video: str = ""
-        self.current_mode: str = "360"
+        self.current_mode: str = "360"          # legacy "360" / "2d" as reported by the player
+        self.current_projection: str = ""       # "flat" | "180" | "360" (derived from mode for old players)
+        self.current_stereo: str = ""           # "mono" | "sbs" | "tb"
+        self.swap_eyes: bool = False
+        self.video_width: int = 0
+        self.video_height: int = 0
+        self.backend: str = ""                  # "unity" | "native" | "" (old player)
+        self.decoder_caps: Dict[str, Any] = {}  # from /status decoderCaps, empty for old players
+        self.stereo_capable: Optional[bool] = None  # None = unknown, False = pre-stereo player
         self.playback_time: float = 0.0
         self.playback_duration: float = 0.0
         self.loop: bool = False
@@ -102,6 +165,14 @@ class DeviceState:
             "playbackState": self.playback_state,
             "currentVideo": self.current_video,
             "currentMode": self.current_mode,
+            "currentProjection": self.current_projection,
+            "currentStereo": self.current_stereo,
+            "swapEyes": self.swap_eyes,
+            "videoWidth": self.video_width,
+            "videoHeight": self.video_height,
+            "backend": self.backend,
+            "decoderCaps": self.decoder_caps,
+            "stereoCapable": self.stereo_capable,
             "playbackTime": self.playback_time,
             "playbackDuration": self.playback_duration,
             "loop": self.loop,

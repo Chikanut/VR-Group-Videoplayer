@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "control-panel",
+      "runtimeExecutable": "App/venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "App.server.main:app", "--host", "127.0.0.1", "--port", "8010"],
+      "port": 8010,
+      "autoPort": false
+    }
+  ]
+}

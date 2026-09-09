@@ -2,6 +2,7 @@ import React from 'react';
 import useDeviceStore from '../store/deviceStore';
 import { playbackOpen } from '../api';
 import { useI18n } from '../i18n';
+import { deviceCompatWarnings, formatLabel, isStereoFormat, resolveVideoFormat } from '../videoFormats';
 
 export default function VideoSelector({ targetDeviceIds, onClose }) {
   const { t } = useI18n();
@@ -47,14 +48,33 @@ export default function VideoSelector({ targetDeviceIds, onClose }) {
     return { available, total: targetDevices.length };
   };
 
+  const getCompatWarnings = (video) => {
+    const items = [];
+    for (const device of targetDevices) {
+      const warnings = deviceCompatWarnings(video, device, t);
+      if (warnings.length > 0) {
+        items.push({ device, warnings });
+      }
+    }
+    return items;
+  };
+
   const handlePlay = async (video) => {
     const result = await playbackOpen(video.id, targetDeviceIds);
+    const messages = [];
     if (result.missing && result.missing.length > 0) {
       const names = result.missing.map((item) => item.name || item.deviceId).join(', ');
-      alert(
-        `${t('Video missing on {count} device(s): {names}.', { count: result.missing.length, names })}\n` +
-        t('Playing on {count} available device(s).', { count: (result.success || []).length }),
-      );
+      messages.push(t('Video missing on {count} device(s): {names}.', { count: result.missing.length, names }));
+      messages.push(t('Playing on {count} available device(s).', { count: (result.success || []).length }));
+    }
+    if (Array.isArray(result.warnings) && result.warnings.length > 0) {
+      messages.push(t('Compatibility warnings:'));
+      for (const item of result.warnings) {
+        messages.push(`${item.name || item.deviceId}: ${(item.warnings || []).join('; ')}`);
+      }
+    }
+    if (messages.length > 0) {
+      alert(messages.join('\n'));
     }
     onClose();
   };
@@ -71,14 +91,29 @@ export default function VideoSelector({ targetDeviceIds, onClose }) {
           {videos.map((video) => {
             const { available, total } = getVideoAvailability(video);
             const canPlay = total > 0 && available > 0;
+            const formatId = resolveVideoFormat(video);
+            const compat = getCompatWarnings(video);
 
             return (
               <div key={video.id} className="video-item">
                 <div className="video-info">
                   <span className="video-name">{video.name}</span>
                   <span className="video-meta">
-                    {video.videoType.toUpperCase()} {video.loop ? `| ${t('Loop')}` : ''}
+                    <span className={`badge ${isStereoFormat(formatId) ? 'badge-info' : 'badge-ok'}`} title={formatId}>
+                      {formatLabel(formatId, t)}
+                    </span>
+                    {video.videoType === 'auto' && <span className="video-meta-auto"> ({t('Auto')})</span>}
+                    {video.loop ? ` | ${t('Loop')}` : ''}
+                    {video.probe?.width ? ` | ${video.probe.width}x${video.probe.height}` : ''}
                   </span>
+                  {compat.length > 0 && (
+                    <span
+                      className="video-missing-note"
+                      title={compat.map((item) => `${item.device.name || item.device.deviceId}: ${item.warnings.join('; ')}`).join('\n')}
+                    >
+                      ⚠ {t('{count} device(s) may not play this format correctly', { count: compat.length })}
+                    </span>
+                  )}
                   <span className={`video-availability ${available < total ? 'partial' : ''}`}>
                     {t('Available on {available}/{total} device(s)', { available, total })}
                   </span>

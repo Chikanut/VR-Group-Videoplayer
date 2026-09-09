@@ -93,6 +93,36 @@ export async function setGlobalVolume(volume) {
   });
 }
 
+export async function getVideoFormats() {
+  return request('/video-formats');
+}
+
+/** Filename-only format detection (no file access on the server). */
+export async function detectVideoFormat(filename, videoType = 'auto') {
+  return request('/videos/detect', {
+    method: 'POST',
+    body: JSON.stringify({ filename, videoType }),
+  });
+}
+
+/** Read the headers of a video file on the control-panel machine and auto-detect its format. */
+export async function probeVideoFile(path, { filename = '', videoType = 'auto' } = {}) {
+  const res = await fetch(`${API_BASE}/videos/probe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, filename, videoType }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data?.error || `HTTP ${res.status}`);
+  }
+  return data;
+}
+
+export async function getVideoCompatibility(videoId) {
+  return request(`/videos/${videoId}/compatibility`);
+}
+
 export async function setDeviceVolume(deviceId, volume) {
   return request(`/devices/${deviceId}/volume`, {
     method: 'POST',

@@ -2,6 +2,7 @@ import React from 'react';
 import { pingDevice } from '../api';
 import { useI18n } from '../i18n';
 import useDeviceStore from '../store/deviceStore';
+import { deviceFormatLabel } from '../videoFormats';
 
 function getBorderClass(device) {
   if (!device.online) {
@@ -70,6 +71,14 @@ export default function DeviceTile({ device, onClick }) {
 
       <div className="tile-status-row">
         <ConnectionBadge device={device} t={t} />
+        {device.online && device.playerConnected && device.stereoCapable === false && (
+          <span className="badge badge-warn" title={t('Older player versions play 3D and 180° content as mono 360.')}>
+            {t('No 3D')}
+          </span>
+        )}
+        {isPlaying && deviceFormatLabel(device, t) && (
+          <span className="badge badge-info" title={t('Video format')}>{deviceFormatLabel(device, t)}</span>
+        )}
       </div>
 
       {device.online && (

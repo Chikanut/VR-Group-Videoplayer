@@ -31,12 +31,18 @@ from .models import (
     PlaybackCommand,
     RequirementVideo,
     SeekCommand,
+    VideoDetectRequest,
+    VideoProbeRequest,
     VolumeUpdate,
 )
+from .format_compat import check_video_on_device
+from .video_format import describe_format, list_formats
+from .video_probe import ProbeError, detect_without_probe, format_summary, probe_and_detect
 from .playback_controller import (
     get_global_volume,
     open_video,
     ping_device,
+    resolve_video_format,
     seek_video,
     send_command,
     set_device_volume,
@@ -166,6 +172,71 @@ async def update_video_profile(video_id: str, profile: RequirementVideo):
             return video
 
     return JSONResponse(status_code=500, content={"error": "Failed to save video profile"})
+
+
+@app.get("/api/video-formats")
+async def get_video_formats():
+    """Canonical formatIds with their projection/stereo split and legacy mode."""
+    return {"formats": list_formats()}
+
+
+@app.post("/api/videos/detect")
+async def detect_video_format(body: VideoDetectRequest):
+    """Filename-only detection (no file access). Used by the settings UI as you type."""
+    detected, source, warnings = detect_without_probe(body.filename, body.videoType or "auto")
+    return {
+        "filename": body.filename,
+        "detectedType": detected,
+        "detectionSource": source,
+        "warnings": warnings,
+        "format": describe_format(detected),
+    }
+
+
+@app.post("/api/videos/probe")
+async def probe_video_file(body: VideoProbeRequest):
+    """Read the headers of a local video file and auto-detect its format.
+
+    Only box headers and the moov atom are read, so this is fast even for multi-GB files.
+    The response is meant to be stored on the RequirementVideo (`probe`, `detectedType`,
+    `detectionSource`) so it is available at open time and for device compatibility checks.
+    """
+    path = (body.path or "").strip().strip('"')
+    if not path:
+        return JSONResponse(status_code=400, content={"error": "path is required"})
+    try:
+        result = await asyncio.to_thread(probe_and_detect, path, body.videoType or "auto", body.filename or None)
+    except ProbeError as exc:
+        return JSONResponse(status_code=422, content={"error": str(exc)})
+    except OSError as exc:
+        return JSONResponse(status_code=400, content={"error": f"cannot read file: {exc}"})
+    except Exception as exc:  # pragma: no cover - defensive, malformed files
+        logger.exception("Video probe failed for %s", path)
+        return JSONResponse(status_code=500, content={"error": f"probe failed: {exc}"})
+
+    logger.info("Probed %s: %s", path, format_summary(result))
+    data = result.to_dict()
+    data["path"] = path
+    data["format"] = describe_format(result.detectedType)
+    return data
+
+
+@app.get("/api/videos/{video_id}/compatibility")
+async def video_compatibility(video_id: str):
+    """Per-device warnings for a configured video (decoder limits, old player, storage)."""
+    config = get_config()
+    video = next((item for item in config.get("requirementVideos", []) if item.get("id") == video_id), None)
+    if not video:
+        return JSONResponse(status_code=404, content={"error": "Video profile not found"})
+
+    format_id = resolve_video_format(video)
+    devices = await device_manager.get_online_player_devices()
+    report = []
+    for device in devices:
+        warnings = check_video_on_device(video, device, format_id)
+        if warnings:
+            report.append({"deviceId": device.device_id, "name": device.name or device.device_id, "warnings": warnings})
+    return {"videoId": video_id, "format": describe_format(format_id), "devices": report}
 
 
 @app.get("/api/devices")

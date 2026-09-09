@@ -52,5 +52,17 @@ namespace VRClassroom
         [Header("Parenting")]
         [Tooltip("If true, this display object follows the VR camera (parented to it). Typically true for Flat2D, false for Sphere360.")]
         public bool parentToCamera;
+
+        [Header("Stereo 3D")]
+        [Tooltip("Material used when a stereo (SBS/TB) video is opened and the main material has no _StereoLayout property " +
+                 "(e.g. a Shader Graph material). Leave null to build one from VRClassroom/VideoSphere at runtime.")]
+        public Material stereoMaterialOverride;
+
+        [Tooltip("For the runtime-built stereo fallback material only: mirror the U coordinate so the video is not " +
+                 "flipped when seen from inside the mesh. Unity's sphere primitive needs this; verify on device for custom meshes.")]
+        public bool fallbackMirrorU = true;
+
+        /// <summary>Projection this config applies to (derived from the legacy viewMode field).</summary>
+        public VideoProjection Projection => VideoFormat.ProjectionOf(viewMode);
     }
 }

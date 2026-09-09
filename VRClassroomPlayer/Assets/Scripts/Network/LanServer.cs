@@ -194,6 +194,12 @@ namespace VRClassroom
                         case "/server-ip":
                             HandleGetServerIp(response);
                             return;
+                        case "/decoder-caps":
+                            SendJson(response, 200, DecoderCapabilities.ToJson());
+                            return;
+                        case "/render-settings":
+                            SendJson(response, 200, PlayerRenderSettings.ToJson());
+                            return;
                     }
                 }
 
@@ -219,6 +225,9 @@ namespace VRClassroom
                             return;
                         case "/video-settings":
                             HandlePutVideoSettings(response, putBody);
+                            return;
+                        case "/render-settings":
+                            HandlePutRenderSettings(response, putBody);
                             return;
                     }
                 }
@@ -360,54 +369,27 @@ namespace VRClassroom
 
             try
             {
-                var data = JsonUtility.FromJson<OpenRequest>(body);
-                if (string.IsNullOrEmpty(data.file))
+                // VideoOpenRequest carries the legacy "mode" plus projection/stereo/swapEyes/forwardYaw.
+                // Unknown keys from newer servers are ignored by JsonUtility; missing keys keep defaults.
+                var data = JsonUtility.FromJson<VideoOpenRequest>(body);
+                if (data == null || string.IsNullOrEmpty(data.file))
                 {
                     Debug.LogWarning("[LanServer] POST /open: missing file parameter");
                     SendJson(response, 400, "{\"error\":\"missing file parameter\"}");
                     return;
                 }
 
-                string file = data.file;
-                string mode = data.mode;
-                bool loop = data.loop;
-                bool autoRecenterOnOpen = data.autoRecenterOnOpen;
-                string placementMode = data.placementMode;
-                VideoAdvancedSettings advancedSettings = data.advancedSettings;
-                if (advancedSettings == null)
+                if (data.advancedSettings == null)
                 {
-                    advancedSettings = GetVideoAdvancedSettings(file);
+                    data.advancedSettings = GetVideoAdvancedSettings(data.file);
                 }
 
-                Debug.Log($"[LanServer] POST /open: file={file}, mode={mode ?? "(default)"}, loop={loop}, placementMode={placementMode ?? "(default)"}, autoRecenterOnOpen={autoRecenterOnOpen}, advancedSettings={(advancedSettings != null ? "provided" : "none")}");
+                Debug.Log($"[LanServer] POST /open: file={data.file}, mode={data.mode ?? "(default)"}, format={data.format ?? "-"}, projection={data.projection ?? "-"}, stereo={data.stereo ?? "-"}, swapEyes={data.swapEyes}, forwardYaw={data.forwardYaw}, loop={data.loop}, placementMode={data.placementMode ?? "(default)"}, autoRecenterOnOpen={data.autoRecenterOnOpen}, advancedSettings={(data.advancedSettings != null ? "provided" : "none")}");
 
                 QueueCommand(() =>
                 {
-                    Debug.Log($"[LanServer] Executing: open file={file} mode={mode ?? "(default)"} loop={loop} placementMode={placementMode ?? "(default)"}");
-                    ViewMode targetMode = viewModeManager != null ? viewModeManager.CurrentMode : PlayerConfig.DefaultViewMode;
-                    if (!string.IsNullOrEmpty(mode) && viewModeManager != null)
-                    {
-                        targetMode = ViewModeParser.Parse(mode);
-                        viewModeManager.SetMode(targetMode);
-                    }
-
-                    if (viewModeManager != null)
-                    {
-                        viewModeManager.ApplyAdvancedSettingsOverride(targetMode, advancedSettings);
-                        viewModeManager.ApplyPlacementOverride(targetMode, placementMode);
-                    }
-
-                    if (videoPlayer != null)
-                    {
-                        videoPlayer.IsLooping = loop;
-                    }
-
-                    if (autoRecenterOnOpen)
-                    {
-                        orientationManager?.Recenter();
-                    }
-
-                    videoPlayer?.Open(file);
+                    Debug.Log($"[LanServer] Executing: open file={data.file}");
+                    VideoOpenExecutor.Execute(data, viewModeManager, videoPlayer, orientationManager);
                 });
 
                 SendJson(response, 200, "{\"ok\":true}");
@@ -416,6 +398,46 @@ namespace VRClassroom
             {
                 Debug.LogError($"[LanServer] POST /open: invalid json: {e.Message}");
                 SendJson(response, 400, $"{{\"error\":\"invalid json: {EscapeJson(e.Message)}\"}}");
+            }
+        }
+
+        /// <summary>
+        /// PUT /render-settings {"maxTextureDimension": 8192} or {"reset": true}.
+        /// Lets field tests raise the RenderTexture clamp without rebuilding the APK.
+        /// Takes effect on the next /open.
+        /// </summary>
+        private void HandlePutRenderSettings(HttpListenerResponse response, string body)
+        {
+            if (string.IsNullOrEmpty(body))
+            {
+                SendJson(response, 400, "{\"error\":\"missing body\"}");
+                return;
+            }
+
+            try
+            {
+                var data = JsonUtility.FromJson<RenderSettingsRequest>(body);
+                QueueCommand(() =>
+                {
+                    if (data.reset)
+                    {
+                        PlayerRenderSettings.Reset();
+                    }
+                    else if (data.maxTextureDimension > 0)
+                    {
+                        PlayerRenderSettings.MaxTextureDimension = data.maxTextureDimension;
+                    }
+                    else
+                    {
+                        Debug.LogWarning("[LanServer] PUT /render-settings: nothing to apply (maxTextureDimension <= 0 and reset=false)");
+                    }
+                });
+
+                SendJson(response, 200, "{\"ok\":true}");
+            }
+            catch (Exception e)
+            {
+                SendJson(response, 400, "{\"error\":\"invalid json: " + EscapeJson(e.Message) + "\"}");
             }
         }
 
@@ -917,14 +939,10 @@ namespace VRClassroom
         }
 
         [Serializable]
-        private class OpenRequest
+        private class RenderSettingsRequest
         {
-            public string file;
-            public string mode;
-            public bool loop;
-            public string placementMode;
-            public bool autoRecenterOnOpen = true;
-            public VideoAdvancedSettings advancedSettings;
+            public int maxTextureDimension;
+            public bool reset;
         }
 
         [Serializable]

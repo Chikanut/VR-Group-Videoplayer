@@ -7,8 +7,70 @@ import aiohttp
 from .config import PLAYER_HTTP_PORT, get_config
 from .device_manager import device_manager
 from .device_ws_manager import device_ws_manager
+from .format_compat import check_video_on_device
+from .video_format import (
+    DEFAULT_FORMAT,
+    FORMAT_AUTO,
+    format_id_from_filename,
+    legacy_mode_for,
+    normalize_format_id,
+    projection_of,
+    stereo_of,
+)
 
 logger = logging.getLogger("vrclassroom.playback")
+
+
+def resolve_video_format(video: Dict[str, Any]) -> str:
+    """Pick the effective formatId for a configured video.
+
+    Manual value wins. ``auto`` uses the detection cached in the config when the video was
+    added; failing that, the filename suffix; failing that, 360 mono (logged).
+    """
+    manual = normalize_format_id(video.get("videoType"))
+    if manual and manual != FORMAT_AUTO:
+        return manual
+
+    detected = normalize_format_id(video.get("detectedType"))
+    if detected and detected != FORMAT_AUTO:
+        return detected
+
+    from_name = format_id_from_filename(video.get("filename") or "")
+    if from_name:
+        return from_name
+
+    logger.warning(
+        "Video %s is set to auto but has no detection result and no filename suffix; using %s",
+        video.get("name") or video.get("filename") or video.get("id"),
+        DEFAULT_FORMAT,
+    )
+    return DEFAULT_FORMAT
+
+
+def build_open_payload(video: Dict[str, Any]) -> Dict[str, Any]:
+    """Build the /open body sent to players.
+
+    ``mode`` carries the legacy "360" / "2d" value so pre-stereo players keep working;
+    ``projection`` / ``stereo`` / ``swapEyes`` / ``forwardYaw`` are read by new players and
+    take precedence over ``mode`` there. JsonUtility on old players ignores unknown keys.
+    """
+    format_id = resolve_video_format(video)
+    payload = {
+        "file": (video.get("filename") or "").strip(),
+        "mode": legacy_mode_for(format_id),
+        "format": format_id,
+        "projection": projection_of(format_id),
+        "stereo": stereo_of(format_id),
+        "swapEyes": bool(video.get("swapEyes", False)),
+        "forwardYaw": float(video.get("forwardYaw", 0.0) or 0.0),
+        "loop": bool(video.get("loop", False)),
+        "placementMode": video.get("placementMode", "default"),
+    }
+
+    advanced_settings = video.get("advancedSettings")
+    if advanced_settings is not None:
+        payload["advancedSettings"] = advanced_settings
+    return payload
 
 REQUEST_TIMEOUT = 5
 global_volume = 1.0
@@ -87,24 +149,27 @@ async def open_video(video_id: str, device_ids: List[str]) -> Dict[str, Any]:
     if not devices:
         return {"error": "No online devices available"}
 
-    mode_map = {"2d": "2d", "360": "360", "360_mono": "360"}
-    payload = {
-        "file": filename,
-        "mode": mode_map.get(video.get("videoType", "360"), "360"),
-        "loop": bool(video.get("loop", False)),
-        "placementMode": video.get("placementMode", "default"),
-    }
-
-    advanced_settings = video.get("advancedSettings")
-    if advanced_settings is not None:
-        payload["advancedSettings"] = advanced_settings
+    payload = build_open_payload(video)
+    logger.info(
+        "Opening %s as %s (mode=%s projection=%s stereo=%s) on %d device(s)",
+        filename, payload["format"], payload["mode"], payload["projection"], payload["stereo"], len(devices),
+    )
 
     success_list = []
     failed_list = []
     missing_list = []
+    warnings_list = []
 
     tasks = []
     for device in devices:
+        device_warnings = check_video_on_device(video, device, payload["format"])
+        if device_warnings:
+            warnings_list.append({
+                "deviceId": device.device_id,
+                "name": device.name or device.device_id,
+                "warnings": device_warnings,
+            })
+
         video_present = True
         if device.requirements_detail:
             for requirement in device.requirements_detail:
@@ -132,6 +197,8 @@ async def open_video(video_id: str, device_ids: List[str]) -> Dict[str, Any]:
         "success": success_list,
         "failed": failed_list,
         "missing": missing_list,
+        "format": payload["format"],
+        "warnings": warnings_list,
     }
 
 

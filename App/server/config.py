@@ -8,6 +8,8 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Dict, Optional, Tuple
 
+from .video_format import DEFAULT_FORMAT, VALID_FORMAT_IDS, normalize_format_id
+
 logger = logging.getLogger("vrclassroom.config")
 
 
@@ -34,7 +36,9 @@ DEFAULT_CONFIG = {
 }
 
 RUNTIME_ONLY_KEYS = {"isAndroidRuntime"}
-VALID_VIDEO_TYPES = {"360", "2d"}
+# Canonical formatIds plus "auto" (see video_format.py). Legacy configs only ever contain
+# "360" / "2d"; those stay valid and mean mono.
+VALID_VIDEO_TYPES = set(VALID_FORMAT_IDS)
 VALID_PLACEMENT_MODES = {"default", "locked", "free"}
 
 _config: dict = {}
@@ -87,13 +91,24 @@ def _normalize_string(value: Any) -> str:
     return str(value).strip()
 
 
+def _normalize_float(value: Any, default: float, *, minimum: Optional[float] = None, maximum: Optional[float] = None) -> float:
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError):
+        normalized = default
+    if normalized != normalized:  # NaN
+        normalized = default
+    if minimum is not None:
+        normalized = max(minimum, normalized)
+    if maximum is not None:
+        normalized = min(maximum, normalized)
+    return normalized
+
+
 def _normalize_video_type(value: Any) -> str:
-    normalized = _normalize_string(value).lower()
-    if normalized in {"sphere", "360_mono"}:
-        normalized = "360"
-    if normalized == "flat":
-        normalized = "2d"
-    return normalized if normalized in VALID_VIDEO_TYPES else "360"
+    """Accept canonical ids, "auto" and every alias ("sphere", "flat", "180_LR", "360_OU" ...)."""
+    normalized = normalize_format_id(value)
+    return normalized if normalized in VALID_VIDEO_TYPES else DEFAULT_FORMAT
 
 
 def _normalize_placement_mode(value: Any) -> str:
@@ -126,9 +141,22 @@ def _normalize_video(video: Dict[str, Any]) -> Dict[str, Any]:
         "loop": bool(video.get("loop", False)),
         "videoType": _normalize_video_type(video.get("videoType")),
         "placementMode": _normalize_placement_mode(video.get("placementMode")),
+        # Stereo 3D extras. Absent in old configs -> defaults, so nothing changes for them.
+        "swapEyes": bool(video.get("swapEyes", False)),
+        "forwardYaw": _normalize_float(video.get("forwardYaw"), 0.0, minimum=-360.0, maximum=360.0),
     }
     if advanced_settings is not None:
         normalized_video["advancedSettings"] = advanced_settings
+
+    # Auto-detection results are cached in the config so "auto" works at open time even
+    # when the source file is no longer on the instructor PC.
+    detected_type = normalize_format_id(video.get("detectedType"))
+    if detected_type and detected_type != "auto":
+        normalized_video["detectedType"] = detected_type
+        normalized_video["detectionSource"] = _normalize_string(video.get("detectionSource"))
+    probe = video.get("probe")
+    if isinstance(probe, dict) and probe:
+        normalized_video["probe"] = deepcopy(probe)
     return normalized_video
 
 

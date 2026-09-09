@@ -26,12 +26,16 @@ VR-Group-Videoplayer/
 │   │   ├── adb_executor.py           # ADB command wrapper with per-device locks
 │   │   ├── requirements_manager.py   # APK + video push logic, progress tracking
 │   │   ├── websocket_manager.py      # WebSocket client management
-│   │   └── player_probe.py           # Shared HTTP /status probe + status field mapping
+│   │   ├── player_probe.py           # Shared HTTP /status probe + status field mapping
+│   │   ├── video_format.py           # Canonical formatId model, aliases, filename convention
+│   │   ├── video_probe.py            # Header-only MP4/MOV probe + format auto-detection
+│   │   └── format_compat.py          # Video vs. device decoder/storage warnings
 │   ├── frontend/                     # React + Vite frontend
 │   │   ├── src/
 │   │   │   ├── App.jsx               # Router (/ and /settings)
 │   │   │   ├── main.jsx              # React entry point
 │   │   │   ├── api.js                # HTTP API client functions
+│   │   │   ├── videoFormats.js       # formatId helpers, filename detection, compat warnings
 │   │   │   ├── store/deviceStore.js  # Zustand state management
 │   │   │   ├── hooks/useWebSocket.js # WebSocket hook with reconnection
 │   │   │   ├── components/
@@ -41,6 +45,7 @@ VR-Group-Videoplayer/
 │   │   │   │   ├── DeviceTile.jsx
 │   │   │   │   ├── DeviceDialog.jsx
 │   │   │   │   ├── VideoSelector.jsx
+│   │   │   │   ├── VideoFormatEditor.jsx # Projection/stereo/auto-detect/probe editor
 │   │   │   │   ├── FilePicker.jsx
 │   │   │   │   ├── SettingsPage.jsx
 │   │   │   │   ├── UpdateProgress.jsx
@@ -53,10 +58,19 @@ VR-Group-Videoplayer/
 │   └── Assets/
 │       ├── Scripts/
 │       │   ├── Core/
-│       │   │   ├── VideoPlayerController.cs   # Video playback, RenderTexture management
+│       │   │   ├── VideoPlayerController.cs   # Video playback, RenderTexture management, source size
 │       │   │   ├── ViewModeManager.cs         # Sphere360 / Flat2D display switching
 │       │   │   ├── ViewModeConfig.cs          # ScriptableObject per view mode
-│       │   │   ├── ViewMode.cs                # Enum: Flat2D, Sphere360
+│       │   │   ├── ViewMode.cs                # Legacy enum: Flat2D, Sphere360, None, Hemisphere180
+│       │   │   ├── VideoProjection.cs         # Enum: Flat, Hemisphere180, Sphere360, None
+│       │   │   ├── StereoLayout.cs            # Enum: Mono, SideBySide, TopBottom
+│       │   │   ├── VideoFormat.cs             # projection + stereo + swapEyes + forwardYaw
+│       │   │   ├── VideoFormatParser.cs       # formatId/mode parsing, /open compat rules
+│       │   │   ├── VideoFormatDetector.cs     # Filename suffix detection (_180_LR, _360_TB)
+│       │   │   ├── VideoOpenRequest.cs        # /open DTO + shared VideoOpenExecutor
+│       │   │   ├── HemisphereMeshBuilder.cs   # Procedural VR180 hemisphere mesh
+│       │   │   ├── DecoderCapabilities.cs     # MediaCodecList query, reported in /status
+│       │   │   ├── PlayerRenderSettings.cs    # Runtime RenderTexture clamp (PUT /render-settings)
 │       │   │   ├── PlayerConfig.cs            # Constants (ports, paths, defaults)
 │       │   │   ├── PlayerState.cs             # Enum: Idle, Loading, Playing, etc.
 │       │   │   ├── PlayerStateManager.cs      # Central state singleton
@@ -72,8 +86,8 @@ VR-Group-Videoplayer/
 │       │       ├── PlayerHUD.cs               # VR HUD (state, file, IP)
 │       │       └── DebugLogPanel.cs           # On-screen debug log
 │       └── Shaders/
-│           ├── VideoSphere.shader             # Inside-sphere rendering (Cull Front, mirror U)
-│           └── VideoFlat.shader               # Standard quad rendering
+│           ├── VideoSphere.shader             # Inside-sphere/hemisphere, stereo split, crop, mirror U
+│           └── VideoFlat.shader               # Quad rendering, stereo split
 ├── PlayerAPI.md                       # Player HTTP+ADB API reference (Ukrainian)
 ├── start.sh / start.bat               # Quick start launchers
 └── CLAUDE.md                          # This file
@@ -158,79 +172,49 @@ Unity Player → HTTP self-registration → FastAPI Server → WebSocket → Web
 | Video path on device | `/sdcard/Movies/` | `PlayerConfig.cs` |
 | Package ID | `com.vrclass.player` | `ProjectSettings.asset` (`applicationIdentifier`) |
 | Default view mode | Sphere360 | `PlayerConfig.cs` |
-| Max RenderTexture | 4096x4096 | `VideoPlayerController.cs` |
+| Max RenderTexture | 4096x4096 | `PlayerConfig.MaxRenderTextureDimension` (runtime override: `PUT /render-settings`) |
 
-## 360 Video Format Support — Plan
+## 360 / 180 Video Formats and Stereo 3D
 
-### Current State
-- **Supported**: Equirectangular mono 360 (standard mapping), Flat 2D
-- **UV mapping**: Standard sphere UV with horizontal mirror in shader for inside-out viewing
-- **Stereo**: Basic `UNITY_VERTEX_OUTPUT_STEREO` in shaders (per-eye rendering supported by Unity XR)
+### Format model (shared by server, panel and player)
+A format is two orthogonal axes, joined into one canonical `formatId`:
 
-### Planned Format Support
+| `formatId` | projection | stereo | Notes |
+|---|---|---|---|
+| `2d` | `flat` | `mono` | flat quad |
+| `360` | `360` | `mono` | default, legacy content |
+| `360_sbs` / `360_tb` | `360` | `sbs` / `tb` | 360 3D, left eye = left / top half |
+| `180` | `180` | `mono` | VR180 mono (procedural hemisphere) |
+| `180_sbs` / `180_tb` | `180` | `sbs` / `tb` | VR180 3D (customer content is `_180_LR`) |
+| `auto` | — | — | config only: detect from filename suffix, then per-eye aspect + metadata |
 
-#### Video Projection Types
-| Format | Aspect Ratio | Description | Priority |
-|--------|-------------|-------------|----------|
-| Equirectangular Mono | 2:1 | Standard 360 mono — current default | Done |
-| Equirectangular SBS (Side-by-Side) | 4:1 or 2:1 | Left/right eye packed horizontally | High |
-| Equirectangular OU (Over-Under) | 1:1 or 2:1 | Left/right eye packed vertically | High |
-| EAC (Equi-Angular Cubemap) | varies | YouTube/Google format, 6 cube faces | Medium |
-| Cubemap 6x1 / 3x2 | varies | Traditional cubemap layouts | Low |
-| Fisheye / Dual Fisheye | varies | Raw camera output (Insta360 etc.) | Low |
+- Server: `App/server/video_format.py` (ids, aliases, filename convention, `legacy_mode_for`), `video_probe.py` (header-only MP4/MOV parser + detection algorithm), `format_compat.py` (video vs. device decoder warnings).
+- Player: `VideoProjection` + `StereoLayout` enums, `VideoFormat`, `VideoFormatParser` (compat rules), `VideoFormatDetector` (filename), `VideoOpenRequest`/`VideoOpenExecutor` (shared open logic for HTTP + WS). `ViewMode` is kept as a legacy alias (1:1 with `VideoProjection`, `Hemisphere180` appended).
+- Panel: `App/frontend/src/videoFormats.js` mirrors the server helpers; `VideoFormatEditor.jsx` is the projection/stereo/probe UI.
+- Filename convention (also understood by the Quest media player): `<name>_<180|360|2d>_<LR|TB|MONO>.<ext>`, suffix at the end of the stem.
 
-#### Implementation Plan for Stereo 3D (SBS/OU)
+### Backward compatibility rules (do not break these)
+- `/open` always carries legacy `mode` (`"360"`/`"2d"`; 180 maps to `"360"`) **plus** `format`, `projection`, `stereo`, `swapEyes`, `forwardYaw`. Old players read `mode` and ignore the rest (JsonUtility).
+- Player precedence: `projection`/`stereo` > `format` > `mode` (+ filename refinement when only `mode` is present, i.e. old server) > current format > 360 mono.
+- `/status` keeps legacy `mode` and adds `format`, `projection`, `stereo`, `swapEyes`, `videoWidth/Height`, `backend`, `decoderCaps`. `player_probe.status_to_kwargs` derives projection/stereo from `mode` for old players and sets `stereo_capable=False` so the panel can warn.
+- Config: `videoType` accepts canonical ids, `auto` and aliases; old `"360"`/`"2d"` configs load unchanged. Extra fields `swapEyes`, `forwardYaw`, `detectedType`, `detectionSource`, `probe` default when absent.
 
-1. **Detection**: Add `stereoLayout` field to video config (`mono`, `sbs`, `ou`)
-   - Pass via `open` command extras: `--es stereo "sbs"`
-   - Server config per video in `requirementVideos`
+### Rendering (current: Unity VideoPlayer backend, spec Phase 2)
+- Stereo split happens in the fragment shader as the **last** UV step, in texture space (`_StereoLayout`, `_SwapEyes` in `VideoSphere.shader` / `VideoFlat.shader`). SBS: left eye = u in [0, 0.5]; TB: left eye = v in [0.5, 1].
+- `VideoSphere.shader` also carries tiling/offset/crop, `_MirrorU` (1 for Unity's sphere primitive, 0 for the procedural hemisphere) and `_Cull`. Both shaders are in Always Included Shaders (GraphicsSettings) so `Shader.Find` works on device.
+- `HemisphereMeshBuilder` builds the 180° mesh (64x64 segments, direct UVs); a black backdrop sphere sits behind the viewer. 180° content forces a recenter on open.
+- The production 360 config (`Assets/Configs/360_Mode.asset`) uses a Shader Graph material without `_StereoLayout`; for stereo content `ViewModeManager` swaps in a fallback material (`ViewModeConfig.stereoMaterialOverride` or a runtime `VideoSphere` material with `fallbackMirrorU`). **Eye order and mirroring of that fallback must be verified on a headset with an L/R test clip** (spec risk R5).
+- RenderTexture clamp stays 4096 (`PlayerConfig.MaxRenderTextureDimension`), overridable at runtime via `PUT /render-settings` for field tests. `DecoderCapabilities` queries `MediaCodecList` once and reports it in `/status`.
 
-2. **Shader Changes** (`VideoSphere.shader`):
-   ```hlsl
-   // Add uniform for stereo layout
-   int _StereoLayout; // 0=mono, 1=sbs, 2=ou
-
-   // In vertex shader, adjust UVs per eye:
-   if (_StereoLayout == 1) { // Side-by-Side
-       uv.x = uv.x * 0.5 + (unity_StereoEyeIndex * 0.5);
-   } else if (_StereoLayout == 2) { // Over-Under
-       uv.y = uv.y * 0.5 + ((1 - unity_StereoEyeIndex) * 0.5);
-   }
-   ```
-
-3. **Sphere UV Considerations**:
-   - Unity default sphere: UV wraps equirectangularly, seam at back
-   - Current mirror: `uv.x = 1.0 - uv.x` corrects inside-out flip
-   - For SBS: each eye sees half the texture width → UV.x scaled to [0, 0.5] or [0.5, 1.0]
-   - For OU: each eye sees half the texture height → UV.y scaled similarly
-
-4. **RenderTexture**: Already dynamic — will match video resolution (e.g. 3840x1920 for SBS, 2048x2048 for OU)
-
-#### Spatial Audio Considerations
-
-- **Ambisonics**: Unity supports FOA (First Order Ambisonics) and HOA via AudioSource
-  - Requires video files with ambisonic audio tracks
-  - Unity `AudioSource.spatialize = true` + Oculus spatializer plugin
-- **Stereo**: Current standard stereo playback works without changes
-- **Head-locked stereo**: Audio stays fixed regardless of head rotation (current behavior)
-- **Plan**: Add ambisonic support when using 360 mode by configuring AudioSource spatializer
-
-#### ViewMode Extension Plan
-```csharp
-public enum ViewMode
-{
-    Flat2D,
-    Sphere360,
-    Sphere360SBS,   // Stereoscopic side-by-side
-    Sphere360OU,    // Stereoscopic over-under
-    Sphere180,      // Half-sphere (VR180 format)
-    Sphere180SBS,   // VR180 stereoscopic
-}
-```
+### Not implemented yet (see `docs/specs/stereo-3d-180-360.md`)
+- Phase 0 device verification (8192x4096 Main10@60 decode, `OVROverlay` prototype) — needs hardware.
+- Phase 3 native backend (`IVideoBackend`, Android MediaPlayer → `OVROverlay` external surface) for full-resolution 8K60 VR180.
+- EAC / cubemap / fisheye projections, ambisonic audio, HDR.
 
 ## Testing Notes
 
 - No automated test suite currently
+- Server unit tests: `App/venv/Scripts/python.exe -m unittest App.server.tests.<module>` from the repo root (no pytest installed; tests import `App.server.*`). `test_video_probe.py` also runs against the real customer samples in `Video Samples/` when present (git-ignored) and skips otherwise.
 - Manual testing: connect Quest headset, run `adb devices`, launch server, open web UI
 - Frontend: `npm run dev` for hot-reload development
 - Unity: test in Editor with mock commands (ADB/HTTP not available in Editor)

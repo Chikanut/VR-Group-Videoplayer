@@ -928,6 +928,93 @@ body {
   margin-bottom: 0;
 }
 
+/* ─── Video format editor (projection / stereo / probe) ─────────────────────── */
+.video-format-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.video-format-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+}
+
+.video-format-status .badge {
+  font-size: 0.8rem;
+  padding: 3px 8px;
+}
+
+.video-probe-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.video-probe-form input[type="text"] {
+  flex: 1;
+  min-width: 260px;
+  padding: 8px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.video-probe-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.video-probe-info .info-table td:first-child {
+  color: var(--text-dim);
+  padding-right: 12px;
+  white-space: nowrap;
+}
+
+.video-probe-warnings {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--warning);
+  font-size: 0.8rem;
+}
+
+.form-hint-warn {
+  color: var(--warning);
+}
+
+.form-hint-error {
+  color: var(--danger);
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--info);
+  cursor: pointer;
+  font-size: inherit;
+  text-decoration: underline;
+}
+
+.video-meta-auto {
+  color: var(--text-dim);
+}
+
+.progress-transfer {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
 .video-req-fields {
   display: flex;
   gap: 12px;

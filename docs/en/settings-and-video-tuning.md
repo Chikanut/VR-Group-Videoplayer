@@ -44,7 +44,7 @@ Each lesson is one row. Click **+ Add Video** to create one, **Duplicate** to co
 |---|---|
 | **Name** | A label you choose (e.g. `Lesson 01`). Must be unique. |
 | **Filename** | The exact file on the headset, e.g. `lesson_01.mp4`. Filename **only** — the player opens it from `/sdcard/Movies/`. |
-| **Type** | `360` for equirectangular 360 video, `2D` for a normal flat video on a virtual screen. |
+| **Projection / Stereo** | **Flat 2D**, **180°** (VR180 hemisphere) or **360°**, combined with **Mono**, **Side-by-Side (LR)** or **Top-Bottom (TB)**. With **Detect automatically** ticked (default) the format comes from the filename suffix (`_180_LR`, `_360_TB`, see [Prepare Videos](prepare-videos.md)); untick it to set the format by hand. **Probe file…** reads the file headers (resolution, fps, codec, bit depth, bitrate, metadata) and shows warnings. **Stereo 3D options** hold **Swap eyes** and **Forward yaw**. |
 | **Placement** | Where the image sits: **Default**, **Locked to camera** (follows the head), or **Free in space** (fixed in the room). Older player versions ignore this. |
 | **Loop** | Restart the video automatically when it ends. |
 
@@ -129,7 +129,7 @@ For a subtle "zoom in past the borders" effect without cropping bands:
 
 ## Recommended Tuning Workflow
 
-1. Add the video with the correct **Type** (360 or 2D) first.
+1. Add the video with the correct **Projection / Stereo** (or let it be detected from the filename) first.
 2. Test it **once** with default settings on a single headset.
 3. Only if needed, open **Advanced Settings** and tick the relevant override.
 4. Change values in **small steps**, Save, and re-open the video to see the result.

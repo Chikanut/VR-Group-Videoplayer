@@ -10,6 +10,7 @@ namespace VRClassroom
         public PlayerState State { get; private set; } = PlayerState.Idle;
         public string CurrentFile { get; private set; } = string.Empty;
         public ViewMode CurrentMode { get; private set; } = PlayerConfig.DefaultViewMode;
+        public VideoFormat CurrentFormat { get; private set; } = VideoFormat.FromViewMode(PlayerConfig.DefaultViewMode);
         public bool IsLocked { get; set; }
 
         private PlayerState _previousStateBeforeError;
@@ -70,8 +71,13 @@ namespace VRClassroom
             if (viewModeManager != null)
             {
                 viewModeManager.OnModeChanged += HandleModeChanged;
+                viewModeManager.OnFormatChanged += HandleFormatChanged;
+                CurrentFormat = viewModeManager.CurrentFormat;
+                CurrentMode = viewModeManager.CurrentMode;
                 Debug.Log("[PlayerStateManager] Subscribed to ViewModeManager events.");
             }
+
+            DecoderCapabilities.EnsureQueried();
             else
             {
                 Debug.LogError("[PlayerStateManager] ViewModeManager reference is NOT assigned!");
@@ -106,6 +112,7 @@ namespace VRClassroom
             if (viewModeManager != null)
             {
                 viewModeManager.OnModeChanged -= HandleModeChanged;
+                viewModeManager.OnFormatChanged -= HandleFormatChanged;
             }
 
             if (_instance == this)
@@ -166,6 +173,13 @@ namespace VRClassroom
         {
             Debug.Log($"[PlayerStateManager] View mode changed: {CurrentMode} -> {mode}");
             CurrentMode = mode;
+            OnPlayerStateUpdated?.Invoke();
+        }
+
+        private void HandleFormatChanged(VideoFormat format)
+        {
+            Debug.Log($"[PlayerStateManager] Video format changed: {CurrentFormat} -> {format}");
+            CurrentFormat = format != null ? format.Clone() : VideoFormat.None;
             OnPlayerStateUpdated?.Invoke();
         }
 

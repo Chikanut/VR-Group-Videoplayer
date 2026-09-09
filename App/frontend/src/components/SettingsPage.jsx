@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { getConfig, getDeviceNames, replaceDeviceNames, updateConfig } from '../api';
 import { useI18n } from '../i18n';
 import packageJson from '../../package.json';
+import VideoFormatEditor from './VideoFormatEditor';
+import { AUTO, formatIdFromFilename } from '../videoFormats';
 
 function generateId() {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
@@ -152,10 +154,32 @@ export default function SettingsPage() {
       name: '',
       filename: '',
       loop: false,
-      videoType: '360',
+      videoType: AUTO,
+      swapEyes: false,
+      forwardYaw: 0,
       placementMode: 'default',
       advancedSettings: createDefaultAdvancedSettings(),
     });
+    updateField('requirementVideos', videos);
+  };
+
+  // Keep the cached auto-detection in sync with the filename while the format is "auto"
+  // and no file probe has been stored (a probe is a stronger signal than the name).
+  const withAutoDetection = (video) => {
+    if ((video.videoType || '') !== AUTO || video.probe) {
+      return video;
+    }
+    const fromName = formatIdFromFilename(video.filename);
+    return {
+      ...video,
+      detectedType: fromName || '',
+      detectionSource: fromName ? 'filename' : '',
+    };
+  };
+
+  const patchVideo = (index, patch) => {
+    const videos = [...(config.requirementVideos || [])];
+    videos[index] = withAutoDetection({ ...videos[index], ...patch });
     updateField('requirementVideos', videos);
   };
 
@@ -179,9 +203,7 @@ export default function SettingsPage() {
   };
 
   const updateVideo = (index, field, value) => {
-    const videos = [...(config.requirementVideos || [])];
-    videos[index] = { ...videos[index], [field]: value };
-    updateField('requirementVideos', videos);
+    patchVideo(index, { [field]: value });
   };
 
   const updateVideoAdvancedSetting = (index, path, value) => {
@@ -408,17 +430,6 @@ export default function SettingsPage() {
                     />
                   </div>
 
-                  <div className="form-group form-group-small">
-                    <label>{t('Type')}</label>
-                    <select
-                      value={video.videoType || '360'}
-                      onChange={(event) => updateVideo(index, 'videoType', event.target.value)}
-                    >
-                      <option value="360">360</option>
-                      <option value="2d">2D</option>
-                    </select>
-                  </div>
-
                   <div className="form-group">
                     <label>{t('Placement')}</label>
                     <select
@@ -441,6 +452,8 @@ export default function SettingsPage() {
                     />
                   </div>
                 </div>
+
+                <VideoFormatEditor video={video} onPatch={(patch) => patchVideo(index, patch)} />
 
                 <details className="form-group video-advanced-details">
                   <summary>{t('Advanced Settings')}</summary>

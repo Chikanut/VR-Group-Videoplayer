@@ -25,9 +25,11 @@ namespace VRClassroom
 #if UNITY_EDITOR
         // Editor-only controls state
         private string _editorVideoPath = "";
-        private int _editorModeIndex; // 0 = 360, 1 = 2D
+        private int _editorModeIndex; // index into _editorFormatIds
         private bool _editorLoop;
-        private readonly string[] _editorModeNames = { "360", "2D" };
+        private bool _editorSwapEyes;
+        private readonly string[] _editorModeNames = { "360", "2D", "180", "180 SBS", "360 TB", "360 SBS", "180 TB" };
+        private readonly string[] _editorFormatIds = { "360", "2d", "180", "180_sbs", "360_tb", "360_sbs", "180_tb" };
         private VideoPlayerController _editorVideoPlayer;
         private ViewModeManager _editorViewModeManager;
         private OrientationManager _editorOrientationManager;
@@ -133,9 +135,15 @@ namespace VRClassroom
                 _fileText.text = file;
             }
 
-            // Mode
-            ViewMode mode = stateManager != null ? stateManager.CurrentMode : PlayerConfig.DefaultViewMode;
-            _modeText.text = mode == ViewMode.Sphere360 ? "360\u00b0" : "2D";
+            // Mode / format ("360\u00b0", "180\u00b0 3D SBS", "2D" ...)
+            VideoFormat format = stateManager != null ? stateManager.CurrentFormat : VideoFormat.FromViewMode(PlayerConfig.DefaultViewMode);
+            string label = format != null ? format.DisplayLabel : "";
+            if (string.IsNullOrEmpty(label))
+            {
+                ViewMode mode = stateManager != null ? stateManager.CurrentMode : PlayerConfig.DefaultViewMode;
+                label = mode == ViewMode.Sphere360 ? "360\u00b0" : "2D";
+            }
+            _modeText.text = label;
 
             // IP address
             string ip = StatusReporter.GetLocalIPAddress();
@@ -153,7 +161,7 @@ namespace VRClassroom
             float spacing = 4f;
 
             // Background
-            GUI.Box(new Rect(panelX - 5f, y - 5f, panelWidth + 10f, 230f), "");
+            GUI.Box(new Rect(panelX - 5f, y - 5f, panelWidth + 10f, 290f), "");
 
             // Title
             GUI.Label(new Rect(panelX, y, panelWidth, lineH), "<b>Editor Playback Controls</b>",
@@ -177,12 +185,14 @@ namespace VRClassroom
             }
             y += lineH + spacing;
 
-            // Video type + Loop
+            // Video format (projection + stereo) + Loop + Swap eyes
             GUI.Label(new Rect(panelX, y, 50f, lineH), "Type:");
             _editorModeIndex = GUI.SelectionGrid(
-                new Rect(panelX + 50f, y, 120f, lineH),
-                _editorModeIndex, _editorModeNames, 2);
-            _editorLoop = GUI.Toggle(new Rect(panelX + 185f, y, 80f, lineH), _editorLoop, "Loop");
+                new Rect(panelX + 50f, y, panelWidth - 50f, lineH * 2f + spacing),
+                _editorModeIndex, _editorModeNames, 4);
+            y += lineH * 2f + spacing * 2f;
+            _editorLoop = GUI.Toggle(new Rect(panelX, y, 80f, lineH), _editorLoop, "Loop");
+            _editorSwapEyes = GUI.Toggle(new Rect(panelX + 90f, y, 110f, lineH), _editorSwapEyes, "Swap eyes");
             y += lineH + spacing + 4f;
 
             // Open button
@@ -228,19 +238,18 @@ namespace VRClassroom
             if (_editorVideoPlayer == null || string.IsNullOrEmpty(_editorVideoPath))
                 return;
 
-            // Set mode
-            if (_editorViewModeManager != null)
+            // Same code path as the HTTP/WS "open" command so the editor exercises it too.
+            // Use the full path directly since we're on PC.
+            var request = new VideoOpenRequest
             {
-                ViewMode mode = _editorModeIndex == 0 ? ViewMode.Sphere360 : ViewMode.Flat2D;
-                _editorViewModeManager.SetMode(mode);
-            }
-
-            // Set loop
-            _editorVideoPlayer.IsLooping = _editorLoop;
-
-            // Open video — use full path directly since we're on PC
-            Debug.Log($"[PlayerHUD] Editor: opening video path={_editorVideoPath}, mode={_editorModeNames[_editorModeIndex]}, loop={_editorLoop}");
-            _editorVideoPlayer.Open(_editorVideoPath);
+                file = _editorVideoPath,
+                format = _editorFormatIds[Mathf.Clamp(_editorModeIndex, 0, _editorFormatIds.Length - 1)],
+                swapEyes = _editorSwapEyes,
+                loop = _editorLoop,
+                autoRecenterOnOpen = true,
+            };
+            Debug.Log($"[PlayerHUD] Editor: opening video path={_editorVideoPath}, format={request.format}, loop={_editorLoop}, swapEyes={_editorSwapEyes}");
+            VideoOpenExecutor.Execute(request, _editorViewModeManager, _editorVideoPlayer, _editorOrientationManager);
         }
 
         private static T FindFirstObjectByTypeCompat<T>() where T : UnityEngine.Object

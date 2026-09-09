@@ -13,6 +13,14 @@ namespace VRClassroom
 
         private float _lastRecenterTime = -1f;
         private bool _isRecentering;
+        private float _lastCameraYaw;
+        private bool _hasRecentered;
+
+        /// <summary>
+        /// Longitude of the video (degrees, positive = right of the frame centre) that faces the
+        /// viewer after recenter. Comes from VideoFormat.forwardYaw; 0 = frame centre in front.
+        /// </summary>
+        public float ForwardYaw { get; private set; }
 
         private void Awake()
         {
@@ -24,6 +32,25 @@ namespace VRClassroom
                 else
                     Debug.LogWarning("[OrientationManager] Could not find VR camera.");
             }
+        }
+
+        /// <summary>
+        /// Set the content forward offset. Applied immediately to the current orientation
+        /// (no new recenter), so switching between videos with different yaw needs no head move.
+        /// </summary>
+        public void SetForwardYaw(float yawDegrees)
+        {
+            if (Mathf.Approximately(ForwardYaw, yawDegrees)) return;
+
+            ForwardYaw = yawDegrees;
+            Debug.Log($"[OrientationManager] ForwardYaw set to {yawDegrees:F1}°");
+
+            if (viewModeManager == null) return;
+
+            float baseYaw = _hasRecentered
+                ? _lastCameraYaw
+                : (vrCamera != null ? vrCamera.eulerAngles.y : viewModeManager.transform.eulerAngles.y);
+            ApplyContentYaw(baseYaw);
         }
 
         public void Recenter()
@@ -109,14 +136,24 @@ namespace VRClassroom
             // This is the direction the viewer is looking at horizontally.
             float cameraYaw = vrCamera.eulerAngles.y;
 
-            Debug.Log($"[OrientationManager] Recentering content to camera yaw: {cameraYaw:F1}°");
+            Debug.Log($"[OrientationManager] Recentering content to camera yaw: {cameraYaw:F1}° (forwardYaw={ForwardYaw:F1}°)");
 
+            _lastCameraYaw = cameraYaw;
+            _hasRecentered = true;
+            ApplyContentYaw(cameraYaw);
+        }
+
+        private void ApplyContentYaw(float cameraYaw)
+        {
             // Apply yaw rotation to the ViewModeManager transform.
-            // The sphere (Sphere360) is parented to ViewModeManager's transform (world space).
-            // Rotating it so the "front" of the sphere content faces the viewer.
-            viewModeManager.transform.rotation = Quaternion.Euler(0f, cameraYaw, 0f);
+            // The sphere/hemisphere is parented to ViewModeManager's transform (world space).
+            // Rotating it so the "front" of the content faces the viewer; ForwardYaw shifts
+            // which longitude of the video counts as "front" (positive = content turns left,
+            // bringing the part to the right of the frame centre in front of the viewer).
+            float yaw = cameraYaw - ForwardYaw;
+            viewModeManager.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
 
-            Debug.Log($"[OrientationManager] ViewModeManager rotation set to (0, {cameraYaw:F1}, 0)");
+            Debug.Log($"[OrientationManager] ViewModeManager rotation set to (0, {yaw:F1}, 0)");
         }
     }
 }
