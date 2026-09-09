@@ -40,6 +40,7 @@ async def check_requirements(device_id: str) -> List[Dict[str, Any]]:
         await device_manager.add_or_update(
             device_id,
             device.ip,
+            seen=False,
             requirements_met=None,
             requirements_detail=[],
         )

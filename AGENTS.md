@@ -25,7 +25,8 @@ VR-Group-Videoplayer/
 │   │   ├── playback_controller.py    # Send commands to devices (HTTP + ADB fallback)
 │   │   ├── adb_executor.py           # ADB command wrapper with per-device locks
 │   │   ├── requirements_manager.py   # APK + video push logic, progress tracking
-│   │   └── websocket_manager.py      # WebSocket client management
+│   │   ├── websocket_manager.py      # WebSocket client management
+│   │   └── player_probe.py           # Shared HTTP /status probe + status field mapping
 │   ├── frontend/                     # React + Vite frontend
 │   │   ├── src/
 │   │   │   ├── App.jsx               # Router (/ and /settings)
@@ -125,7 +126,7 @@ Unity Player → HTTP self-registration → FastAPI Server → WebSocket → Web
 - Server scans local `/24` subnet for port 5555 (ADB)
 - Checks port 8080 for player HTTP API
 - Devices self-register via `POST /api/devices/register`
-- Offline detection after configurable timeout (default 30s)
+- Liveness (`device_manager.py`): a device is alive while its player WebSocket is open OR it answers a direct HTTP `/status` probe. Quiet devices are probed every 5s; a device goes offline only after `deviceOfflineTimeout` (default 30s) with the WS closed and probes failing. Offline devices are re-probed every ~15s so they return without a full scan.
 
 ### Command Priority
 1. HTTP API to player app (`POST http://<device>:8080/play`)

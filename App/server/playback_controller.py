@@ -178,6 +178,14 @@ async def seek_video(time: float, device_ids: List[str]) -> Dict[str, Any]:
             failed_list.append({"deviceId": device.device_id, "error": str(result)})
         elif result.get("success"):
             success_list.append({"deviceId": device.device_id})
+            # Reflect the new position in the dashboard immediately instead of waiting
+            # for the next heartbeat (up to 5s, or far longer if the heartbeat is stalled).
+            await device_manager.add_or_update(
+                device.device_id,
+                getattr(device, "ip", ""),
+                seen=False,
+                playback_time=target,
+            )
         else:
             failed_list.append({"deviceId": device.device_id, "error": result.get("error", "Unknown error")})
 
@@ -239,7 +247,7 @@ async def set_global_volume(volume: float) -> Dict[str, Any]:
     for device in all_devices:
         personal = max(0.0, min(1.0, float(device.personal_volume)))
         effective = clamped * personal
-        await device_manager.add_or_update(device.device_id, device.ip, effective_volume=effective)
+        await device_manager.add_or_update(device.device_id, device.ip, seen=False, effective_volume=effective)
         if not device.online or not device.player_connected:
             continue
         tasks.append((
@@ -276,6 +284,7 @@ async def set_device_volume(device_id: str, volume: float) -> Dict[str, Any]:
     await device_manager.add_or_update(
         device.device_id,
         device.ip,
+        seen=False,
         personal_volume=personal,
         effective_volume=effective,
     )

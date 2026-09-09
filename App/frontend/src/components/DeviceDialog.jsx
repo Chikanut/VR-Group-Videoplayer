@@ -228,8 +228,14 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
                       if (seekDebounceRef.current) {
                         clearTimeout(seekDebounceRef.current);
                       }
-                      seekDebounceRef.current = setTimeout(() => {
-                        playbackSeek(value, [deviceId]);
+                      seekDebounceRef.current = setTimeout(async () => {
+                        // Hold the slider at the requested position until the server has
+                        // sent the seek and broadcast the new playbackTime; otherwise the
+                        // live-follow effect snaps it back to the stale pre-seek time.
+                        try {
+                          await playbackSeek(value, [deviceId]);
+                        } catch {}
+                        setSeekValue(value);
                         setSeeking(false);
                       }, 200);
                     }}

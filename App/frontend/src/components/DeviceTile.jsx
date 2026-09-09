@@ -35,8 +35,11 @@ function ConnectionBadge({ device, t }) {
   if (!device.online) {
     return <span className="badge badge-offline">{t('Offline')}</span>;
   }
-  if (device.playerConnected) {
+  if (device.playerConnected && device.wsConnected) {
     return <span className="badge badge-ok" title={t('Connected via WebSocket')}>WS</span>;
+  }
+  if (device.playerConnected) {
+    return <span className="badge badge-ok" title={t('Connected via HTTP')}>HTTP</span>;
   }
   return <span className="badge badge-offline">{t('Player offline')}</span>;
 }

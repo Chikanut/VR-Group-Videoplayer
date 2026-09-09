@@ -8,33 +8,12 @@ import aiohttp
 from .config import PLAYER_HTTP_PORT, get_config
 from .device_manager import device_manager
 from .device_ws_manager import device_ws_manager
+from .player_probe import extract_device_id, probe_player_status, status_to_kwargs
 
 logger = logging.getLogger("vrclassroom.discovery")
 
 DISCOVERY_CONCURRENCY = 24
 SCAN_TIMEOUT_SEC = 0.8
-
-_STATUS_FIELD_MAP = {
-    "state": "playback_state",
-    "file": "current_video",
-    "mode": "current_mode",
-    "time": "playback_time",
-    "duration": "playback_duration",
-    "battery": "battery",
-    "batteryCharging": "battery_charging",
-    "locked": "locked",
-    "loop": "loop",
-    "uptimeMinutes": "uptime_minutes",
-    "playerVersion": "player_version",
-    "androidId": "android_id",
-    "android_id": "android_id",
-    "deviceModel": "device_model",
-    "model": "device_model",
-    "macAddress": "mac_address",
-    "mac": "mac_address",
-    "personalVolume": "personal_volume",
-    "effectiveVolume": "effective_volume",
-}
 
 
 def detect_subnet() -> str:
@@ -99,16 +78,8 @@ async def scan_subnet(subnet: str, port: int, preferred_ips: Optional[List[str]]
 
 
 async def _probe_player_http(ip: str) -> Optional[Dict]:
-    """Try to reach the player's HTTP API. Returns status dict or None."""
-    try:
-        async with aiohttp.ClientSession() as session:
-            url = f"http://{ip}:{PLAYER_HTTP_PORT}/status"
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=2)) as resp:
-                if resp.status == 200:
-                    return await resp.json()
-    except Exception:
-        return None
-    return None
+    """Try to reach the player HTTP API. Returns status dict or None."""
+    return await probe_player_status(ip)
 
 
 async def _push_server_ip_to_player(ip: str, server_url: str):
@@ -148,17 +119,8 @@ async def process_discovered_ip(ip: str, semaphore: asyncio.Semaphore):
         if status is None:
             return
 
-        device_id = (
-            str(status.get("deviceId", "")).strip()
-            or str(status.get("androidId", "")).strip()
-            or str(status.get("android_id", "")).strip()
-            or ip
-        )
-
-        extra_kwargs = {}
-        for json_key, attr_name in _STATUS_FIELD_MAP.items():
-            if json_key in status:
-                extra_kwargs[attr_name] = status[json_key]
+        device_id = extract_device_id(status, ip)
+        extra_kwargs = status_to_kwargs(status)
 
         if not device_ws_manager.is_connected(device_id):
             server_url = _get_server_url()
@@ -171,7 +133,6 @@ async def process_discovered_ip(ip: str, semaphore: asyncio.Semaphore):
             player_connected=True,
             **extra_kwargs,
         )
-        await device_manager.mark_discovery_seen(device_id)
 
         device_name = str(status.get("deviceName", "")).strip()
         if device_name:
@@ -192,10 +153,17 @@ async def discovery_loop():
             interval = config.get("scanInterval", 30)
             subnet = config.get("networkSubnet", "") or detect_subnet()
 
-            await device_manager.increment_missed_discovery()
-
             known_ips = await device_manager.get_known_ips()
             discovered_ips = await scan_subnet(subnet, PLAYER_HTTP_PORT, preferred_ips=known_ips)
+
+            # The fast subnet sweep uses a short connect timeout and can miss a busy or
+            # power-saving headset. Known devices always get a full-timeout status probe
+            # so a single slow answer never looks like a disappearance.
+            seen = set(discovered_ips)
+            for ip in known_ips:
+                if ip not in seen:
+                    discovered_ips.append(ip)
+                    seen.add(ip)
 
             semaphore = asyncio.Semaphore(DISCOVERY_CONCURRENCY)
             tasks = [process_discovered_ip(ip, semaphore) for ip in discovered_ips]

@@ -9,12 +9,22 @@ def _device(device_id="quest-1"):
     return SimpleNamespace(
         device_id=device_id,
         name=device_id,
+        ip="192.168.1.20",
         online=True,
         player_connected=True,
     )
 
 
 class PlaybackControllerSeekTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self._state_patch = patch.object(
+            playback_controller.device_manager,
+            "add_or_update",
+            new=AsyncMock(),
+        )
+        self.add_or_update_mock = self._state_patch.start()
+        self.addCleanup(self._state_patch.stop)
+
     async def test_seek_sends_action_path_and_time_payload(self):
         device = _device("quest-1")
 
@@ -28,6 +38,11 @@ class PlaybackControllerSeekTests(unittest.IsolatedAsyncioTestCase):
             new=AsyncMock(return_value={"success": True}),
         ) as send_mock:
             result = await playback_controller.seek_video(12.5, [])
+
+        # Dashboard is updated optimistically so the timeline moves right away.
+        self.add_or_update_mock.assert_awaited_once_with(
+            "quest-1", "192.168.1.20", seen=False, playback_time=12.5
+        )
 
         self.assertEqual(result["time"], 12.5)
         self.assertEqual(result["success"], [{"deviceId": "quest-1"}])

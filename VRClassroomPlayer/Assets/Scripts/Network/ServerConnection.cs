@@ -55,6 +55,7 @@ namespace VRClassroom
         private readonly ConcurrentQueue<Action> _mainThreadQueue = new ConcurrentQueue<Action>();
         private float _lastHeartbeatTime;
         private bool _connected;
+        private int _heartbeatInFlight; // 0/1, guards against overlapping SendAsync calls
         private string _serverUrl;
         private string _deviceId;
         private bool _discovering;
@@ -99,12 +100,21 @@ namespace VRClassroom
 
         private void OnApplicationFocus(bool hasFocus)
         {
-            if (hasFocus && !_connected)
+            if (!hasFocus) return;
+
+            bool socketOpen = _ws != null && _ws.State == WebSocketState.Open;
+            if (!socketOpen)
             {
-                Debug.Log("[ServerConnection] App focused, attempting immediate reconnect");
+                // The connection loop started in Start() is still running; nudging the
+                // socket makes it reconnect immediately instead of waiting for its delay.
+                Debug.Log("[ServerConnection] App focused without an open socket, nudging reconnect");
                 _serverUrl = BuildServerUrl();
                 CloseWebSocket();
-                StartConnectionLoop();
+            }
+            else if (!_connected)
+            {
+                // Socket is open but heartbeats were paused: resume them.
+                _connected = true;
             }
         }
 
@@ -409,6 +419,15 @@ namespace VRClassroom
             LogVerbose("heartbeat_prepare", null, $"wsState={GetWebSocketState()}");
             if (_ws == null || _ws.State != WebSocketState.Open) return;
 
+            // ClientWebSocket allows only one outstanding SendAsync. If the previous
+            // heartbeat is still being flushed (slow Wi-Fi), skip this tick instead of
+            // throwing and permanently disabling the heartbeat.
+            if (Interlocked.CompareExchange(ref _heartbeatInFlight, 1, 0) != 0)
+            {
+                LogVerbose("heartbeat_skipped", null, "previous heartbeat still in flight");
+                return;
+            }
+
             try
             {
                 string statusJson = statusReporter != null ? statusReporter.GetStatusJson() : "{}";
@@ -420,7 +439,14 @@ namespace VRClassroom
             catch (Exception e)
             {
                 Debug.LogWarning($"[ServerConnection] Heartbeat send failed: {e.Message}");
-                _connected = false;
+                // Only give up on this connection if the socket is really gone; the
+                // receive loop will then exit and the connection loop reconnects.
+                if (_ws == null || _ws.State != WebSocketState.Open)
+                    _connected = false;
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _heartbeatInFlight, 0);
             }
         }
 

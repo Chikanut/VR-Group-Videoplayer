@@ -1,8 +1,7 @@
 import asyncio
 import json
 import logging
-import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import WebSocket
 
@@ -31,11 +30,23 @@ class DeviceWSManager:
             self._connections[device_id] = ws
         logger.info("Device %s registered via WebSocket (%d total)", device_id, len(self._connections))
 
-    async def disconnect(self, device_id: str):
-        """Remove a device WS connection."""
+    async def disconnect(self, device_id: str, ws: Optional[WebSocket] = None) -> bool:
+        """Remove a device WS connection.
+
+        When `ws` is given, only that exact socket is removed. This matters on reconnect:
+        the old handler's cleanup must not evict the *new* socket that already replaced it.
+        Returns True if the device no longer has a live connection after this call.
+        """
         async with self._lock:
+            current = self._connections.get(device_id)
+            if current is None:
+                return True
+            if ws is not None and current is not ws:
+                logger.info("Device %s: stale WS closed, newer connection kept", device_id)
+                return False
             self._connections.pop(device_id, None)
         logger.info("Device %s WebSocket disconnected (%d remaining)", device_id, len(self._connections))
+        return True
 
     async def send_command(self, device_id: str, command: Dict[str, Any]) -> bool:
         """Send a command to a specific device via WS. Returns True if sent."""

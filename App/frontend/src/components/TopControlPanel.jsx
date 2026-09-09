@@ -148,8 +148,11 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
               if (seekDebounceRef.current) {
                 clearTimeout(seekDebounceRef.current);
               }
-              seekDebounceRef.current = setTimeout(() => {
-                playbackSeek(value);
+              seekDebounceRef.current = setTimeout(async () => {
+                try {
+                  await playbackSeek(value);
+                } catch {}
+                setSeekValue(value);
                 setSeeking(false);
               }, 200);
             }}

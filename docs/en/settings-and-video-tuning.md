@@ -147,7 +147,7 @@ For a subtle "zoom in past the borders" effect without cropping bands:
 | **Battery Warning Threshold (%)** | Highlights headsets below this battery level (default 20). |
 | **Network Scan Interval (seconds)** | How often the panel scans for devices (5–300, default 30). |
 | **Network Subnet** | Force a subnet like `192.168.1`. Leave empty to auto-detect. |
-| **Device Offline Timeout (seconds)** | How long without a heartbeat before a device is marked offline (10–300, default 30). |
+| **Device Offline Timeout (seconds)** | How long a headset may stay silent before it is marked offline (10–300, default 30). A headset counts as alive while its WebSocket is open or while it still answers a direct HTTP status probe, so only a headset that is really unreachable goes offline. |
 
 ---
 

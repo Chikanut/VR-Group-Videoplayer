@@ -84,7 +84,7 @@ class DeviceState:
         self.mac_address: str = ""
         self.personal_volume: float = 1.0
         self.effective_volume: float = 1.0
-        self.missed_discovery_cycles: int = 0
+        self.ws_connected: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -95,6 +95,7 @@ class DeviceState:
             "batteryCharging": self.battery_charging,
             "online": self.online,
             "playerConnected": self.player_connected,
+            "wsConnected": self.ws_connected,
             "playerVersion": self.player_version,
             "requirementsMet": self.requirements_met,
             "requirementsDetail": self.requirements_detail,

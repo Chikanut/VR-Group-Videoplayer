@@ -74,6 +74,13 @@ export function useWebSocket() {
     }
 
     function reconnectNow() {
+      // A healthy socket already receives every update; reconnecting would replace the
+      // whole device grid with a spinner and make tiles "disappear" for no reason.
+      const current = wsRef.current;
+      if (current && (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current);
         reconnectTimer.current = null;
@@ -81,13 +88,12 @@ export function useWebSocket() {
 
       reconnectAttempt.current = 0;
 
-      if (wsRef.current) {
-        wsRef.current.onclose = null;
-        wsRef.current.close();
+      if (current) {
+        current.onclose = null;
+        current.close();
         wsRef.current = null;
       }
 
-      setLoading(true);
       connect();
     }
 

@@ -37,4 +37,13 @@ if __name__ == "__main__":
     print("[INFO] Press Ctrl+C to stop server", flush=True)
 
     threading.Thread(target=open_browser_on_start, args=(port,), daemon=True).start()
-    uvicorn.run(app, host="0.0.0.0", port=port, reload=False)
+    # Protocol-level ping/pong keeps player WebSockets honest: a headset that vanished
+    # from Wi-Fi without closing its socket is dropped within ~ping_interval + ping_timeout.
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=port,
+        reload=False,
+        ws_ping_interval=20.0,
+        ws_ping_timeout=20.0,
+    )

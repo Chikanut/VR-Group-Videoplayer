@@ -22,6 +22,7 @@ from .config import (
 from .device_discovery import discovery_loop, handle_self_registration
 from .device_manager import device_manager
 from .device_ws_manager import REGISTER_TIMEOUT, device_ws_manager
+from .player_probe import status_to_kwargs
 from .models import (
     ConfigModel,
     DeviceNameUpdate,
@@ -323,12 +324,11 @@ async def device_websocket_endpoint(ws: WebSocket):
             await ws.close(code=1008, reason="Missing deviceId")
             return
 
-        await device_ws_manager.register(device_id, ws)
-
-        await device_manager.add_or_update(
+        device = await device_manager.add_or_update(
             device_id,
             ip=ip or "unknown",
             player_connected=True,
+            ws_connected=True,
             battery=msg.get("battery", -1),
             player_version=msg.get("playerVersion", ""),
             playback_state=msg.get("state", "idle"),
@@ -336,6 +336,12 @@ async def device_websocket_endpoint(ws: WebSocket):
             device_model=msg.get("deviceModel", msg.get("model", "")),
             mac_address=msg.get("macAddress", msg.get("mac", "")),
         )
+        # DeviceManager may have aliased this ID onto an already-known device; keep the
+        # socket registered under the same ID the rest of the server will look up.
+        if device is not None and device.device_id != device_id:
+            logger.info("Device WS: %s resolved to known device %s", device_id, device.device_id)
+            device_id = device.device_id
+        await device_ws_manager.register(device_id, ws)
 
         device_name = str(msg.get("deviceName", "")).strip()
         if device_name:
@@ -350,38 +356,13 @@ async def device_websocket_endpoint(ws: WebSocket):
             msg_type = msg.get("type", "")
 
             if msg_type == "status":
-                update_kwargs = {}
-                field_map = {
-                    "state": "playback_state",
-                    "file": "current_video",
-                    "mode": "current_mode",
-                    "time": "playback_time",
-                    "duration": "playback_duration",
-                    "battery": "battery",
-                    "batteryCharging": "battery_charging",
-                    "locked": "locked",
-                    "loop": "loop",
-                    "uptimeMinutes": "uptime_minutes",
-                    "personalVolume": "personal_volume",
-                    "effectiveVolume": "effective_volume",
-                    "playerVersion": "player_version",
-                    "androidId": "android_id",
-                    "android_id": "android_id",
-                    "deviceModel": "device_model",
-                    "model": "device_model",
-                    "macAddress": "mac_address",
-                    "mac": "mac_address",
-                }
-                for json_key, attr_name in field_map.items():
-                    if attr_name and json_key in msg:
-                        update_kwargs[attr_name] = msg[json_key]
-
                 new_ip = str(msg.get("ip", "")).strip()
                 await device_manager.add_or_update(
                     device_id,
                     ip=new_ip or ip or "unknown",
                     player_connected=True,
-                    **update_kwargs,
+                    ws_connected=True,
+                    **status_to_kwargs(msg),
                 )
 
             elif msg_type == "register":
@@ -390,6 +371,7 @@ async def device_websocket_endpoint(ws: WebSocket):
                     device_id,
                     ip=ip or "unknown",
                     player_connected=True,
+                    ws_connected=True,
                     battery=msg.get("battery", -1),
                     player_version=msg.get("playerVersion", ""),
                 )
@@ -400,14 +382,14 @@ async def device_websocket_endpoint(ws: WebSocket):
         logger.warning("Device %s WS error: %s", device_id or "unknown", exc)
     finally:
         if device_id:
-            await device_ws_manager.disconnect(device_id)
-            device = await device_manager.get(device_id)
-            if device:
-                await device_manager.add_or_update(
-                    device_id,
-                    ip=device.ip,
-                    player_connected=False,
-                )
+            # Only evict *this* socket. On a reconnect the new socket has already replaced
+            # it and must stay registered, otherwise every reconnect flickers the device.
+            gone = await device_ws_manager.disconnect(device_id, ws)
+            if gone:
+                # Do not demote player_connected here: the player usually reconnects within
+                # seconds and its HTTP API is still up. The liveness loop verifies over HTTP
+                # and only marks the device offline if it really stops answering.
+                await device_manager.add_or_update(device_id, "", seen=False, ws_connected=False)
 
 
 @app.get("/api/server-info")

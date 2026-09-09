@@ -25,7 +25,8 @@ Check these items in order:
 - confirm the headset still has network access
 - keep the player app open in the foreground
 - verify the device has not gone to sleep
-- wait for the next scan cycle and refresh the dashboard
+- the panel re-checks quiet headsets every few seconds over HTTP, so a reachable headset comes back on its own without waiting for a full network scan
+- a tile badge shows how the headset is reached: **WS** (live WebSocket) or **HTTP** (WebSocket dropped, panel is polling the headset directly); commands work in both cases
 
 ## If Playback Does Not Start
 

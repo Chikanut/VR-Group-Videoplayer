@@ -24,10 +24,6 @@ class DeviceDiscoveryProcessingTests(unittest.IsolatedAsyncioTestCase):
             new=AsyncMock(),
         ) as add_or_update_mock, patch.object(
             device_discovery.device_manager,
-            "mark_discovery_seen",
-            new=AsyncMock(),
-        ) as mark_seen_mock, patch.object(
-            device_discovery.device_manager,
             "apply_device_name_from_device",
             new=AsyncMock(),
         ) as apply_name_mock, patch(
@@ -44,7 +40,6 @@ class DeviceDiscoveryProcessingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(add_or_update_mock.await_args.kwargs["player_connected"], True)
         self.assertEqual(add_or_update_mock.await_args.args[0], "quest-1")
         self.assertEqual(add_or_update_mock.await_args.args[1], "192.168.1.10")
-        mark_seen_mock.assert_awaited_once_with("quest-1")
         apply_name_mock.assert_awaited_once_with("quest-1", "Quest Front Row")
         requirements_mock.assert_awaited_once_with("quest-1")
 
