@@ -83,6 +83,15 @@ namespace VRClassroom
         private int _reconnectAttempt;
         private int _discoveryAttempt;
 
+        // Sleep handling: while the headset sleeps Wi-Fi goes down, so every reconnect
+        // fails and after a few failures the loop used to start 254-host subnet scans.
+        // On wake the app then had a half-dead socket plus a scan in flight and lagged
+        // badly. Now the session is closed when the app pauses, the loop idles until the
+        // app resumes, and discovery is held off while Wi-Fi reconnects after wake.
+        private volatile bool _appPaused;
+        private long _discoveryHoldUntilTicks; // DateTime.UtcNow.Ticks, via Interlocked
+        private const float WakeDiscoveryHoldSeconds = 30f;
+
         private void Start()
         {
             _deviceId = StatusReporter.GetAndroidId();
@@ -123,9 +132,34 @@ namespace VRClassroom
             }
         }
 
+        private void OnApplicationPause(bool paused)
+        {
+            if (paused)
+            {
+                Debug.Log("[ServerConnection] Application paused (sleep): closing server session until wake");
+                _appPaused = true;
+                _connected = false;
+                // Off the main thread: nothing inside the pause callback may block, or the
+                // app stays frozen after wake.
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    try { AbortSession(wakeLoop: false); }
+                    catch (Exception e) { Debug.LogWarning($"[ServerConnection] Abort on pause failed: {e.Message}"); }
+                });
+                return;
+            }
+
+            Debug.Log("[ServerConnection] Application resumed: reconnecting to server");
+            _appPaused = false;
+            Interlocked.Exchange(ref _discoveryHoldUntilTicks,
+                DateTime.UtcNow.AddSeconds(WakeDiscoveryHoldSeconds).Ticks);
+            _sendStatusNow = true;
+            NudgeReconnect();
+        }
+
         private void OnApplicationFocus(bool hasFocus)
         {
-            if (!hasFocus) return;
+            if (!hasFocus || _appPaused) return;
 
             WebSocketState? state;
             lock (_wsLock)
@@ -186,6 +220,11 @@ namespace VRClassroom
         /// <summary>Abort the current session (if any) so the connection loop retries at once.</summary>
         private void NudgeReconnect()
         {
+            AbortSession(wakeLoop: true);
+        }
+
+        private void AbortSession(bool wakeLoop)
+        {
             lock (_wsLock)
             {
                 if (_ws != null)
@@ -198,12 +237,19 @@ namespace VRClassroom
                 CloseWebSocketLocked();
             }
 
+            if (!wakeLoop) return;
+
             // Wake the connection loop if it is sitting in a reconnect/discovery delay.
             try
             {
                 if (_wake.CurrentCount == 0) _wake.Release();
             }
             catch (SemaphoreFullException) { }
+        }
+
+        private bool IsDiscoveryHeld()
+        {
+            return _appPaused || DateTime.UtcNow.Ticks < Interlocked.Read(ref _discoveryHoldUntilTicks);
         }
 
         private void SaveServerAddress(string address)
@@ -237,6 +283,15 @@ namespace VRClassroom
 
             while (!token.IsCancellationRequested)
             {
+                if (_appPaused)
+                {
+                    // Headset is asleep: no reconnects or scans until OnApplicationPause(false)
+                    // wakes the loop.
+                    _connectionFailures = 0;
+                    if (!await DelaySafe(5f, token).ConfigureAwait(false)) break;
+                    continue;
+                }
+
                 _reconnectAttempt++;
                 _serverUrl = BuildServerUrl();
                 LogVerbose("connection_loop_iteration", null, $"reconnectAttempt={_reconnectAttempt}, serverUrl={SafeValue(_serverUrl)}");
@@ -292,7 +347,11 @@ namespace VRClassroom
 
                 _connected = false;
 
-                if (!nudged && _connectionFailures >= FailuresBeforeDiscovery)
+                if (!nudged && _connectionFailures >= FailuresBeforeDiscovery && IsDiscoveryHeld())
+                {
+                    LogInfo("discovery_held", null, $"failures={_connectionFailures}, reason={(_appPaused ? "app paused" : "recent wake, waiting for Wi-Fi")}");
+                }
+                else if (!nudged && _connectionFailures >= FailuresBeforeDiscovery)
                 {
                     // The saved server is not answering. Look around for a server on the
                     // subnet, but keep the saved address unless something else answers —
@@ -425,7 +484,8 @@ namespace VRClassroom
             await semaphore.WaitAsync(token).ConfigureAwait(false);
             try
             {
-                if (found.Task.IsCompleted) return;
+                // Stop scanning as soon as the headset goes to sleep.
+                if (found.Task.IsCompleted || _appPaused) return;
 
                 // Quick TCP connect check
                 using (var client = new TcpClient())

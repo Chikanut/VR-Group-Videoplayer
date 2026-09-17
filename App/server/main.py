@@ -22,6 +22,7 @@ from .config import (
 from .device_discovery import discovery_loop, handle_self_registration
 from .device_manager import device_manager
 from .device_ws_manager import REGISTER_TIMEOUT, device_ws_manager
+from .pending_stops import pending_stops
 from .player_probe import status_to_kwargs
 from .models import (
     ConfigModel,
@@ -364,6 +365,7 @@ async def device_websocket_endpoint(ws: WebSocket):
                 )
                 if "deviceName" in msg:
                     await device_manager.apply_device_name_from_device(device_id, msg.get("deviceName"))
+                await pending_stops.reconcile(device_id, new_ip or ip, msg.get("state"))
 
             elif msg_type == "register":
                 ip = str(msg.get("ip", ip)).strip()

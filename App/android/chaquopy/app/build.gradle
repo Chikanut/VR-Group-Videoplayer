@@ -92,6 +92,10 @@ android {
         }
 
         python {
+            // Chaquopy 15 bundles an old pip that imports `cgi` (removed in Python 3.13),
+            // and .pyc compilation needs the same minor version as the runtime (3.8).
+            // Install once with: winget install Python.Python.3.8  (then `py -3.8` finds it)
+            buildPython "py", "-3.8"
             pip {
                 install "fastapi==0.99.1"
                 install "pydantic==1.10.13"

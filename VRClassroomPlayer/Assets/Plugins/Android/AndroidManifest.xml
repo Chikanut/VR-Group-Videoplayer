@@ -9,6 +9,8 @@
       </intent-filter>
       <meta-data android:name="com.oculus.vr.focusaware" android:value="true" />
     </activity>
+    <!-- Restarts the player process after sleep frees leaked video memory (see RestartActivity.java). -->
+    <activity android:name="com.vrclass.player.RestartActivity" android:process=":restart" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:exported="false" android:noHistory="true" />
     <meta-data android:name="unityplayer.SkipPermissionsDialog" android:value="false" />
     <meta-data android:name="com.oculus.ossplash.background" android:value="black" />
     <meta-data android:name="com.oculus.telemetry.project_guid" android:value="96b1210d-075b-4b60-859e-eff9283fb136" />

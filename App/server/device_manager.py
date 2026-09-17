@@ -8,6 +8,7 @@ import aiohttp
 from .config import PLAYER_HTTP_PORT, get_config, get_device_name, load_device_names, set_device_name
 from .device_ws_manager import device_ws_manager
 from .models import DeviceState
+from .pending_stops import pending_stops
 from .player_probe import extract_device_id, probe_player_status, status_to_kwargs
 from .websocket_manager import ws_manager
 
@@ -190,6 +191,7 @@ class DeviceManager:
             # Older player without name reporting: still deliver anything the instructor
             # assigned while it was away.
             await self._retry_pending_name(device.device_id)
+        await pending_stops.reconcile(device.device_id, ip, status.get("state"))
         return device
 
     # --- Queries ------------------------------------------------------------
@@ -205,6 +207,10 @@ class DeviceManager:
     async def get_all(self) -> List[Dict[str, Any]]:
         async with self._lock:
             return [d.to_dict() for d in self._devices.values()]
+
+    async def get_all_ids(self) -> List[str]:
+        async with self._lock:
+            return list(self._devices.keys())
 
     async def get(self, device_id: str) -> Optional[DeviceState]:
         async with self._lock:

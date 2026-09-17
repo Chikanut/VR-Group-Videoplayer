@@ -47,6 +47,8 @@ DEFAULT_CONFIG = {
     "devices": {},      # {"SERIAL": {"name": "Quest 3", "last_seen": "..."}}
     "wifi_networks": [], # [{"ssid": "MyWifi", "password": "pass", "security": "wpa2"}]
     "wifi_auto_deploy": False, # застосовувати Wi-Fi перед кожним деплоєм
+    "force_reinstall": False,  # видаляти встановлений APK перед встановленням
+    "deploy_content": "all",   # all | files | apks
 }
 
 
@@ -103,12 +105,17 @@ class ADB:
 
     def get_package_name_from_apk(self, apk_path):
         """Витягує package name з APK через aapt2/aapt або adb shell."""
-        # Спробуємо через aapt2 dump (якщо є в platform-tools)
-        aapt_path = os.path.join(os.path.dirname(self.adb_path), "aapt2")
-        if os.name == "nt":
-            aapt_path += ".exe"
+        # Спробуємо через aapt2 dump (platform-tools або SDK build-tools)
+        exe = ".exe" if os.name == "nt" else ""
+        aapt_candidates = [os.path.join(os.path.dirname(self.adb_path), "aapt2" + exe)]
+        build_tools = os.path.join(os.path.dirname(os.path.dirname(self.adb_path)), "build-tools")
+        if os.path.isdir(build_tools):
+            for ver in sorted(os.listdir(build_tools), reverse=True):
+                aapt_candidates.append(os.path.join(build_tools, ver, "aapt2" + exe))
 
-        if os.path.exists(aapt_path):
+        for aapt_path in aapt_candidates:
+            if not os.path.exists(aapt_path):
+                continue
             try:
                 r = subprocess.run(
                     [aapt_path, "dump", "packagename", apk_path],
@@ -258,6 +265,10 @@ class ADB:
 
         code, out, err = self.run("install", "-r", "-g", apk_path, serial=serial, timeout=300)
         return code, out, err
+
+    def uninstall_package(self, serial, package_name):
+        """adb uninstall. Видаляє застосунок разом з його даними."""
+        return self.run("uninstall", package_name, serial=serial, timeout=60)
 
     def trigger_media_scan(self, serial, file_path):
         """Оновити медіа-бібліотеку Quest."""
@@ -556,6 +567,20 @@ class QuestDeployApp:
                                      state="disabled")
         self.cancel_btn.pack(side="left", padx=3)
 
+        ttk.Separator(frame_deploy, orient="vertical").pack(side="left", fill="y", padx=8)
+        ttk.Label(frame_deploy, text="Контент:").pack(side="left", padx=(0, 3))
+        self.deploy_content_var = tk.StringVar(value=self.config.get("deploy_content", "all"))
+        for value, text in (("all", "Все"), ("files", "Тільки файли/відео"), ("apks", "Тільки APK")):
+            ttk.Radiobutton(frame_deploy, text=text, value=value,
+                            variable=self.deploy_content_var,
+                            command=self.save_deploy_options).pack(side="left", padx=2)
+
+        ttk.Separator(frame_deploy, orient="vertical").pack(side="left", fill="y", padx=8)
+        self.force_reinstall_var = tk.BooleanVar(value=self.config.get("force_reinstall", False))
+        ttk.Checkbutton(frame_deploy, text="Force reinstall APK (видалити і встановити заново)",
+                        variable=self.force_reinstall_var,
+                        command=self.save_deploy_options).pack(side="left", padx=2)
+
         # Лог
         self.log_text = scrolledtext.ScrolledText(frame_bottom, height=8, font=("Consolas", 9),
                                                    state="disabled", wrap="word")
@@ -780,6 +805,8 @@ class QuestDeployApp:
         self.adb = ADB(self.config.get("adb_path", "adb"))
         self.adb_path_var.set(self.config.get("adb_path", "adb"))
         self.wifi_auto_var.set(self.config.get("wifi_auto_deploy", False))
+        self.deploy_content_var.set(self.config.get("deploy_content", "all"))
+        self.force_reinstall_var.set(self.config.get("force_reinstall", False))
         self.refresh_lists()
         self.log("Конфіг перезавантажено")
 
@@ -788,6 +815,11 @@ class QuestDeployApp:
         save_config(self.config)
         state = "увімкнено" if self.wifi_auto_var.get() else "вимкнено"
         self.log(f"Wi-Fi перед деплоєм: {state}")
+
+    def save_deploy_options(self):
+        self.config["deploy_content"] = self.deploy_content_var.get()
+        self.config["force_reinstall"] = self.force_reinstall_var.get()
+        save_config(self.config)
 
     # ── Wi-Fi ─────────────────────────────────────────────
 
@@ -909,7 +941,7 @@ class QuestDeployApp:
                     self.log(f"  ⏳ Підключаю до: {ssid} ({sec})…")
                     code, out, err = self.adb.connect_wifi(serial, ssid, pwd, sec)
                     combined = (out + err).lower()
-                    if code == 0 and any(x in combined for x in ["success", "connected", "saving"]):
+                    if code == 0 and any(x in combined for x in ["success", "connected", "saving", "initiated"]):
                         self.log(f"  ✓ Підключено: {ssid}")
                     elif "already" in combined:
                         self.log(f"  ⏭ Вже підключено: {ssid}")
@@ -968,11 +1000,20 @@ class QuestDeployApp:
             messagebox.showwarning("Увага", "Немає підключених пристроїв.")
             return
 
-        files = self.config.get("files", [])
-        apks = self.config.get("apks", [])
+        content = self.deploy_content_var.get()
+        files = self.config.get("files", []) if content in ("all", "files") else []
+        apks = self.config.get("apks", []) if content in ("all", "apks") else []
 
         if not files and not apks:
-            messagebox.showwarning("Увага", "Додайте файли або APK для розгортання.")
+            what = {"files": "файли", "apks": "APK"}.get(content, "файли або APK")
+            messagebox.showwarning("Увага", f"Додайте {what} для розгортання.")
+            return
+
+        force_reinstall = self.force_reinstall_var.get()
+        if apks and force_reinstall and not messagebox.askyesno(
+                "Force reinstall",
+                "Застосунки буде видалено з шоломів разом з їхніми даними "
+                "(налаштування, назва шолома) і встановлено заново.\n\nПродовжити?"):
             return
 
         self.deploying = True
@@ -980,18 +1021,22 @@ class QuestDeployApp:
         self.deploy_btn.config(state="disabled")
         self.cancel_btn.config(state="normal")
 
-        Thread(target=self.do_deploy, args=(devices, files, apks), daemon=True).start()
+        Thread(target=self.do_deploy, args=(devices, files, apks, force_reinstall),
+               daemon=True).start()
 
     def cancel_deploy(self):
         self.deploy_cancel.set()
         self.log("Скасування…")
 
-    def do_deploy(self, devices, files, apks):
+    def do_deploy(self, devices, files, apks, force_reinstall=False):
         total_tasks = len(devices) * (len(files) + len(apks))
         done_tasks = 0
 
         self.log(f"═══ Початок розгортання: {len(devices)} пристроїв, "
-                 f"{len(files)} файлів, {len(apks)} APK ═══")
+                 f"{len(files)} файлів, {len(apks)} APK"
+                 f"{' (force reinstall)' if apks and force_reinstall else ''} ═══")
+        apk_packages = {p: self.adb.get_package_name_from_apk(p)
+                        for p in apks if os.path.exists(p)}
 
         for serial in devices:
             if self.deploy_cancel.is_set():
@@ -1013,7 +1058,7 @@ class QuestDeployApp:
                             serial, ssid, net.get("password", ""), net.get("security", "wpa2")
                         )
                         combined = (out + err).lower()
-                        if code == 0 and any(x in combined for x in ["success", "connected", "saving"]):
+                        if code == 0 and any(x in combined for x in ["success", "connected", "saving", "initiated"]):
                             self.log(f"  ✓ Wi-Fi: {ssid}")
                         elif "already" in combined:
                             self.log(f"  ⏭ Wi-Fi вже: {ssid}")
@@ -1032,19 +1077,36 @@ class QuestDeployApp:
                     done_tasks += 1
                     continue
 
-                # Перевірити чи вже встановлений
-                pkg = self.adb.get_package_name_from_apk(apk_path)
-                if pkg and self.adb.is_package_installed(serial, pkg):
+                pkg = apk_packages.get(apk_path)
+                installed = bool(pkg) and self.adb.is_package_installed(serial, pkg)
+
+                if installed and not force_reinstall:
                     self.log(f"  ⏭ APK вже встановлено: {pkg}")
                     done_tasks += 1
                     self.update_overall(done_tasks, total_tasks)
                     continue
 
+                if installed and force_reinstall:
+                    self.update_current(f"Видаляю {pkg}…", -1)
+                    self.log(f"  🗑 Видаляю встановлений: {pkg}…")
+                    self._uninstall(serial, pkg)
+
                 self.update_current(f"Встановлюю {apk_name}…", -1)
                 self.log(f"  ⏳ Встановлюю: {apk_name} ({pkg or '?'})…")
 
                 code, out, err = self.adb.install_apk(serial, apk_path)
-                if code == 0 and "Success" in (out + err):
+                result = out + err
+                # Package name міг бути невідомий (немає aapt) — беремо його з помилки
+                # несумісного підпису і пробуємо ще раз після видалення.
+                if force_reinstall and "INSTALL_FAILED_UPDATE_INCOMPATIBLE" in result:
+                    m = re.search(r"Existing package (\S+)", result)
+                    if m:
+                        self.log(f"  🗑 Підпис не збігається, видаляю: {m.group(1)}…")
+                        self._uninstall(serial, m.group(1))
+                        code, out, err = self.adb.install_apk(serial, apk_path)
+                        result = out + err
+
+                if code == 0 and "Success" in result:
                     self.log(f"  ✓ Встановлено: {apk_name}")
                 else:
                     self.log(f"  ✗ Помилка встановлення {apk_name}: {err or out}")
@@ -1116,6 +1178,13 @@ class QuestDeployApp:
             self.current_progress.config(mode="determinate", value=0),
         ))
         self.deploying = False
+
+    def _uninstall(self, serial, pkg):
+        code, out, err = self.adb.uninstall_package(serial, pkg)
+        if code == 0 and "Success" in (out + err):
+            self.log(f"  ✓ Видалено: {pkg}")
+        else:
+            self.log(f"  ✗ Помилка видалення {pkg}: {err or out}")
 
     # ── UI оновлення з потоку ─────────────────────────────
 

@@ -138,7 +138,10 @@ Unity Player → HTTP self-registration → FastAPI Server → WebSocket → Web
 
 ### Player status thread model (Unity)
 - `StatusReporter` builds the status JSON on the main thread (every 0.5s or on state change). The HTTP listener thread and WS thread-pool continuations only read the cached string, so they never touch Unity APIs/JNI/PlayerPrefs.
-- `VideoPlayerController` always calls `VideoPlayer.Stop()` before re-preparing and releases the decoder after completion/error (hardware MediaCodec instances are scarce on Quest; leaking them wedges the media server and forces a headset reboot).
+- `VideoPlayerController` creates a fresh `VideoPlayer` (child GameObject `VideoPlayerInstance`) for every opened video and destroys the previous one; the new one is prepared only ~0.5s after the old one is released. The decoder is also released after completion/error/stop. Reusing one `VideoPlayer` and swapping `url` (or Stop+Prepare in the same frame) leaked hardware decoder resources: after 5-7 long videos the next open hung or the app crashed.
+- Sleep: after **every** sleep (`OnApplicationPause(true)` → resume) the player restarts itself ~0.5s after wake via `Assets/Plugins/Android/RestartActivity.java` (separate `:restart` process kills the player pid and relaunches the app) and comes back fresh in the waiting room — no attempt to resume the video. Reason (Quest 3S logcats): Unity's video pipeline leaks GPU memory across sleep/wake (8K player 1.8 GB → 3.1-4.6 GB, never freed, ~650 MB left for the system), after which videos froze the headset or would not start. Nothing touches the VideoPlayer while paused. `ServerConnection` closes the WS on pause, idles the connection loop while asleep, and holds off subnet discovery for 30s after wake.
+- Missed stops (`App/server/pending_stops.py`): every stop marks its targets (a global stop marks *all* known devices, including offline/asleep ones). While marked, a WS/HTTP status showing `loading/ready/playing/paused` makes the server re-send `stop` (throttled 5s); a non-active state or a successful `open` clears the mark.
+- `ProcessDiagnostics.Snapshot()` (RSS, open fds, managed heap) is logged on every open, on errors/timeouts and once a minute — check `adb logcat -s Unity` for growth when chasing long-session crashes.
 
 ### Command Priority
 1. HTTP API to player app (`POST http://<device>:8080/play`)

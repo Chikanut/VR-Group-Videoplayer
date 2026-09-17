@@ -7,6 +7,7 @@ import aiohttp
 from .config import PLAYER_HTTP_PORT, get_config
 from .device_manager import device_manager
 from .device_ws_manager import device_ws_manager
+from .pending_stops import pending_stops
 
 logger = logging.getLogger("vrclassroom.playback")
 
@@ -125,6 +126,8 @@ async def open_video(video_id: str, device_ids: List[str]) -> Dict[str, Any]:
             failed_list.append({"deviceId": device.device_id, "error": str(result)})
         elif result.get("success"):
             success_list.append({"deviceId": device.device_id})
+            # A new video supersedes a stop the device may have missed.
+            pending_stops.clear(device.device_id)
         else:
             failed_list.append({"deviceId": device.device_id, "error": result.get("error", "Unknown error")})
 
@@ -137,6 +140,11 @@ async def open_video(video_id: str, device_ids: List[str]) -> Dict[str, Any]:
 
 async def send_command(command: str, device_ids: List[str]) -> Dict[str, Any]:
     """Send a playback command (play/pause/stop/recenter) to target devices."""
+    if command == "stop":
+        # Marked before resolving: headsets that are asleep right now are not "online",
+        # but must still be stopped when they wake up (see pending_stops).
+        pending_stops.mark(device_ids or await device_manager.get_all_ids())
+
     devices = await _resolve_devices(device_ids)
     if not devices:
         return {"success": [], "failed": [], "message": "No online devices available"}

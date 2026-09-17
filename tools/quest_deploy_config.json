@@ -1,33 +1,8 @@
 {
-  "adb_path": "adb",
-  "files": [
-    {
-      "src": "C:/Users/eugen/Desktop/Working Files/GSPP/VR Videos/FIRST BATTLE/First Battle full with comments (31 min).mp4",
-      "dst": "/sdcard/Movies/"
-    },
-    {
-      "src": "C:/Users/eugen/Desktop/Working Files/GSPP/VR Videos/FIRST BATTLE/First Battle only action (17 min).mp4",
-      "dst": "/sdcard/Movies/"
-    },
-    {
-      "src": "C:/Users/eugen/Desktop/Working Files/GSPP/VR Videos/FIRST BATTLE/First Battle short (8 min).mp4",
-      "dst": "/sdcard/Movies/"
-    },
-    {
-      "src": "C:/Users/eugen/Desktop/Working Files/GSPP/VR Videos/NPP/DSHV history.mp4",
-      "dst": "/sdcard/Movies/"
-    },
-    {
-      "src": "C:/Users/eugen/Desktop/Working Files/GSPP/VR Videos/NPP/VR_Bucha.mp4",
-      "dst": "/sdcard/Movies/"
-    },
-    {
-      "src": "C:/Users/eugen/Desktop/Working Files/GSPP/VR Videos/Promo/SkyFall training PROMO.mp4",
-      "dst": "/sdcard/Movies/"
-    }
-  ],
+  "adb_path": "C:/Users/eugen/AppData/Local/Android/Sdk/platform-tools/adb.exe",
+  "files": [],
   "apks": [
-    "D:/UnityProjects/VRGroupViewer/VR Group Videoplayer/VRClassroomPlayer/Builds/VRClassroomPlayer-Quest.apk"
+    "D:/Projects/VR-Group-Videoplayer/VRClassroomPlayer/Builds/VRClassroomPlayer-Quest.apk"
   ],
   "devices": {
     "2G0YC1ZF800F1J": {
@@ -125,6 +100,10 @@
     "340YC20G84039R": {
       "name": "Quest 3S",
       "last_seen": "2026-06-26T16:36:06.630288"
+    },
+    "340YC20GBD00ST": {
+      "name": "Quest 3S",
+      "last_seen": "2026-09-17T18:46:37.629863"
     }
   },
   "wifi_networks": [
@@ -134,5 +113,7 @@
       "password": "28826423jK"
     }
   ],
-  "wifi_auto_deploy": true
+  "wifi_auto_deploy": true,
+  "force_reinstall": true,
+  "deploy_content": "apks"
 }
