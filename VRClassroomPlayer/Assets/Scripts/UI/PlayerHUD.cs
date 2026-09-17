@@ -15,6 +15,7 @@ namespace VRClassroom
         private Text _fileText;
         private Text _modeText;
         private Text _ipText;
+        private Text _nameText;
 
         private Text _version;
 
@@ -62,6 +63,8 @@ namespace VRClassroom
                 Debug.LogError("[PlayerHUD] PlayerStateManager.Instance is null! HUD will not update.");
             }
 
+            StatusReporter.OnDeviceNameChanged += HandleDeviceNameChanged;
+
             // Initial update
             UpdateHUD();
         }
@@ -73,6 +76,13 @@ namespace VRClassroom
             {
                 stateManager.OnPlayerStateUpdated -= UpdateHUD;
             }
+
+            StatusReporter.OnDeviceNameChanged -= HandleDeviceNameChanged;
+        }
+
+        private void HandleDeviceNameChanged(string name)
+        {
+            UpdateHUD();
         }
 
         private void UpdateHUD()
@@ -141,6 +151,11 @@ namespace VRClassroom
             string ip = StatusReporter.GetLocalIPAddress();
             _ipText.text = ip == "0.0.0.0" ? "No Network" : ip;
             _version.text = UnityEngine.Application.version;
+
+            // Instructor-assigned name/number (persisted on the headset). Shown so a
+            // headset can be identified by looking into it, independent of the server.
+            string deviceName = StatusReporter.DeviceName;
+            _nameText.text = string.IsNullOrEmpty(deviceName) ? "" : deviceName;
         }
 
 #if UNITY_EDITOR
@@ -314,6 +329,13 @@ namespace VRClassroom
 
             _version = CreateText(canvasTransform, "VersionText",  new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-100f, 15f), new Vector2(700f, 50f), 28, TextAnchor.MiddleCenter);
             _version.color = new Color(0.7f, 0.7f, 0.7f, 1f);
+
+            // Device name / number (top-left corner, large so it is readable at a glance)
+            _nameText = CreateText(canvasTransform, "DeviceNameText",
+                new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(20f, -20f),
+                new Vector2(300f, 60f), 44, TextAnchor.UpperLeft);
+            _nameText.color = new Color(1f, 0.85f, 0.3f, 1f);
+            _nameText.fontStyle = FontStyle.Bold;
         }
 
         private Text CreateText(Transform parent, string name,

@@ -23,14 +23,44 @@ PROBE_CONCURRENCY = 24
 # is treated as the same physical device (two devices cannot share an IP at the same time).
 IP_ALIAS_WINDOW_SEC = 60
 
+# When a player WebSocket closes, wait this long before telling the dashboard: the player
+# normally reconnects within a second or two (Wi-Fi roaming, app focus change, server
+# restart) and flipping the WS badge for every blip only looks like instability.
+WS_DISCONNECT_GRACE_SEC = 8
+
+# Minimum interval between repeated attempts to push a name to the same device.
+NAME_PUSH_RETRY_SEC = 15
+
 
 class DeviceManager:
+    """Tracks headset state and broadcasts diffs to web clients.
+
+    Device naming model
+    -------------------
+    The headset is the source of truth for its name/number: the player persists it in
+    PlayerPrefs and reports it in every register/status payload as ``deviceName``.
+    The server only mirrors that value. ``device_names.json`` is kept as a fallback for
+    players that do not report a name (older builds, or a freshly installed app) and as
+    a queue: when the instructor renames an offline device the name is stored here and
+    pushed to the headset as soon as it reports again.
+
+    Effective display name, in priority order:
+      1. a name the instructor just assigned that the device has not confirmed yet
+      2. the name reported by the device
+      3. the server-side fallback from device_names.json
+      4. the device ID
+    """
+
     def __init__(self):
         self._devices: Dict[str, DeviceState] = {}
         self._ip_to_device: Dict[str, str] = {}
         self._lock = asyncio.Lock()
         self._liveness_task: Optional[asyncio.Task] = None
         self._liveness_pass_count = 0
+        # device_id -> name assigned by the instructor, awaiting confirmation from the device
+        self._pending_names: Dict[str, str] = {}
+        self._last_name_push: Dict[str, float] = {}
+        self._ws_grace_tasks: Dict[str, asyncio.Task] = {}
 
     async def start(self):
         load_device_names()
@@ -39,6 +69,9 @@ class DeviceManager:
     async def stop(self):
         if self._liveness_task:
             self._liveness_task.cancel()
+        for task in self._ws_grace_tasks.values():
+            task.cancel()
+        self._ws_grace_tasks.clear()
 
     # --- Upsert -------------------------------------------------------------
 
@@ -50,8 +83,6 @@ class DeviceManager:
         seen=False - server-side bookkeeping (volume, requirements, liveness verdicts).
                      Never refreshes last_seen and never resurrects an offline device.
         """
-        push_saved_name = False
-        saved_name_value = ""
         ip = (ip or "").strip()
 
         async with self._lock:
@@ -63,11 +94,6 @@ class DeviceManager:
                     # Bookkeeping for a device we have never heard from - nothing to update.
                     return None
                 device = DeviceState(device_id, ip or "unknown")
-                saved_name = get_device_name(device_id)
-                if saved_name:
-                    device.name = saved_name
-                    push_saved_name = True
-                    saved_name_value = saved_name
                 self._devices[device_id] = device
                 logger.info("New device discovered: %s (%s)", device_id, ip)
             else:
@@ -87,9 +113,8 @@ class DeviceManager:
                 if hasattr(device, key):
                     setattr(device, key, value)
 
+            self._refresh_name_locked(device)
             new_dict = device.to_dict()
-            player_connected = device.player_connected
-            device_ip = device.ip
 
         # Broadcast changes
         if is_new:
@@ -107,10 +132,6 @@ class DeviceManager:
                     "deviceId": device_id,
                     "changes": changes,
                 })
-
-        # Push server-saved name to newly discovered device
-        if push_saved_name and player_connected and device_ip and device_ip != "unknown":
-            await self._push_name_to_device(device_ip, saved_name_value)
 
         return device
 
@@ -150,15 +171,25 @@ class DeviceManager:
     async def apply_player_status(self, device_id_hint: str, ip: str, status: Dict[str, Any]) -> Optional[DeviceState]:
         """Apply a /status payload (from HTTP probe or WS heartbeat) as proof of life."""
         device_id = extract_device_id(status, device_id_hint)
+        if not device_id:
+            logger.warning("Ignoring status from %s without a device ID: %s", ip, status)
+            return None
+
         device = await self.add_or_update(
             device_id,
             ip,
             player_connected=True,
             **status_to_kwargs(status),
         )
-        device_name = str(status.get("deviceName", "") or "").strip()
-        if device is not None and device_name:
-            await self.apply_device_name_from_device(device.device_id, device_name)
+        if device is None:
+            return None
+
+        if "deviceName" in status:
+            await self.apply_device_name_from_device(device.device_id, status.get("deviceName"))
+        else:
+            # Older player without name reporting: still deliver anything the instructor
+            # assigned while it was away.
+            await self._retry_pending_name(device.device_id)
         return device
 
     # --- Queries ------------------------------------------------------------
@@ -189,9 +220,15 @@ class DeviceManager:
             if device_id not in self._devices:
                 return False
             self._devices.pop(device_id)
+            self._pending_names.pop(device_id, None)
+            self._last_name_push.pop(device_id, None)
             stale_ips = [ip for ip, did in self._ip_to_device.items() if did == device_id]
             for ip in stale_ips:
                 del self._ip_to_device[ip]
+
+        task = self._ws_grace_tasks.pop(device_id, None)
+        if task:
+            task.cancel()
 
         await ws_manager.broadcast({
             "type": "device_removed",
@@ -208,50 +245,163 @@ class DeviceManager:
 
     # --- Names --------------------------------------------------------------
 
-    async def update_name(self, device_id: str, name: str) -> bool:
-        async with self._lock:
-            device = self._devices.get(device_id)
-            if not device:
-                return False
-            device.name = name or device.reported_name or device.device_id
-            device_ip = device.ip
-            player_connected = device.player_connected
-
-        set_device_name(device_id, name)
-        await ws_manager.broadcast({
-            "type": "device_update",
-            "deviceId": device_id,
-            "changes": {"name": name or device.reported_name or device.device_id},
-        })
-
-        if player_connected and device_ip:
-            await self._push_name_to_device(device_ip, name or device.reported_name or "")
-
-        return True
-
-    async def apply_device_name_from_device(self, device_id: str, device_name: str):
-        """Apply a device-reported name if the server doesn't have a custom name yet."""
-        saved = get_device_name(device_id)
-        if saved:
+    def _refresh_name_locked(self, device: DeviceState):
+        """Recompute the effective display name and its source (see class docstring)."""
+        pending = self._pending_names.get(device.device_id)
+        if pending is not None:
+            device.pending_name = pending
+            if pending:
+                device.name = pending
+                device.name_source = "pending"
+                return
+            # Pending "" = instructor cleared the name; fall through without the fallback
+            # file (set_device_name already removed it) but keep showing the ID.
+            device.name = device.device_id
+            device.name_source = "id"
             return
-        should_broadcast = False
-        effective_name = device_name
-        async with self._lock:
-            device = self._devices.get(device_id)
-            if device:
-                device.reported_name = device_name
-            if device and device.name != device_name:
-                device.name = device_name
-                should_broadcast = True
-        if should_broadcast:
+
+        device.pending_name = ""
+        if device.reported_name:
+            device.name = device.reported_name
+            device.name_source = "device"
+            return
+
+        saved = get_device_name(device.device_id)
+        if saved:
+            device.name = saved
+            device.name_source = "server"
+            return
+
+        device.name = device.device_id
+        device.name_source = "id"
+
+    async def _broadcast_if_changed(self, device_id: str, old_dict: Dict[str, Any], new_dict: Dict[str, Any]):
+        changes = {k: v for k, v in new_dict.items() if old_dict.get(k) != v}
+        if changes:
             await ws_manager.broadcast({
                 "type": "device_update",
                 "deviceId": device_id,
-                "changes": {"name": effective_name},
+                "changes": changes,
             })
 
-    async def _push_name_to_device(self, ip: str, name: str):
-        """Push a name to the device via HTTP PUT /name."""
+    async def update_name(self, device_id: str, name: str) -> Optional[Dict[str, Any]]:
+        """Instructor assigns a name/number. Stored on the headset; mirrored here.
+
+        Returns None if the device is unknown, otherwise a dict describing whether the
+        name reached the device (``pushed``/``via``) or is queued (``pending``).
+        """
+        normalized = (name or "").strip()
+
+        async with self._lock:
+            device = self._devices.get(device_id)
+            if not device:
+                return None
+            old_dict = device.to_dict()
+            if normalized == device.reported_name:
+                # Device already has exactly this name: nothing to push, drop any stale
+                # pending value.
+                self._pending_names.pop(device_id, None)
+            else:
+                self._pending_names[device_id] = normalized
+            self._refresh_name_locked(device)
+            new_dict = device.to_dict()
+            device_ip = device.ip
+            reachable = device.online and device.player_connected
+            already_confirmed = normalized == device.reported_name
+
+        # Fallback store for players that do not report names (and for restarts).
+        set_device_name(device_id, normalized)
+        await self._broadcast_if_changed(device_id, old_dict, new_dict)
+
+        if already_confirmed:
+            return {"ok": True, "name": new_dict["name"], "pushed": True, "via": "device", "pending": False}
+
+        pushed, via = False, None
+        if reachable:
+            pushed, via = await self._push_name_to_device(device_id, device_ip, normalized)
+
+        return {
+            "ok": True,
+            "name": new_dict["name"],
+            "pushed": pushed,
+            "via": via,
+            "pending": not pushed,
+        }
+
+    async def apply_device_name_from_device(self, device_id: str, device_name: Optional[str]):
+        """Apply the name the device reports (device wins over the server-side fallback).
+
+        Also reconciles pending instructor assignments: a matching report confirms
+        them, a mismatching one triggers a (throttled) re-push. A device that reports an
+        empty name while the server still has a fallback for it receives that fallback,
+        so a reinstalled app gets its number back.
+        """
+        reported = str(device_name or "").strip()
+        push_name: Optional[str] = None
+
+        async with self._lock:
+            device = self._devices.get(device_id)
+            if device is None:
+                return
+            old_dict = device.to_dict()
+            device.reported_name = reported
+
+            pending = self._pending_names.get(device_id)
+            if pending is not None:
+                if pending == reported:
+                    logger.info("Device %s confirmed name '%s'", device_id, reported)
+                    self._pending_names.pop(device_id, None)
+                else:
+                    push_name = pending
+            elif not reported:
+                saved = get_device_name(device_id)
+                if saved:
+                    push_name = saved
+
+            self._refresh_name_locked(device)
+            new_dict = device.to_dict()
+            device_ip = device.ip
+
+        await self._broadcast_if_changed(device_id, old_dict, new_dict)
+
+        if push_name is not None and self._name_push_due(device_id):
+            await self._push_name_to_device(device_id, device_ip, push_name)
+
+    async def _retry_pending_name(self, device_id: str):
+        async with self._lock:
+            pending = self._pending_names.get(device_id)
+            device = self._devices.get(device_id)
+            device_ip = device.ip if device else ""
+        if pending is None or not self._name_push_due(device_id):
+            return
+        await self._push_name_to_device(device_id, device_ip, pending)
+
+    def _name_push_due(self, device_id: str) -> bool:
+        last = self._last_name_push.get(device_id, 0.0)
+        return (time.time() - last) >= NAME_PUSH_RETRY_SEC
+
+    def reset_name_push_throttle(self, device_id: str):
+        """A fresh connection is a new chance to deliver a queued name right away."""
+        self._last_name_push.pop(device_id, None)
+
+    async def _push_name_to_device(self, device_id: str, ip: str, name: str) -> Tuple[bool, Optional[str]]:
+        """Deliver a name to the headset: WS command first, HTTP PUT /name as fallback.
+
+        Only a *successful* delivery starts the retry throttle, so a push that failed
+        because the device was unreachable is retried at the next sign of life.
+        """
+        if device_ws_manager.is_connected(device_id):
+            sent = await device_ws_manager.send_command(
+                device_id, {"type": "command", "action": "set_name", "name": name}
+            )
+            if sent:
+                logger.info("Pushed name '%s' to device %s via WS", name, device_id)
+                self._last_name_push[device_id] = time.time()
+                return True, "ws"
+
+        if not ip or ip == "unknown":
+            return False, None
+
         url = f"http://{ip}:{PLAYER_HTTP_PORT}/name"
         try:
             async with aiohttp.ClientSession() as session:
@@ -261,28 +411,54 @@ class DeviceManager:
                     timeout=aiohttp.ClientTimeout(total=5),
                 ) as resp:
                     if resp.status == 200:
-                        logger.info("Pushed name '%s' to device %s", name, ip)
-                    else:
-                        logger.warning("Failed to push name to %s: HTTP %d", ip, resp.status)
+                        logger.info("Pushed name '%s' to device %s via HTTP", name, ip)
+                        self._last_name_push[device_id] = time.time()
+                        return True, "http"
+                    logger.warning("Failed to push name to %s: HTTP %d", ip, resp.status)
         except Exception as e:
             logger.warning("Failed to push name to device %s: %s", ip, e)
+        return False, None
 
     async def sync_device_names(self):
+        """Re-evaluate fallback names after device_names.json was replaced via the API.
+
+        Imported names never overwrite what a headset reports about itself; they only
+        fill in for devices that report no name.
+        """
         async with self._lock:
             updates = []
             for device in self._devices.values():
-                saved_name = get_device_name(device.device_id)
-                next_name = saved_name or device.reported_name or device.device_id
-                if device.name != next_name:
-                    device.name = next_name
-                    updates.append((device.device_id, next_name))
+                old_dict = device.to_dict()
+                self._refresh_name_locked(device)
+                updates.append((device.device_id, old_dict, device.to_dict()))
 
-        for device_id, name in updates:
-            await ws_manager.broadcast({
-                "type": "device_update",
-                "deviceId": device_id,
-                "changes": {"name": name},
-            })
+        for device_id, old_dict, new_dict in updates:
+            await self._broadcast_if_changed(device_id, old_dict, new_dict)
+
+    # --- Player WebSocket lifecycle -----------------------------------------
+
+    def cancel_ws_disconnect_grace(self, device_id: str):
+        task = self._ws_grace_tasks.pop(device_id, None)
+        if task:
+            task.cancel()
+
+    def schedule_ws_disconnect_check(self, device_id: str):
+        """Mark ws_connected=False only if the player has not reconnected within the grace period."""
+        self.cancel_ws_disconnect_grace(device_id)
+        self._ws_grace_tasks[device_id] = asyncio.create_task(self._ws_disconnect_check(device_id))
+
+    async def _ws_disconnect_check(self, device_id: str):
+        try:
+            await asyncio.sleep(WS_DISCONNECT_GRACE_SEC)
+        except asyncio.CancelledError:
+            return
+        self._ws_grace_tasks.pop(device_id, None)
+        if device_ws_manager.is_connected(device_id):
+            return
+        # Do not demote player_connected here: the HTTP API is usually still up and the
+        # liveness loop verifies that, marking the device offline only if it really stops
+        # answering.
+        await self.add_or_update(device_id, "", seen=False, ws_connected=False)
 
     # --- Liveness -----------------------------------------------------------
 

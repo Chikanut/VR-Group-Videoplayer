@@ -127,6 +127,18 @@ Unity Player → HTTP self-registration → FastAPI Server → WebSocket → Web
 - Checks port 8080 for player HTTP API
 - Devices self-register via `POST /api/devices/register`
 - Liveness (`device_manager.py`): a device is alive while its player WebSocket is open OR it answers a direct HTTP `/status` probe. Quiet devices are probed every 5s; a device goes offline only after `deviceOfflineTimeout` (default 30s) with the WS closed and probes failing. Offline devices are re-probed every ~15s so they return without a full scan.
+- A closed player WebSocket is reported to the dashboard only after `WS_DISCONNECT_GRACE_SEC` (8s) without a reconnect, so short Wi-Fi blips do not flip the WS/HTTP badge.
+- A `/status` answer without a device ID never creates a new device keyed by IP; it only refreshes the device already known at that IP.
+
+### Device Naming (number / name shown on the dashboard)
+- The **headset owns its name**: the player stores it in PlayerPrefs (`device_name`) and reports it in every `register`/`status` payload as `deviceName` (always present, possibly empty). The HUD shows it top-left while idle.
+- The server mirrors it: priority is *instructor-assigned but unconfirmed* (`pending`) > *reported by device* > `device_names.json` fallback > device ID. `DeviceState.name_source` tells the UI which one is in effect.
+- Renaming (`PUT /api/devices/{id}/name`) pushes the name to the headset via WS command `set_name` (fallback HTTP `PUT /name`), stores it in `device_names.json` as a fallback, and keeps it `pending` until the device reports it back. If the device is offline the push is retried on its next report or WS registration.
+- `device_names.json` import never overrides what a headset reports; it only fills in for players that report no name.
+
+### Player status thread model (Unity)
+- `StatusReporter` builds the status JSON on the main thread (every 0.5s or on state change). The HTTP listener thread and WS thread-pool continuations only read the cached string, so they never touch Unity APIs/JNI/PlayerPrefs.
+- `VideoPlayerController` always calls `VideoPlayer.Stop()` before re-preparing and releases the decoder after completion/error (hardware MediaCodec instances are scarce on Quest; leaking them wedges the media server and forces a headset reboot).
 
 ### Command Priority
 1. HTTP API to player app (`POST http://<device>:8080/play`)

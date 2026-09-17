@@ -120,7 +120,11 @@ curl http://<IP>:8080/status
 ```json
 {
   "deviceId": "quest-01",
+  "deviceName": "12",
   "ip": "192.168.1.42",
+  "androidId": "quest-01",
+  "deviceModel": "Quest 3",
+  "macAddress": "aa:bb:cc:dd:ee:ff",
   "state": "playing",
   "file": "lesson01.mp4",
   "mode": "2d",
@@ -130,9 +134,18 @@ curl http://<IP>:8080/status
   "locked": false,
   "battery": 85,
   "batteryCharging": false,
-  "uptimeMinutes": 12
+  "uptimeMinutes": 12,
+  "globalVolume": 1.0,
+  "personalVolume": 1.0,
+  "effectiveVolume": 1.0,
+  "playerVersion": "1.7.0"
 }
 ```
+
+- `deviceId` — `android_id` пристрою (стабільний для встановленого APK).
+- `deviceName` — ім'я/номер, збережене в окулярах; поле присутнє завжди (порожній рядок, якщо ім'я не задане).
+- JSON формується на головному потоці Unity кожні ~0.5 с; HTTP-потік віддає кешований знімок, тому
+  `/status` ніколи не повертає порожній `{}` через помилки потоку.
 
 ### `GET /files`
 
@@ -159,12 +172,22 @@ curl http://<IP>:8080/files
 
 ### `PUT /name`
 
-Задає відображувану назву пристрою.
+Задає ім'я/номер пристрою. Значення **зберігається в самих окулярах** (PlayerPrefs) і
+показується на HUD плеєра; сервер лише віддзеркалює його. Після збереження плеєр одразу
+надсилає серверу оновлений `status` з новим `deviceName`.
 
 ```bash
 curl -X PUT http://<IP>:8080/name \
   -H "Content-Type: application/json" \
-  -d '{"name":"Front Row 1"}'
+  -d '{"name":"12"}'
+```
+
+Відповідь: `{"ok":true,"name":"12"}`. Порожнє `name` очищає ім'я.
+
+### `GET /device-info`
+
+```json
+{"deviceId":"<android_id>","deviceName":"12","ip":"192.168.1.42","playerVersion":"1.7.0"}
 ```
 
 ### `GET /debug` / `POST /debug`
@@ -201,6 +224,49 @@ curl -X POST http://<IP>:8080/media/scan \
 ```
 
 Якщо `files` не передати, плеєр пересканує весь каталог `/sdcard/Movies/`.
+
+---
+
+## WebSocket-протокол (плеєр ↔ control panel)
+
+Плеєр сам підключається до `ws://<server>:8000/ws/device` (адреса зберігається в
+`instructor_ip`, або знаходиться скануванням підмережі).
+
+### Плеєр → сервер
+
+| Повідомлення | Коли | Вміст |
+|---|---|---|
+| `{"type":"register", ...}` | одразу після підключення | усі поля `GET /status` |
+| `{"type":"status", ...}` | одразу після `register`, далі кожні 5 с, а також після кожної команди та після зміни імені | усі поля `GET /status` |
+
+Сервер бере стан відтворення **лише** зі `status`; `register` — це лише «привітання»
+(старі версії плеєра надсилали в ньому `state: "idle"`, через що окуляри «блимали» станом
+після кожного перепідключення).
+
+### Сервер → плеєр
+
+```json
+{"type":"command","action":"<дія>", ...}
+```
+
+| `action` | Додаткові поля | Опис |
+|---|---|---|
+| `open` | `file`, `mode`, `loop`, `placementMode`, `autoRecenterOnOpen`, `advancedSettings` | як `POST /open` |
+| `play`, `pause`, `stop`, `recenter`, `ping`, `toggle_debug` | — | як відповідні HTTP-команди |
+| `seek` | `time` | як `POST /seek` |
+| `set_volume` | `globalVolume`, `personalVolume` | як `POST /volume` |
+| `set_mode` | `mode` | змінити режим перегляду |
+| `set_name` | `name` | зберегти ім'я/номер в окулярах (як `PUT /name`); плеєр одразу відповідає `status` з новим `deviceName` |
+
+### Іменування пристроїв
+
+1. Інструктор задає ім'я на панелі (`PUT /api/devices/{id}/name`).
+2. Сервер надсилає `set_name` через WebSocket (або `PUT /name` через HTTP), показує ім'я
+   як «очікує підтвердження» і зберігає його в `device_names.json` як резерв.
+3. Окуляри зберігають ім'я в PlayerPrefs, показують його на HUD і повертають у `status`.
+4. Сервер бачить `deviceName` у `status` і вважає ім'я підтвердженим. Далі джерелом істини є
+   окуляри: навіть якщо сервер перевстановити, ім'я з'явиться з першим же `status`.
+5. Якщо окуляри були офлайн, ім'я буде надіслано при наступному підключенні.
 
 ---
 

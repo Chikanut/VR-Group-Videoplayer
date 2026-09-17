@@ -8,7 +8,7 @@ import aiohttp
 from .config import PLAYER_HTTP_PORT, get_config
 from .device_manager import device_manager
 from .device_ws_manager import device_ws_manager
-from .player_probe import extract_device_id, probe_player_status, status_to_kwargs
+from .player_probe import extract_device_id, probe_player_status
 
 logger = logging.getLogger("vrclassroom.discovery")
 
@@ -119,24 +119,26 @@ async def process_discovered_ip(ip: str, semaphore: asyncio.Semaphore):
         if status is None:
             return
 
-        device_id = extract_device_id(status, ip)
-        extra_kwargs = status_to_kwargs(status)
+        device_id = extract_device_id(status, "")
+        if not device_id:
+            # A player that answered with an empty/partial status (e.g. an internal error
+            # while building it). Refresh the device we already know at this IP, but never
+            # invent a new device keyed by the IP - that is how headsets used to "lose"
+            # their ID and name on the dashboard.
+            device_id = device_manager.get_device_id_by_ip(ip) or ""
+            if not device_id:
+                logger.warning("Player at %s answered /status without a device ID; skipping", ip)
+                return
 
         if not device_ws_manager.is_connected(device_id):
             server_url = _get_server_url()
             if server_url:
                 asyncio.create_task(_push_server_ip_to_player(ip, server_url))
 
-        await device_manager.add_or_update(
-            device_id,
-            ip,
-            player_connected=True,
-            **extra_kwargs,
-        )
-
-        device_name = str(status.get("deviceName", "")).strip()
-        if device_name:
-            await device_manager.apply_device_name_from_device(device_id, device_name)
+        device = await device_manager.apply_player_status(device_id, ip, status)
+        if device is None:
+            return
+        device_id = device.device_id
 
         from .requirements_manager import check_requirements
 
@@ -195,20 +197,22 @@ async def handle_self_registration(data: dict):
             )
             return
 
-        await device_manager.add_or_update(
-            incoming_device_id,
-            ip=ip,
-            battery=data.get("battery", -1),
-            player_connected=True,
-            player_version=data.get("playerVersion", ""),
-        )
+        kwargs = {"player_connected": True}
+        if "battery" in data:
+            kwargs["battery"] = data.get("battery", -1)
+        if data.get("playerVersion"):
+            kwargs["player_version"] = data.get("playerVersion", "")
 
-        device_name = str(data.get("deviceName", "")).strip()
-        if device_name:
-            await device_manager.apply_device_name_from_device(incoming_device_id, device_name)
+        device = await device_manager.add_or_update(incoming_device_id, ip=ip, **kwargs)
+        if device is None:
+            return
+        device_id = device.device_id
+
+        if "deviceName" in data:
+            await device_manager.apply_device_name_from_device(device_id, data.get("deviceName"))
 
         from .requirements_manager import check_requirements
 
-        await check_requirements(incoming_device_id)
+        await check_requirements(device_id)
     except Exception:
         logger.exception("Self-registration handling failed. payload=%s", data)

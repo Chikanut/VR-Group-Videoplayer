@@ -1,23 +1,72 @@
 using System;
-using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using UnityEngine;
 using System.Globalization;
 
 namespace VRClassroom
 {
     /// <summary>
-    /// Utility class that collects device status into JSON.
-    /// No longer pushes status via HTTP or logcat — that is handled by ServerConnection via WebSocket.
+    /// Collects device status into JSON.
+    ///
+    /// Thread model: everything that touches Unity APIs (VideoPlayer, SystemInfo,
+    /// PlayerPrefs, JNI) runs on the main thread. The HTTP listener thread and the
+    /// WebSocket thread-pool continuations only ever read the cached JSON string,
+    /// so a background request can never trip Unity's main-thread checks (which
+    /// used to surface as an empty "{}" status and, on the server, as a device that
+    /// suddenly lost its ID and name).
     /// </summary>
     public class StatusReporter : MonoBehaviour
     {
+        /// <summary>Raised on the main thread whenever the persisted device name changes.</summary>
+        public static event Action<string> OnDeviceNameChanged;
+
+        /// <summary>Stable device ID (android_id), resolved once on the main thread.</summary>
+        public static string DeviceId => _cachedDeviceId ?? string.Empty;
+
+        /// <summary>Instructor-assigned name/number, persisted on the headset.</summary>
+        public static string DeviceName => _cachedDeviceName ?? string.Empty;
+
+        /// <summary>Last known LAN IPv4 address (refreshed periodically on the main thread).</summary>
+        public static string LocalIp => _cachedIp ?? "0.0.0.0";
+
         [SerializeField] private VideoPlayerController videoPlayer;
         [SerializeField] private ViewModeManager viewModeManager;
 
         public string PlayerVersion => UnityEngine.Application.version;
+
+        private const float StatusRefreshInterval = 0.5f;
+        private const float IpRefreshInterval = 5f;
+        private const string DeviceNamePrefKey = "device_name";
+        private const string DeviceIdPrefKey = "device_id";
+
+        private static volatile string _cachedDeviceId;
+        private static volatile string _cachedDeviceName;
+        private static volatile string _cachedIp;
+        private static string _cachedDeviceModel = string.Empty;
+        private static string _cachedMacAddress = string.Empty;
+        private static int _mainThreadId = -1;
+
+        private volatile string _cachedStatusJson = "{}";
+        private float _nextStatusRefresh;
+        private float _nextIpRefresh;
+        private bool _dirty = true;
+
+        private void Awake()
+        {
+            _mainThreadId = Thread.CurrentThread.ManagedThreadId;
+
+            // Resolve static identity once, on the main thread.
+            _cachedDeviceId = ResolveAndroidId();
+            _cachedDeviceName = PlayerPrefs.GetString(DeviceNamePrefKey, string.Empty);
+            _cachedDeviceModel = SystemInfo.deviceModel ?? string.Empty;
+            _cachedMacAddress = ReadMacAddress();
+            _cachedIp = ReadLocalIPAddress();
+
+            RebuildStatusJson();
+        }
 
         private void Start()
         {
@@ -26,13 +75,67 @@ namespace VRClassroom
             if (viewModeManager == null)
                 Debug.LogError("[StatusReporter] ViewModeManager reference is NOT assigned!");
 
-            string ip = GetLocalIPAddress();
-            string deviceId = GetAndroidId();
-            Debug.Log($"[StatusReporter] Initialized. DeviceID={deviceId}, IP={ip}");
+            if (videoPlayer != null)
+                videoPlayer.OnStateChanged += HandleVideoStateChanged;
+            if (viewModeManager != null)
+                viewModeManager.OnModeChanged += HandleModeChanged;
+
+            Debug.Log($"[StatusReporter] Initialized. DeviceID={_cachedDeviceId}, Name='{_cachedDeviceName}', IP={_cachedIp}");
         }
 
+        private void OnDestroy()
+        {
+            if (videoPlayer != null)
+                videoPlayer.OnStateChanged -= HandleVideoStateChanged;
+            if (viewModeManager != null)
+                viewModeManager.OnModeChanged -= HandleModeChanged;
+        }
+
+        private void Update()
+        {
+            float now = Time.unscaledTime;
+
+            if (now >= _nextIpRefresh)
+            {
+                _nextIpRefresh = now + IpRefreshInterval;
+                string ip = ReadLocalIPAddress();
+                if (ip != _cachedIp)
+                {
+                    _cachedIp = ip;
+                    _dirty = true;
+                }
+            }
+
+            if (_dirty || now >= _nextStatusRefresh)
+            {
+                RebuildStatusJson();
+            }
+        }
+
+        private void HandleVideoStateChanged(PlayerState state) => _dirty = true;
+        private void HandleModeChanged(ViewMode mode) => _dirty = true;
+
+        public static bool IsMainThread => _mainThreadId == Thread.CurrentThread.ManagedThreadId;
+
+        /// <summary>
+        /// Returns the status JSON. On the main thread the value is rebuilt on demand so
+        /// heartbeats always carry fresh playback time; on any other thread the last
+        /// snapshot (at most ~0.5s old) is returned without touching Unity APIs.
+        /// </summary>
         public string GetStatusJson()
         {
+            if (IsMainThread)
+            {
+                RebuildStatusJson();
+            }
+            return _cachedStatusJson;
+        }
+
+        private void RebuildStatusJson()
+        {
+            _dirty = false;
+            _nextStatusRefresh = Time.unscaledTime + StatusRefreshInterval;
+
             string state = "idle";
             string file = "";
             string mode = "2d";
@@ -69,22 +172,22 @@ namespace VRClassroom
 
             int battery = GetBatteryPercent();
             bool charging = GetBatteryCharging();
-            string deviceId = GetAndroidId();
-            string deviceName = GetDeviceName();
-            string ip = GetLocalIPAddress();
-            string deviceModel = GetDeviceModel();
-            string macAddress = GetMacAddress();
             int uptimeMinutes = Mathf.FloorToInt(Time.realtimeSinceStartup / 60f);
 
-            var sb = new StringBuilder(512);
+            string deviceId = _cachedDeviceId ?? string.Empty;
+            string deviceName = _cachedDeviceName ?? string.Empty;
+            string ip = _cachedIp ?? "0.0.0.0";
+
+            var sb = new StringBuilder(640);
             sb.Append('{');
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"deviceId\":\"{0}\",", EscapeJson(deviceId));
-            if (!string.IsNullOrEmpty(deviceName))
-                sb.AppendFormat(CultureInfo.InvariantCulture, "\"deviceName\":\"{0}\",", EscapeJson(deviceName));
+            // Always present (possibly empty) so the server can tell "no name yet" from
+            // "old player that does not report names".
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"deviceName\":\"{0}\",", EscapeJson(deviceName));
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"ip\":\"{0}\",", EscapeJson(ip));
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"androidId\":\"{0}\",", EscapeJson(deviceId));
-            sb.AppendFormat(CultureInfo.InvariantCulture, "\"deviceModel\":\"{0}\",", EscapeJson(deviceModel));
-            sb.AppendFormat(CultureInfo.InvariantCulture, "\"macAddress\":\"{0}\",", EscapeJson(macAddress));
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"deviceModel\":\"{0}\",", EscapeJson(_cachedDeviceModel));
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"macAddress\":\"{0}\",", EscapeJson(_cachedMacAddress));
             sb.Append("\"online\":true,");
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"state\":\"{0}\",", EscapeJson(state));
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"file\":\"{0}\",", EscapeJson(file));
@@ -102,13 +205,13 @@ namespace VRClassroom
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"playerVersion\":\"{0}\"", EscapeJson(PlayerVersion));
             sb.Append('}');
 
-            return sb.ToString();
+            _cachedStatusJson = sb.ToString();
         }
 
         public void ReportNow()
         {
             string json = GetStatusJson();
-        #if UNITY_ANDROID && !UNITY_EDITOR
+#if UNITY_ANDROID && !UNITY_EDITOR
             try
             {
                 using (var logClass = new AndroidJavaClass("android.util.Log"))
@@ -120,9 +223,9 @@ namespace VRClassroom
             {
                 Debug.LogWarning($"[StatusReporter] Android Log failed: {e.Message}");
             }
-        #else
+#else
             Debug.Log($"[VRPlayer] {json}");
-        #endif
+#endif
         }
 
         public static int GetBatteryPercent()
@@ -138,11 +241,24 @@ namespace VRClassroom
         }
 
         /// <summary>
-        /// Returns android_id via Android Settings.Secure API.
-        /// This matches what the server reads via "adb shell settings get secure android_id".
-        /// Falls back to SystemInfo.deviceUniqueIdentifier or PlayerPrefs.
+        /// Returns the cached android_id. Safe to call from any thread once the
+        /// component has run Awake; before that (or in tests) it resolves on demand.
         /// </summary>
         public static string GetAndroidId()
+        {
+            string cached = _cachedDeviceId;
+            if (!string.IsNullOrEmpty(cached)) return cached;
+            if (!IsMainThread && _mainThreadId != -1) return string.Empty;
+            _cachedDeviceId = ResolveAndroidId();
+            return _cachedDeviceId;
+        }
+
+        /// <summary>
+        /// Resolves android_id via Android Settings.Secure API (main thread only).
+        /// This matches what the server reads via "adb shell settings get secure android_id".
+        /// Falls back to a persisted SystemInfo identifier so the ID never changes between runs.
+        /// </summary>
+        private static string ResolveAndroidId()
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
             try
@@ -165,34 +281,67 @@ namespace VRClassroom
             }
 #endif
             // Fallback: use saved device_id or SystemInfo
-            string saved = PlayerPrefs.GetString("device_id", string.Empty);
+            string saved = PlayerPrefs.GetString(DeviceIdPrefKey, string.Empty);
             if (!string.IsNullOrEmpty(saved)) return saved;
 
             string uid = SystemInfo.deviceUniqueIdentifier;
             if (!string.IsNullOrEmpty(uid) && uid != SystemInfo.unsupportedIdentifier)
             {
-                PlayerPrefs.SetString("device_id", uid);
+                PlayerPrefs.SetString(DeviceIdPrefKey, uid);
                 PlayerPrefs.Save();
                 return uid;
             }
 
             string fallback = $"{SystemInfo.deviceModel}_{SystemInfo.deviceName}";
-            PlayerPrefs.SetString("device_id", fallback);
+            PlayerPrefs.SetString(DeviceIdPrefKey, fallback);
             PlayerPrefs.Save();
             return fallback;
         }
 
+        /// <summary>Cached device name; safe from any thread.</summary>
         public static string GetDeviceName()
         {
-            return PlayerPrefs.GetString("device_name", string.Empty);
+            return _cachedDeviceName ?? string.Empty;
         }
 
         public static string GetDeviceModel()
         {
-            return SystemInfo.deviceModel ?? string.Empty;
+            return _cachedDeviceModel ?? string.Empty;
         }
 
         public static string GetMacAddress()
+        {
+            return _cachedMacAddress ?? string.Empty;
+        }
+
+        /// <summary>
+        /// Persists the instructor-assigned name on the headset. Must be called on the
+        /// main thread (PlayerPrefs). Raises OnDeviceNameChanged when the value changes.
+        /// </summary>
+        public static void SetDeviceName(string name)
+        {
+            string normalized = (name ?? string.Empty).Trim();
+            string previous = _cachedDeviceName ?? string.Empty;
+
+            PlayerPrefs.SetString(DeviceNamePrefKey, normalized);
+            PlayerPrefs.Save();
+            _cachedDeviceName = normalized;
+            Debug.Log($"[StatusReporter] Device name saved: '{normalized}' (was '{previous}')");
+
+            if (normalized != previous)
+            {
+                try
+                {
+                    OnDeviceNameChanged?.Invoke(normalized);
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"[StatusReporter] OnDeviceNameChanged handler failed: {e.Message}");
+                }
+            }
+        }
+
+        private static string ReadMacAddress()
         {
             try
             {
@@ -215,14 +364,16 @@ namespace VRClassroom
             return string.Empty;
         }
 
-        public static void SetDeviceName(string name)
+        /// <summary>Cached LAN IP; safe from any thread. Refreshed every few seconds.</summary>
+        public static string GetLocalIPAddress()
         {
-            PlayerPrefs.SetString("device_name", name ?? string.Empty);
-            PlayerPrefs.Save();
-            Debug.Log($"[StatusReporter] Device name saved: {name}");
+            string cached = _cachedIp;
+            if (!string.IsNullOrEmpty(cached)) return cached;
+            _cachedIp = ReadLocalIPAddress();
+            return _cachedIp;
         }
 
-        public static string GetLocalIPAddress()
+        private static string ReadLocalIPAddress()
         {
             try
             {
@@ -251,8 +402,26 @@ namespace VRClassroom
 
         public static string EscapeJson(string s)
         {
-            if (string.IsNullOrEmpty(s)) return s;
-            return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            if (string.IsNullOrEmpty(s)) return s ?? string.Empty;
+            var sb = new StringBuilder(s.Length + 8);
+            foreach (char c in s)
+            {
+                switch (c)
+                {
+                    case '\\': sb.Append("\\\\"); break;
+                    case '"': sb.Append("\\\""); break;
+                    case '\n': sb.Append("\\n"); break;
+                    case '\r': sb.Append("\\r"); break;
+                    case '\t': sb.Append("\\t"); break;
+                    default:
+                        if (c < 0x20)
+                            sb.AppendFormat(CultureInfo.InvariantCulture, "\\u{0:x4}", (int)c);
+                        else
+                            sb.Append(c);
+                        break;
+                }
+            }
+            return sb.ToString();
         }
     }
 }

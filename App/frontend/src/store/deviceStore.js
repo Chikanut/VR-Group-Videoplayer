@@ -10,6 +10,8 @@ function hasChanges(existing, changes) {
   return false;
 }
 
+const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
 const useDeviceStore = create((set, get) => ({
   devices: {},
   config: null,
@@ -78,10 +80,11 @@ const useDeviceStore = create((set, get) => ({
   },
 
   getDeviceList: () => {
-    return Object.values(get().devices).sort((a, b) => {
-      if (a.online !== b.online) return a.online ? -1 : 1;
-      return (a.name || a.deviceId).localeCompare(b.name || b.deviceId);
-    });
+    // Stable order by name/number ("2" before "10"), regardless of online state, so
+    // tiles never jump around when a headset drops out and comes back.
+    return Object.values(get().devices).sort((a, b) =>
+      nameCollator.compare(a.name || a.deviceId, b.name || b.deviceId),
+    );
   },
 
   getOnlineDevices: () => {

@@ -34,6 +34,31 @@ namespace VRClassroom
         private readonly Dictionary<string, VideoAdvancedSettings> _videoAdvancedSettingsByFile =
             new Dictionary<string, VideoAdvancedSettings>(StringComparer.OrdinalIgnoreCase);
 
+        // PlayerPrefs is main-thread only; the listener thread answers GET /server-ip
+        // from this cache instead.
+        private static volatile string _cachedInstructorIp = string.Empty;
+
+        /// <summary>Raised on the main thread whenever instructor_ip is persisted (by anyone).</summary>
+        public static event Action<string> ServerIpChanged;
+
+        /// <summary>Called on the main thread whenever instructor_ip is persisted.</summary>
+        public static void NotifyServerIpChanged(string serverIp)
+        {
+            string normalized = serverIp ?? string.Empty;
+            bool changed = normalized != _cachedInstructorIp;
+            _cachedInstructorIp = normalized;
+            if (!changed) return;
+
+            try
+            {
+                ServerIpChanged?.Invoke(normalized);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[LanServer] ServerIpChanged handler failed: {e.Message}");
+            }
+        }
+
         private void Start()
         {
             Debug.Log("[LanServer] Initializing...");
@@ -42,6 +67,7 @@ namespace VRClassroom
             if (orientationManager == null) Debug.LogError("[LanServer] OrientationManager reference is NOT assigned!");
             if (statusReporter == null) Debug.LogError("[LanServer] StatusReporter reference is NOT assigned!");
             if (debugLogPanel == null) Debug.LogWarning("[LanServer] DebugLogPanel reference is not assigned (debug toggle will not work).");
+            _cachedInstructorIp = PlayerPrefs.GetString("instructor_ip", string.Empty);
             LoadVideoAdvancedSettings();
             AndroidMediaScanner.ScanDirectory(PlayerConfig.VideoPath);
             StartServer();
@@ -161,10 +187,27 @@ namespace VRClassroom
         {
             var request = context.Request;
             var response = context.Response;
-            string path = request.Url.AbsolutePath.TrimEnd('/').ToLowerInvariant();
-            string method = request.HttpMethod.ToUpperInvariant();
+            string path;
+            string method;
 
-            Debug.Log($"[LanServer] {method} {path} from {request.RemoteEndPoint}");
+            try
+            {
+                // A malformed request line leaves Url null; if we threw here the response
+                // would never be closed and Mono's HttpListener would keep the connection.
+                path = (request.Url?.AbsolutePath ?? "/").TrimEnd('/').ToLowerInvariant();
+                method = (request.HttpMethod ?? "GET").ToUpperInvariant();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[LanServer] Dropping malformed request: {e.Message}");
+                try { response.Abort(); } catch { }
+                return;
+            }
+
+            if (path != "/status")
+            {
+                Debug.Log($"[LanServer] {method} {path} from {request.RemoteEndPoint}");
+            }
 
             try
             {
@@ -345,7 +388,12 @@ namespace VRClassroom
                 {
                     SendJson(response, 500, $"{{\"error\":\"{EscapeJson(e.Message)}\"}}");
                 }
-                catch { /* Response may already be closed */ }
+                catch
+                {
+                    // Response may already be closed or the client is gone; make sure the
+                    // connection is torn down either way so it cannot pile up.
+                    try { response.Abort(); } catch { }
+                }
             }
         }
 
@@ -421,16 +469,15 @@ namespace VRClassroom
 
         private void HandleGetStatus(HttpListenerResponse response)
         {
-            // StatusReporter may need main-thread data, but GetStatusJson reads properties
-            // that are set on the main thread; reading them from another thread is acceptable
-            // for status reporting purposes (slightly stale data is fine).
+            // GetStatusJson() returns a snapshot built on the main thread; it never touches
+            // Unity APIs from this listener thread. Answered every few seconds per device,
+            // so the payload is deliberately not logged.
             string json = "{}";
             if (statusReporter != null)
             {
                 try
                 {
                     json = statusReporter.GetStatusJson();
-                    Debug.Log($"[LanServer] Status: {json}");
                 }
                 catch (Exception e)
                 {
@@ -579,8 +626,7 @@ namespace VRClassroom
 
         private static string EscapeJson(string s)
         {
-            if (string.IsNullOrEmpty(s)) return s;
-            return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            return StatusReporter.EscapeJson(s);
         }
 
         private void HandleGetFiles(HttpListenerResponse response)
@@ -783,46 +829,21 @@ namespace VRClassroom
 
         private void PlayPingSound()
         {
-            try
-            {
-                int sampleRate = 44100;
-                float duration = 0.5f;
-                float frequency = 880f;
-                int sampleCount = Mathf.CeilToInt(sampleRate * duration);
-                var clip = AudioClip.Create("Ping", sampleCount, 1, sampleRate, false);
-                float[] samples = new float[sampleCount];
-                for (int i = 0; i < sampleCount; i++)
-                {
-                    float t = (float)i / sampleRate;
-                    float envelope = 1f - (t / duration);
-                    samples[i] = Mathf.Sin(2f * Mathf.PI * frequency * t) * envelope * 0.8f;
-                }
-                clip.SetData(samples, 0);
-
-                var audioSource = gameObject.GetComponent<AudioSource>();
-                if (audioSource == null)
-                    audioSource = gameObject.AddComponent<AudioSource>();
-                audioSource.PlayOneShot(clip);
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[LanServer] Ping sound failed: {e.Message}");
-            }
+            PingSound.Play(gameObject);
         }
 
         private void HandleGetDeviceInfo(HttpListenerResponse response)
         {
+            // All three values are main-thread-resolved caches; safe from the listener thread.
             string deviceName = StatusReporter.GetDeviceName();
-
-            // Use the same ID as StatusReporter (saved in PlayerPrefs)
             string deviceId = StatusReporter.GetAndroidId();
 
             var sb = new StringBuilder(256);
             sb.Append('{');
             sb.AppendFormat("\"deviceId\":\"{0}\"", EscapeJson(deviceId));
-            if (!string.IsNullOrEmpty(deviceName))
-                sb.AppendFormat(",\"deviceName\":\"{0}\"", EscapeJson(deviceName));
+            sb.AppendFormat(",\"deviceName\":\"{0}\"", EscapeJson(deviceName));
             sb.AppendFormat(",\"ip\":\"{0}\"", EscapeJson(StatusReporter.GetLocalIPAddress()));
+            sb.AppendFormat(",\"playerVersion\":\"{0}\"", EscapeJson(UnityEngine.Application.version));
             sb.Append('}');
 
             SendJson(response, 200, sb.ToString());
@@ -847,13 +868,15 @@ namespace VRClassroom
 
                 Debug.Log($"[LanServer] PUT /name: setting device name to '{data.name}'");
 
-                // Save name to PlayerPrefs on the main thread
+                // Save name to PlayerPrefs on the main thread. StatusReporter raises
+                // OnDeviceNameChanged, which makes ServerConnection push a status update
+                // immediately so the dashboard reflects the new name without waiting.
                 QueueCommand(() =>
                 {
                     StatusReporter.SetDeviceName(data.name);
                 });
 
-                SendJson(response, 200, "{\"ok\":true}");
+                SendJson(response, 200, "{\"ok\":true,\"name\":\"" + EscapeJson((data.name ?? string.Empty).Trim()) + "\"}");
             }
             catch (Exception e)
             {
@@ -864,7 +887,7 @@ namespace VRClassroom
 
         private void HandleGetServerIp(HttpListenerResponse response)
         {
-            string serverIp = PlayerPrefs.GetString("instructor_ip", string.Empty);
+            string serverIp = _cachedInstructorIp ?? string.Empty;
             string json = $"{{\"serverIp\":\"{EscapeJson(serverIp)}\"}}";
             SendJson(response, 200, json);
         }
@@ -892,6 +915,7 @@ namespace VRClassroom
                 {
                     PlayerPrefs.SetString("instructor_ip", data.serverIp);
                     PlayerPrefs.Save();
+                    NotifyServerIpChanged(data.serverIp);
                     Debug.Log($"[LanServer] instructor_ip saved: {data.serverIp}");
                 });
 

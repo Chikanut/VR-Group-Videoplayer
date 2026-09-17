@@ -59,7 +59,15 @@ export default function DeviceTile({ device, onClick }) {
   return (
     <div className={`device-tile ${getBorderClass(device)}`} onClick={onClick}>
       <div className="tile-header">
-        <span className="tile-name" title={device.name || device.deviceId}>{device.name || device.deviceId}</span>
+        <span className="tile-name" title={`${device.name || device.deviceId} (${device.deviceId})`}>
+          {device.name || device.deviceId}
+          {device.nameSource === 'pending' && (
+            <span className="tile-name-pending" title={t('Not saved on the headset yet')}> ⏳</span>
+          )}
+          {device.nameSource === 'server' && device.playerConnected && (
+            <span className="tile-name-pending" title={t('Name stored only on the server (older player build)')}> *</span>
+          )}
+        </span>
         <span className={`tile-status-dot ${device.online ? 'dot-online' : 'dot-offline'}`} />
       </div>
 

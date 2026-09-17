@@ -183,10 +183,12 @@ async def get_device(device_id: str):
 
 @app.put("/api/devices/{device_id}/name")
 async def set_device_name_endpoint(device_id: str, body: DeviceNameUpdate):
-    success = await device_manager.update_name(device_id, body.name)
-    if not success:
+    """Assign a name/number to a headset. The value is persisted on the headset itself;
+    the response tells whether it reached the device (``pushed``) or is queued (``pending``)."""
+    result = await device_manager.update_name(device_id, body.name)
+    if result is None:
         return JSONResponse(status_code=404, content={"error": "Device not found"})
-    return {"ok": True}
+    return result
 
 
 @app.delete("/api/devices/{device_id}")
@@ -329,23 +331,19 @@ async def device_websocket_endpoint(ws: WebSocket):
             ip=ip or "unknown",
             player_connected=True,
             ws_connected=True,
-            battery=msg.get("battery", -1),
-            player_version=msg.get("playerVersion", ""),
-            playback_state=msg.get("state", "idle"),
-            android_id=msg.get("androidId", msg.get("android_id", "")),
-            device_model=msg.get("deviceModel", msg.get("model", "")),
-            mac_address=msg.get("macAddress", msg.get("mac", "")),
+            **_register_kwargs(msg),
         )
         # DeviceManager may have aliased this ID onto an already-known device; keep the
         # socket registered under the same ID the rest of the server will look up.
         if device is not None and device.device_id != device_id:
             logger.info("Device WS: %s resolved to known device %s", device_id, device.device_id)
             device_id = device.device_id
+        device_manager.cancel_ws_disconnect_grace(device_id)
+        device_manager.reset_name_push_throttle(device_id)
         await device_ws_manager.register(device_id, ws)
 
-        device_name = str(msg.get("deviceName", "")).strip()
-        if device_name:
-            await device_manager.apply_device_name_from_device(device_id, device_name)
+        if "deviceName" in msg:
+            await device_manager.apply_device_name_from_device(device_id, msg.get("deviceName"))
 
         logger.info("Device %s registered via WS from %s", device_id, ip)
         await check_requirements(device_id)
@@ -364,6 +362,8 @@ async def device_websocket_endpoint(ws: WebSocket):
                     ws_connected=True,
                     **status_to_kwargs(msg),
                 )
+                if "deviceName" in msg:
+                    await device_manager.apply_device_name_from_device(device_id, msg.get("deviceName"))
 
             elif msg_type == "register":
                 ip = str(msg.get("ip", ip)).strip()
@@ -372,9 +372,10 @@ async def device_websocket_endpoint(ws: WebSocket):
                     ip=ip or "unknown",
                     player_connected=True,
                     ws_connected=True,
-                    battery=msg.get("battery", -1),
-                    player_version=msg.get("playerVersion", ""),
+                    **_register_kwargs(msg),
                 )
+                if "deviceName" in msg:
+                    await device_manager.apply_device_name_from_device(device_id, msg.get("deviceName"))
 
     except WebSocketDisconnect:
         logger.info("Device %s WS disconnected normally", device_id or "unknown")
@@ -386,10 +387,27 @@ async def device_websocket_endpoint(ws: WebSocket):
             # it and must stay registered, otherwise every reconnect flickers the device.
             gone = await device_ws_manager.disconnect(device_id, ws)
             if gone:
-                # Do not demote player_connected here: the player usually reconnects within
-                # seconds and its HTTP API is still up. The liveness loop verifies over HTTP
-                # and only marks the device offline if it really stops answering.
-                await device_manager.add_or_update(device_id, "", seen=False, ws_connected=False)
+                # The player usually reconnects within seconds; only tell the dashboard the
+                # WS is gone if it has not come back after a short grace period. The liveness
+                # loop keeps verifying over HTTP and marks the device offline only if it
+                # really stops answering.
+                device_manager.schedule_ws_disconnect_check(device_id)
+
+
+def _register_kwargs(msg: Dict) -> Dict:
+    """Fields taken from a player's register message.
+
+    Register is a "hello", not a playback report: older players hardcode ``state: idle``
+    in it, which made a headset that was mid-video flash to *idle* on every reconnect
+    until the next heartbeat. Playback fields therefore come only from ``status``
+    messages (the current player sends one right after registering).
+    """
+    kwargs = status_to_kwargs(msg)
+    for key in ("playback_state", "current_video", "playback_time", "playback_duration"):
+        kwargs.pop(key, None)
+    if not kwargs.get("player_version"):
+        kwargs.pop("player_version", None)
+    return kwargs
 
 
 @app.get("/api/server-info")

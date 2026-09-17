@@ -62,7 +62,9 @@ class DeviceState:
         self.device_id: str = device_id
         self.ip: str = ip
         self.name: str = ""
-        self.reported_name: str = ""
+        self.reported_name: str = ""      # name the headset itself reports (persisted on device)
+        self.pending_name: str = ""       # instructor-assigned, not yet confirmed by the device
+        self.name_source: str = "id"      # pending | device | server | id
         self.battery: int = -1
         self.battery_charging: bool = False
         self.online: bool = True
@@ -91,6 +93,9 @@ class DeviceState:
             "deviceId": self.device_id,
             "ip": self.ip,
             "name": self.name or self.device_id,
+            "reportedName": self.reported_name,
+            "pendingName": self.pending_name,
+            "nameSource": self.name_source,
             "battery": self.battery,
             "batteryCharging": self.battery_charging,
             "online": self.online,
@@ -131,7 +136,7 @@ class SeekCommand(BaseModel):
 
 
 class DeviceNameUpdate(BaseModel):
-    name: str
+    name: str = ""
 
 class VolumeUpdate(BaseModel):
     volume: float = Field(ge=0.0, le=1.0)

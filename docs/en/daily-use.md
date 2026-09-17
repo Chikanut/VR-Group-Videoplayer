@@ -12,6 +12,23 @@ Run a normal lesson session from the control panel.
 4. Open the control panel.
 5. Confirm every device shows as online.
 
+## Headset Numbers / Names
+
+Every headset can be given a number or a name (for example `1`, `2`, … or `Row 1 left`).
+Dashboard tiles are always sorted by this name (`2` comes before `10`) and the order does not
+change when a headset temporarily drops off the network.
+
+1. Click a headset tile, then click its title (or the **Rename** button).
+2. Type the number or name and press Enter.
+3. The name is **stored on the headset itself** and shown on its HUD in the top-left corner
+   while no video is playing, so a headset can be identified just by looking into it.
+4. Until the headset confirms the save, the tile shows ⏳ next to the name. If the headset is
+   offline, the name is sent automatically the next time it connects.
+
+Because the name lives on the headset, it survives a control panel reinstall or a device ID
+change. An asterisk `*` next to the name means the player build on that headset is outdated
+and the name is only stored on the server — update the player.
+
 ## Start a Lesson
 
 1. Open the dashboard.

@@ -53,6 +53,16 @@ namespace VRClassroom
 
         private VideoPlayer _videoPlayer;
 
+        // Decoder lifecycle. Every Prepare() on Android grabs a hardware MediaCodec
+        // instance; those are a scarce system-wide resource on Quest. If the previous
+        // instance is not released with Stop() before the next Prepare(), a class that
+        // opens videos many times in a row eventually wedges the media server and the
+        // whole headset needs a reboot. So: always Stop() before re-preparing, and
+        // release the decoder as soon as playback finishes or fails.
+        private bool _releaseDecoderNextFrame;
+        private float _loadingStartedAt = -1f;
+        private const float PrepareTimeoutSeconds = 40f;
+
         private void Awake()
         {
             Debug.Log("[VideoPlayerController] Awake: initializing...");
@@ -237,6 +247,24 @@ namespace VRClassroom
 #endif
         }
 
+        private void Update()
+        {
+            if (_releaseDecoderNextFrame)
+            {
+                _releaseDecoderNextFrame = false;
+                ReleaseDecoder("deferred");
+            }
+
+            if (CurrentState == PlayerState.Loading && _loadingStartedAt >= 0f &&
+                Time.unscaledTime - _loadingStartedAt > PrepareTimeoutSeconds)
+            {
+                Debug.LogError($"[VideoPlayerController] Prepare timed out after {PrepareTimeoutSeconds:F0}s for '{CurrentFile}'. Releasing decoder.");
+                _loadingStartedAt = -1f;
+                ReleaseDecoder("prepare timeout");
+                SetState(PlayerState.Error);
+            }
+        }
+
         private void OnDestroy()
         {
             if (_videoPlayer != null)
@@ -244,6 +272,7 @@ namespace VRClassroom
                 _videoPlayer.prepareCompleted -= OnPrepareCompleted;
                 _videoPlayer.loopPointReached -= OnLoopPointReached;
                 _videoPlayer.errorReceived -= OnErrorReceived;
+                try { _videoPlayer.Stop(); } catch { }
             }
 
             if (TargetTexture != null)
@@ -261,14 +290,12 @@ namespace VRClassroom
                 return;
             }
 
-            Debug.Log($"[VideoPlayerController] Open requested: {filename}");
+            Debug.Log($"[VideoPlayerController] Open requested: {filename} (state={CurrentState}, managedMemMB={GC.GetTotalMemory(false) / (1024 * 1024)})");
 
-            // Stop current playback if any
-            if (CurrentState == PlayerState.Playing || CurrentState == PlayerState.Paused || CurrentState == PlayerState.Loading)
-            {
-                Debug.Log($"[VideoPlayerController] Stopping current playback (state={CurrentState})");
-                _videoPlayer.Stop();
-            }
+            // Always release the previous decoder before re-preparing, whatever the
+            // current state is (Completed/Error/Ready still hold a MediaCodec instance).
+            _releaseDecoderNextFrame = false;
+            ReleaseDecoder("open");
 
             // Support both full paths and filenames relative to VideoPath
             bool isAbsolute = filename.StartsWith("/") ||
@@ -292,6 +319,7 @@ namespace VRClassroom
             CurrentFile = filename;
             _videoPlayer.url = "file://" + fullPath;
 
+            _loadingStartedAt = Time.unscaledTime;
             SetState(PlayerState.Loading);
             _videoPlayer.Prepare();
         }
@@ -300,6 +328,22 @@ namespace VRClassroom
         {
             if (CurrentState == PlayerState.Ready || CurrentState == PlayerState.Paused || CurrentState == PlayerState.Completed)
             {
+                if (!_videoPlayer.isPrepared)
+                {
+                    // Decoder was released after completion; go through Prepare again so
+                    // the state machine (Loading -> Ready -> Playing) stays consistent.
+                    if (!string.IsNullOrEmpty(CurrentFile))
+                    {
+                        Debug.Log("[VideoPlayerController] Play() on a released player, re-opening current file.");
+                        Open(CurrentFile);
+                    }
+                    else
+                    {
+                        Debug.LogWarning("[VideoPlayerController] Play() ignored: nothing to play.");
+                    }
+                    return;
+                }
+
                 _videoPlayer.Play();
                 SetState(PlayerState.Playing);
             }
@@ -322,6 +366,12 @@ namespace VRClassroom
         {
             if (_videoPlayer == null || string.IsNullOrEmpty(CurrentFile)) return;
 
+            if (!_videoPlayer.isPrepared)
+            {
+                Open(CurrentFile);
+                return;
+            }
+
             _videoPlayer.time = 0;
             _videoPlayer.Play();
             SetState(PlayerState.Playing);
@@ -329,14 +379,35 @@ namespace VRClassroom
 
         public void Stop()
         {
-            if (_videoPlayer != null)
-            {
-                _videoPlayer.Stop();
-            }
+            _releaseDecoderNextFrame = false;
+            _loadingStartedAt = -1f;
+            ReleaseDecoder("stop");
 
             ClearRenderTexture();
             CurrentFile = string.Empty;
             SetState(PlayerState.Idle);
+        }
+
+        /// <summary>
+        /// Stops the underlying VideoPlayer, which unloads the clip and frees the
+        /// hardware decoder. Safe to call in any state; idempotent.
+        /// </summary>
+        private void ReleaseDecoder(string reason)
+        {
+            if (_videoPlayer == null) return;
+            try
+            {
+                if (_videoPlayer.isPlaying || _videoPlayer.isPrepared || _videoPlayer.isPaused ||
+                    CurrentState == PlayerState.Loading)
+                {
+                    Debug.Log($"[VideoPlayerController] Releasing decoder ({reason}, state={CurrentState}, file={CurrentFile})");
+                }
+                _videoPlayer.Stop();
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[VideoPlayerController] VideoPlayer.Stop() failed ({reason}): {e.Message}");
+            }
         }
 
 
@@ -388,6 +459,7 @@ namespace VRClassroom
                       $"canSetTime={source.canSetTime}, audioTrackCount={source.audioTrackCount}");
 
             ApplyEffectiveVolume();
+            _loadingStartedAt = -1f;
 
             // Resize RenderTexture to match video resolution
             ResizeRenderTexture((int)source.width, (int)source.height);
@@ -449,13 +521,19 @@ namespace VRClassroom
             {
                 SetState(PlayerState.Completed);
                 OnVideoCompleted?.Invoke();
+                // Free the hardware decoder now that the clip is done. Play()/Restart()
+                // re-prepare on demand. Deferred one frame: we are inside a VideoPlayer
+                // callback and Stop() here would tear down the object that is calling us.
+                _releaseDecoderNextFrame = true;
             }
         }
 
         private void OnErrorReceived(VideoPlayer source, string message)
         {
             Debug.LogError($"[VideoPlayerController] VideoPlayer error: {message}");
+            _loadingStartedAt = -1f;
             SetState(PlayerState.Error);
+            _releaseDecoderNextFrame = true;
         }
 
         private void SetState(PlayerState newState)

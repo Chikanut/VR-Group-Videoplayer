@@ -436,6 +436,11 @@ body {
   max-width: 80%;
 }
 
+.tile-name-pending {
+  color: var(--warning);
+  font-weight: 400;
+}
+
 .tile-status-dot {
   width: 10px;
   height: 10px;
@@ -684,6 +689,51 @@ body {
   margin-bottom: 16px;
   color: var(--danger);
   font-weight: 600;
+}
+
+.name-status {
+  border-radius: var(--radius);
+  padding: 6px 12px;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+  border: 1px solid var(--border);
+}
+
+.name-status-ok {
+  color: var(--success);
+  border-color: var(--success);
+  background: rgba(52, 199, 89, 0.12);
+}
+
+.name-status-pending,
+.name-status-sending {
+  color: var(--warning);
+  border-color: var(--warning);
+  background: rgba(255, 184, 51, 0.12);
+}
+
+.name-status-error {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: rgba(255, 75, 75, 0.12);
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--primary);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0 4px;
+}
+
+.btn-link:hover {
+  text-decoration: underline;
+}
+
+.mono {
+  font-family: monospace;
+  font-size: 0.8rem;
 }
 
 .dialog-section {

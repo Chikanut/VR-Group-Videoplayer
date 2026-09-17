@@ -16,6 +16,7 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
   const device = useDeviceStore((state) => state.devices[deviceId]);
   const [editName, setEditName] = useState('');
   const [editingName, setEditingName] = useState(false);
+  const [nameStatus, setNameStatus] = useState(null); // { kind: 'ok'|'pending'|'error'|'sending', text }
   const [requirements, setRequirements] = useState(null);
   const [loadingReqs, setLoadingReqs] = useState(false);
   const [personalVolume, setPersonalVolume] = useState(1);
@@ -53,11 +54,35 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
   };
 
   const handleSaveName = async () => {
-    if (editName !== device.name) {
-      await setDeviceName(deviceId, editName);
-    }
+    const nextName = editName.trim();
     setEditingName(false);
+    if (nextName === (device.name || '') || (nextName === '' && device.nameSource === 'id')) {
+      return;
+    }
+    setNameStatus({ kind: 'sending', text: t('Name is being sent to the headset...') });
+    try {
+      const result = await setDeviceName(deviceId, nextName);
+      if (result?.error) {
+        setNameStatus({ kind: 'error', text: t('Failed to save name') });
+      } else if (result?.pushed) {
+        setNameStatus({ kind: 'ok', text: t('Name saved on the headset') });
+      } else {
+        setNameStatus({
+          kind: 'pending',
+          text: t('Name saved on the server; will be sent to the headset when it reconnects'),
+        });
+      }
+    } catch {
+      setNameStatus({ kind: 'error', text: t('Failed to save name') });
+    }
   };
+
+  // Once the headset confirms the name, the server flips nameSource to "device".
+  useEffect(() => {
+    if (nameStatus && nameStatus.kind !== 'error' && device?.nameSource === 'device') {
+      setNameStatus({ kind: 'ok', text: t('Name saved on the headset') });
+    }
+  }, [device?.nameSource, device?.reportedName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleKeyDown = (event) => {
     if (event.key === 'Enter') {
@@ -101,12 +126,29 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
         </div>
 
         {!device.online && <div className="dialog-warning">{t('Device is offline')}</div>}
+        {nameStatus && (
+          <div className={`name-status name-status-${nameStatus.kind}`}>{nameStatus.text}</div>
+        )}
 
         <div className="dialog-section">
           <h3>{t('Device Info')}</h3>
           <table className="info-table">
             <tbody>
-              <tr><td>Device ID</td><td>{device.deviceId}</td></tr>
+              <tr>
+                <td>{t('Name / number')}</td>
+                <td>
+                  {device.name}{' '}
+                  <button className="btn-link" onClick={() => setEditingName(true)}>{t('Rename')}</button>
+                </td>
+              </tr>
+              <tr>
+                <td>{t('Name on device')}</td>
+                <td className={device.nameSource === 'device' ? 'text-ok' : 'text-warn'}>
+                  {device.reportedName || t('(none)')}
+                  {device.nameSource === 'pending' && ` — ${t('Not saved on the headset yet')}`}
+                </td>
+              </tr>
+              <tr><td>Device ID</td><td className="mono">{device.deviceId}</td></tr>
               <tr><td>IP</td><td>{device.ip}</td></tr>
               <tr>
                 <td>{t('Battery')}</td>
