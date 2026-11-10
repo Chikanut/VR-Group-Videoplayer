@@ -11,6 +11,9 @@ namespace VRClassroom
     {
         public static void SetKeepAwake(bool keepAwake) => Call("setKeepAwake", keepAwake);
 
+        /// <summary>Puts the headset to sleep (virtual proximity FAR). Woken by the watchdog's POST :8081/wake or the power button.</summary>
+        public static void Sleep() => Call("sleep");
+
         public static void StartWatchdog() => Call("startWatchdog");
 
         /// <summary>Installs a downloaded APK file (Java checks its sha256 first).</summary>

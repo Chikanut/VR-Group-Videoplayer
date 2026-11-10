@@ -100,6 +100,7 @@ namespace VRClassroom
         // short Wi-Fi blips do not toggle it.
         private const float KeepAwakeReleaseDelay = 60f;
         private bool _keepAwake;
+        private bool _sleepRequested; // instructor "sleep": never re-assert keep-awake (process restarts after wake)
         private float _disconnectedSince = -1f;
         private int _updateInFlight; // 0/1
 
@@ -149,6 +150,7 @@ namespace VRClassroom
 
         private void UpdateKeepAwake()
         {
+            if (_sleepRequested) return;
             if (_connected)
             {
                 _disconnectedSince = -1f;
@@ -916,6 +918,15 @@ namespace VRClassroom
                             _sendStatusNow = true;
                             break;
                         }
+                    case "sleep":
+                        LogInfo("command_start", commandId, "action=sleep");
+                        videoPlayer?.Stop();
+                        if (viewModeManager != null)
+                            viewModeManager.SetMode(ViewMode.None);
+                        _sleepRequested = true;
+                        _keepAwake = false;
+                        PlayerSystem.Sleep();
+                        break;
                     case "ping":
                         LogInfo("command_start", commandId, "action=ping");
                         PingSound.Play(gameObject);

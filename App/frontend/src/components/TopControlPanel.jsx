@@ -109,6 +109,21 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
         >
           {t('Recenter All')}
         </button>
+        <button
+          className="btn"
+          disabled={!hasCommandTargets}
+          title={t('Sleep hint')}
+          onClick={() => debounce('sleepAll', () => playbackCommand('sleep'))}
+        >
+          {t('Sleep All')}
+        </button>
+        <button
+          className="btn"
+          title={t('Wake hint')}
+          onClick={() => debounce('wakeAll', () => playbackCommand('wake'))}
+        >
+          {t('Wake All')}
+        </button>
 
         <div className="volume-control global-volume-control">
           <label htmlFor="global-volume-slider">{t('Global volume')}</label>

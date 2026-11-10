@@ -40,6 +40,7 @@ from .playback_controller import (
     ping_device,
     seek_video,
     send_command,
+    wake_devices,
     set_device_volume,
     set_global_volume,
     toggle_debug,
@@ -250,6 +251,16 @@ async def playback_pause(cmd: PlaybackCommand):
 @app.post("/api/playback/stop")
 async def playback_stop(cmd: PlaybackCommand):
     return await send_command("stop", cmd.deviceIds)
+
+
+@app.post("/api/playback/sleep")
+async def playback_sleep(cmd: PlaybackCommand):
+    return await send_command("sleep", cmd.deviceIds)
+
+
+@app.post("/api/playback/wake")
+async def playback_wake(cmd: PlaybackCommand):
+    return await wake_devices(cmd.deviceIds)
 
 
 @app.post("/api/playback/recenter")

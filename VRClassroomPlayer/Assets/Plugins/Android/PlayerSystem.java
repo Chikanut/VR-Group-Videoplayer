@@ -37,6 +37,12 @@ public class PlayerSystem {
         Log.i(TAG, "Keep awake " + keepAwake);
     }
 
+    /** Instructor "sleep": virtual proximity FAR, the headset turns off its display and sleeps (~15s). */
+    public static void sleep(Context context) {
+        context.sendBroadcast(new Intent("com.oculus.vrpowermanager.prox_far"));
+        Log.i(TAG, "Sleep requested");
+    }
+
     public static void startWatchdog(Context context) {
         try {
             context.startForegroundService(new Intent(context, WatchdogService.class));

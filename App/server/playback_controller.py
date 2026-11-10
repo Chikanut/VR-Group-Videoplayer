@@ -166,6 +166,36 @@ async def send_command(command: str, device_ids: List[str]) -> Dict[str, Any]:
 
     return {"success": success_list, "failed": failed_list}
 
+WAKE_PORT = 8081  # player watchdog (WatchdogService.java), alive while the headset sleeps
+
+
+async def _post_wake(ip: str) -> Dict[str, Any]:
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"http://{ip}:{WAKE_PORT}/wake",
+                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT),
+            ) as resp:
+                return {"success": resp.status == 200}
+    except Exception as exc:
+        return {"success": False, "error": str(exc) or type(exc).__name__}
+
+
+async def wake_devices(device_ids: List[str]) -> Dict[str, Any]:
+    """Wake sleeping headsets. Asleep headsets show as offline, so every known device is targeted."""
+    devices = [d for d in await device_manager.get_all() if d.get("ip") and d["ip"] != "unknown"]
+    if device_ids:
+        devices = [d for d in devices if d["deviceId"] in device_ids]
+
+    results = await asyncio.gather(*[_post_wake(d["ip"]) for d in devices])
+    success_list, failed_list = [], []
+    for device, result in zip(devices, results):
+        if result["success"]:
+            success_list.append({"deviceId": device["deviceId"]})
+        else:
+            failed_list.append({"deviceId": device["deviceId"], "error": result.get("error", "Unknown error")})
+    return {"success": success_list, "failed": failed_list}
+
 
 async def seek_video(time: float, device_ids: List[str]) -> Dict[str, Any]:
     """Seek target devices to a position in seconds. Empty device_ids seeks all players."""

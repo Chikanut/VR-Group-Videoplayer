@@ -354,6 +354,14 @@ namespace VRClassroom
                             });
                             SendJson(response, 200, "{\"ok\":true}");
                             return;
+                        case "/sleep":
+                            QueueCommand(() =>
+                            {
+                                Debug.Log("[LanServer] Executing: sleep");
+                                PlayerSystem.Sleep();
+                            });
+                            SendJson(response, 200, "{\"ok\":true}");
+                            return;
                         case "/ping":
                             QueueCommand(() =>
                             {

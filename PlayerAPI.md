@@ -109,6 +109,23 @@ curl -X POST http://<IP>:8080/seek \
   -d '{"time":30}'
 ```
 
+### `POST /sleep`
+
+Приспає окуляри (віртуальний датчик наближення «знято», екран гасне, сон через ~15 с).
+
+```bash
+curl -X POST http://<IP>:8080/sleep
+```
+
+### `POST :8081/wake`
+
+Будить окуляри. Слухає **сторож плеєра** на порту `8081`, а не сам плеєр: під час довгого сну Quest
+вбиває процес плеєра, а сторож лишається доступним. Після пробудження сторож сам відкриває плеєр.
+
+```bash
+curl -X POST http://<IP>:8081/wake
+```
+
 ### `GET /status`
 
 ```bash
@@ -254,6 +271,7 @@ curl -X POST http://<IP>:8080/media/scan \
 | `open` | `file`, `mode`, `loop`, `placementMode`, `autoRecenterOnOpen`, `advancedSettings` | як `POST /open` |
 | `play`, `pause`, `stop`, `recenter`, `ping`, `toggle_debug` | — | як відповідні HTTP-команди |
 | `seek` | `time` | як `POST /seek` |
+| `sleep` | — | зупинити відео і приспати окуляри; розбудити — `POST :8081/wake` або кнопкою живлення |
 | `set_volume` | `globalVolume`, `personalVolume` | як `POST /volume` |
 | `set_mode` | `mode` | змінити режим перегляду |
 | `set_name` | `name` | зберегти ім'я/номер в окулярах (як `PUT /name`); плеєр одразу відповідає `status` з новим `deviceName` |
