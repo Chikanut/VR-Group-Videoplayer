@@ -53,6 +53,10 @@ export async function getRequirements(id) {
   return request(`/devices/${id}/requirements`);
 }
 
+export async function updatePlayers() {
+  return request('/player/update', { method: 'POST' });
+}
+
 export async function pingDevice(id) {
   return request(`/devices/${id}/ping`, { method: 'POST' });
 }

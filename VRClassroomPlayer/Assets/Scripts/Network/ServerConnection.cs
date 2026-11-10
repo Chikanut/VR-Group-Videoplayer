@@ -21,7 +21,8 @@ namespace VRClassroom
     ///                                                   every HeartbeatInterval seconds and
     ///                                                   whenever the device name changes
     /// Protocol (server -> client):
-    ///   {"type":"command","action":"open|play|pause|stop|recenter|seek|set_volume|set_mode|set_name|ping|toggle_debug", ...}
+    ///   {"type":"command","action":"open|play|pause|stop|recenter|seek|set_volume|set_mode|set_name|ping|toggle_debug|update", ...}
+    ///   update: {"url":"/api/player/apk","sha256":"..."} - silent self-update, skipped if already installed
     /// </summary>
     public class ServerConnection : MonoBehaviour
     {
@@ -40,6 +41,8 @@ namespace VRClassroom
             public float globalVolume;
             public float personalVolume;
             public float time;
+            public string url;
+            public string sha256;
             public VideoAdvancedSettings advancedSettings;
         }
 
@@ -92,8 +95,18 @@ namespace VRClassroom
         private long _discoveryHoldUntilTicks; // DateTime.UtcNow.Ticks, via Interlocked
         private const float WakeDiscoveryHoldSeconds = 30f;
 
+        // The headset must not fall asleep while the instructor server is connected (sleep
+        // leaks video memory and drops the session). Released only after a longer outage so
+        // short Wi-Fi blips do not toggle it.
+        private const float KeepAwakeReleaseDelay = 60f;
+        private bool _keepAwake;
+        private float _disconnectedSince = -1f;
+        private int _updateInFlight; // 0/1
+
         private void Start()
         {
+            PlayerSystem.StartWatchdog();
+
             _deviceId = StatusReporter.GetAndroidId();
             _savedServerAddress = PlayerPrefs.GetString(InstructorIpPrefKey, string.Empty);
             _verboseLogs = PlayerPrefs.GetInt(VerboseNetworkLogsPrefKey, 0) == 1;
@@ -130,6 +143,32 @@ namespace VRClassroom
                 _lastHeartbeatTime = Time.time;
                 SendHeartbeat();
             }
+
+            UpdateKeepAwake();
+        }
+
+        private void UpdateKeepAwake()
+        {
+            if (_connected)
+            {
+                _disconnectedSince = -1f;
+                if (_keepAwake) return;
+                _keepAwake = true;
+                PlayerSystem.SetKeepAwake(true);
+                return;
+            }
+
+            if (!_keepAwake) return;
+            if (_disconnectedSince < 0f) _disconnectedSince = Time.time;
+            if (Time.time - _disconnectedSince < KeepAwakeReleaseDelay) return;
+
+            _keepAwake = false;
+            PlayerSystem.SetKeepAwake(false);
+        }
+
+        private void OnApplicationQuit()
+        {
+            if (_keepAwake) PlayerSystem.SetKeepAwake(false);
         }
 
         private void OnApplicationPause(bool paused)
@@ -881,6 +920,26 @@ namespace VRClassroom
                         LogInfo("command_start", commandId, "action=ping");
                         PingSound.Play(gameObject);
                         break;
+                    case "update":
+                        {
+                            // url is a server path ("/api/player/apk"): resolve it against the
+                            // server we are connected to, so the server never has to guess its own IP.
+                            string url = command.url ?? string.Empty;
+                            if (url.StartsWith("/"))
+                            {
+                                string server = _savedServerAddress ?? string.Empty;
+                                if (!server.Contains(":")) server += ":" + ServerPort;
+                                url = $"http://{server}{url}";
+                            }
+                            LogInfo("command_start", commandId, $"action=update, url={SafeValue(url)}");
+                            if (string.IsNullOrEmpty(command.url) || string.IsNullOrEmpty(command.sha256))
+                            {
+                                Debug.LogWarning("[ServerConnection] update ignored: 'url' or 'sha256' missing");
+                                break;
+                            }
+                            StartUpdate(url, command.sha256.Trim().ToLowerInvariant(), commandId);
+                            break;
+                        }
                     case "toggle_debug":
                         {
                             LogInfo("command_start", commandId, "action=toggle_debug");
@@ -896,6 +955,63 @@ namespace VRClassroom
             catch (Exception e)
             {
                 Debug.LogError($"[ServerConnection][event=command_error][commandId={commandId}] action={SafeValue(action)}, reason={e.GetType().Name}: {e.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Self-update: skip if the installed APK already has sha256, else download it here
+        /// (Mono sockets may use plain HTTP; Java may not) and hand the file to Java to install.
+        /// </summary>
+        private void StartUpdate(string url, string sha256, string commandId)
+        {
+            if (Interlocked.CompareExchange(ref _updateInFlight, 1, 0) != 0)
+            {
+                LogWarning("update_skipped", commandId, "an update is already running");
+                return;
+            }
+
+            string installedApk = PlayerSystem.InstalledApkPath();
+            string downloadPath = System.IO.Path.Combine(Application.temporaryCachePath, "player-update.apk");
+            Task.Run(async () =>
+            {
+                try
+                {
+                    if (!string.IsNullOrEmpty(installedApk) && Sha256Of(installedApk) == sha256)
+                    {
+                        LogInfo("update_skipped", commandId, "installed APK already matches");
+                        return;
+                    }
+
+                    var request = WebRequest.CreateHttp(url);
+                    request.Timeout = 30000;
+                    request.ReadWriteTimeout = 60000;
+                    using (var response = await request.GetResponseAsync().ConfigureAwait(false))
+                    using (var source = response.GetResponseStream())
+                    using (var target = System.IO.File.Create(downloadPath))
+                    {
+                        await source.CopyToAsync(target).ConfigureAwait(false);
+                    }
+
+                    LogInfo("update_downloaded", commandId, downloadPath);
+                    _mainThreadQueue.Enqueue(() => PlayerSystem.InstallUpdate(downloadPath, sha256));
+                }
+                catch (Exception e)
+                {
+                    LogWarning("update_failed", commandId, $"{e.GetType().Name}: {e.Message}");
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref _updateInFlight, 0);
+                }
+            });
+        }
+
+        private static string Sha256Of(string path)
+        {
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+            using (var stream = System.IO.File.OpenRead(path))
+            {
+                return BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
             }
         }
 

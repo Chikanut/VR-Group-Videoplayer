@@ -38,6 +38,7 @@ from pathlib import Path
 
 SCRIPT_DIR = Path(os.path.dirname(os.path.abspath(sys.argv[0])))
 CONFIG_FILE = SCRIPT_DIR / "quest_deploy_config.json"
+PLAYER_PACKAGE = "com.vrclass.player"
 LOG_FILE = SCRIPT_DIR / "quest_deploy.log"
 
 DEFAULT_CONFIG = {
@@ -265,6 +266,30 @@ class ADB:
 
         code, out, err = self.run("install", "-r", "-g", apk_path, serial=serial, timeout=300)
         return code, out, err
+
+    def setup_player(self, serial, apk_path, package_name):
+        """Одноразове налаштування плеєра для автозапуску і тихого самооновлення.
+
+        - плеєр має бути сам собі «інсталятором» (інакше самооновлення питає підтвердження
+          в окулярах). `pm set-installer` заборонено, тому перевстановлюємо з `-i`;
+        - дозвіл «поверх інших вікон» дає запускати плеєр з фону (сторож після ввімкнення);
+        - дозвіл встановлювати APK для самооновлення.
+        Повертає список помилок (порожній = все добре).
+        """
+        errors = []
+        _, out, _ = self.run("shell", "dumpsys", "package", package_name, serial=serial, timeout=20)
+        if f"installerPackageName={package_name}" not in out:
+            code, out, err = self.run("install", "-r", "-g", "-i", package_name, apk_path, serial=serial, timeout=300)
+            if code != 0 or "Success" not in out + err:
+                errors.append(f"install -i: {(err or out).strip()}")
+        for op in ("SYSTEM_ALERT_WINDOW", "REQUEST_INSTALL_PACKAGES"):
+            code, out, err = self.run("shell", "appops", "set", package_name, op, "allow", serial=serial, timeout=20)
+            if code != 0:
+                errors.append(f"appops {op}: {(err or out).strip()}")
+        # Стартуємо сторожа: він відкриє плеєр, щойно окуляри вдягнуть (поки вони лежать,
+        # Quest не відкриває жодних додатків).
+        self.run("shell", "am", "broadcast", "-n", f"{package_name}/.BootReceiver", serial=serial, timeout=20)
+        return errors
 
     def uninstall_package(self, serial, package_name):
         """adb uninstall. Видаляє застосунок разом з його даними."""
@@ -1082,6 +1107,8 @@ class QuestDeployApp:
 
                 if installed and not force_reinstall:
                     self.log(f"  ⏭ APK вже встановлено: {pkg}")
+                    if pkg == PLAYER_PACKAGE:
+                        self._setup_player(serial, apk_path)
                     done_tasks += 1
                     self.update_overall(done_tasks, total_tasks)
                     continue
@@ -1108,6 +1135,8 @@ class QuestDeployApp:
 
                 if code == 0 and "Success" in result:
                     self.log(f"  ✓ Встановлено: {apk_name}")
+                    if pkg == PLAYER_PACKAGE:
+                        self._setup_player(serial, apk_path)
                 else:
                     self.log(f"  ✗ Помилка встановлення {apk_name}: {err or out}")
 
@@ -1178,6 +1207,14 @@ class QuestDeployApp:
             self.current_progress.config(mode="determinate", value=0),
         ))
         self.deploying = False
+
+    def _setup_player(self, serial, apk_path):
+        self.update_current("Налаштовую автозапуск і самооновлення…", -1)
+        errors = self.adb.setup_player(serial, apk_path, PLAYER_PACKAGE)
+        if errors:
+            self.log(f"  ✗ Налаштування плеєра: {'; '.join(errors)}")
+        else:
+            self.log("  ✓ Плеєр налаштовано: автозапуск, тихе оновлення, запущено")
 
     def _uninstall(self, serial, pkg):
         code, out, err = self.adb.uninstall_package(serial, pkg)

@@ -44,6 +44,7 @@ from .playback_controller import (
     set_global_volume,
     toggle_debug,
 )
+from .player_update import get_player_apk_path, update_players
 from .requirements_manager import check_requirements, refresh_all_requirements
 from .websocket_manager import ws_manager
 
@@ -410,6 +411,20 @@ def _register_kwargs(msg: Dict) -> Dict:
     if not kwargs.get("player_version"):
         kwargs.pop("player_version", None)
     return kwargs
+
+
+@app.get("/api/player/apk")
+async def download_player_apk():
+    path = get_player_apk_path()
+    if not path:
+        return JSONResponse({"error": "Player APK not found"}, status_code=404)
+    return FileResponse(path, media_type="application/vnd.android.package-archive", filename="player.apk")
+
+
+@app.post("/api/player/update")
+async def update_players_endpoint():
+    result = await update_players()
+    return result if result.get("success") else JSONResponse(result, status_code=400)
 
 
 @app.get("/api/server-info")

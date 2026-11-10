@@ -41,6 +41,7 @@ class RequirementVideo(BaseModel):
 class ConfigModel(BaseModel):
     mobileAppUrl: str = ""
     playerAppUrl: str = ""
+    playerApkPath: str = ""
     requirementVideos: List[RequirementVideo] = Field(default_factory=list)
     batteryThreshold: int = 20
     scanInterval: int = 30

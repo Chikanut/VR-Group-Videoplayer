@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getConfig, getDeviceNames, replaceDeviceNames, updateConfig } from '../api';
+import { getConfig, getDeviceNames, replaceDeviceNames, updateConfig, updatePlayers } from '../api';
 import { useI18n } from '../i18n';
 import packageJson from '../../package.json';
 
@@ -107,6 +107,23 @@ export default function SettingsPage() {
   const showSuccess = (message) => {
     setSuccess(message);
     setTimeout(() => setSuccess(''), 3000);
+  };
+
+  const handleUpdatePlayers = async () => {
+    setError('');
+    setSuccess('');
+    try {
+      // The server reads the APK path from the saved config.
+      setConfig(await updateConfig(stripRuntimeFields(config)));
+      const result = await updatePlayers();
+      if (!result.success) {
+        setError(t(result.error || 'Failed to update players'));
+        return;
+      }
+      showSuccess(`${t('Update sent to headsets')}: ${result.sent}`);
+    } catch {
+      setError(t('Failed to update players'));
+    }
   };
 
   const handleSave = async () => {
@@ -727,6 +744,23 @@ export default function SettingsPage() {
               onChange={(event) => updateField('deviceOfflineTimeout', parseInt(event.target.value, 10) || 30)}
             />
           </div>
+
+          <div className="form-group">
+            <label>{t('Player APK path')}</label>
+            <input
+              type="text"
+              value={config.playerApkPath || ''}
+              onChange={(event) => updateField('playerApkPath', event.target.value)}
+              placeholder="D:\VRClassroomPlayer\Builds\VRClassroomPlayer-Quest.apk"
+            />
+            <span className="form-hint">{t('Connected headsets download this APK and install it silently. Headsets that already have it skip the update.')}</span>
+          </div>
+        </div>
+
+        <div className="settings-action-row">
+          <button className="btn" onClick={handleUpdatePlayers}>
+            {t('Update players')}
+          </button>
         </div>
       </section>
 

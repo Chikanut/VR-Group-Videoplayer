@@ -25,6 +25,7 @@ PLAYER_HTTP_PORT = 8080
 DEFAULT_CONFIG = {
     "mobileAppUrl": "",
     "playerAppUrl": "",
+    "playerApkPath": "",
     "requirementVideos": [],
     "batteryThreshold": 20,
     "scanInterval": 30,
@@ -145,6 +146,7 @@ def _normalize_config(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         mobile_app_url = _normalize_string(raw.get("apkDownloadUrl"))
     normalized["mobileAppUrl"] = mobile_app_url
     normalized["playerAppUrl"] = _normalize_string(raw.get("playerAppUrl"))
+    normalized["playerApkPath"] = _normalize_string(raw.get("playerApkPath")).strip('"')
 
     normalized["batteryThreshold"] = _normalize_int(raw.get("batteryThreshold"), 20, minimum=0, maximum=100)
     normalized["scanInterval"] = _normalize_int(raw.get("scanInterval"), 30, minimum=5, maximum=300)

@@ -257,6 +257,7 @@ curl -X POST http://<IP>:8080/media/scan \
 | `set_volume` | `globalVolume`, `personalVolume` | як `POST /volume` |
 | `set_mode` | `mode` | змінити режим перегляду |
 | `set_name` | `name` | зберегти ім'я/номер в окулярах (як `PUT /name`); плеєр одразу відповідає `status` з новим `deviceName` |
+| `update` | `url` (шлях на сервері, `/api/player/apk`), `sha256` | тихе самооновлення: якщо встановлений APK має інший sha256, плеєр завантажує APK із сервера і встановлює без підтвердження (потрібне одноразове налаштування через `tools/quest_deploy.py`) |
 
 ### Іменування пристроїв
 

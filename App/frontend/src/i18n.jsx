@@ -198,6 +198,12 @@ const dictionaries = {
     'Network Subnet': 'Network Subnet',
     'Leave empty to auto-detect the local subnet.': 'Leave empty to auto-detect the local subnet.',
     'Device Offline Timeout (seconds)': 'Device Offline Timeout (seconds)',
+    'Player APK path': 'Player APK path',
+    'Connected headsets download this APK and install it silently. Headsets that already have it skip the update.': 'Connected headsets download this APK and install it silently. Headsets that already have it skip the update.',
+    'Update players': 'Update players',
+    'Update sent to headsets': 'Update sent to headsets',
+    'Failed to update players': 'Failed to update players',
+    'Player APK not found: set its path in Settings': 'Player APK not found: set its path in Settings',
   },
   uk: {
     'Language': 'Мова',
@@ -396,6 +402,12 @@ const dictionaries = {
     'Network Subnet': 'Підмережа',
     'Leave empty to auto-detect the local subnet.': 'Залиште порожнім для автоматичного визначення підмережі.',
     'Device Offline Timeout (seconds)': 'Таймаут офлайн-пристрою (секунди)',
+    'Player APK path': 'Шлях до APK плеєра',
+    'Connected headsets download this APK and install it silently. Headsets that already have it skip the update.': 'Підключені окуляри завантажать цей APK і встановлять його самі. Окуляри, де він уже стоїть, пропустять оновлення.',
+    'Update players': 'Оновити плеєри',
+    'Update sent to headsets': 'Оновлення надіслано на окуляри',
+    'Failed to update players': 'Не вдалося оновити плеєри',
+    'Player APK not found: set its path in Settings': 'APK плеєра не знайдено: вкажіть шлях у налаштуваннях',
   },
 };
 

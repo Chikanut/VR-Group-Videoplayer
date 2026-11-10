@@ -11,6 +11,18 @@
     </activity>
     <!-- Restarts the player process after sleep frees leaked video memory (see RestartActivity.java). -->
     <activity android:name="com.vrclass.player.RestartActivity" android:process=":restart" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" android:exported="false" android:noHistory="true" />
+    <!-- Relaunches the player after boot / crash / update (see WatchdogService.java). Everything that
+         may run without the player lives in :watchdog, so the main process means "player is running". -->
+    <service android:name="com.vrclass.player.WatchdogService" android:process=":watchdog" android:exported="false" android:foregroundServiceType="specialUse">
+      <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Relaunches the classroom video player after boot or crash" />
+    </service>
+    <receiver android:name="com.vrclass.player.BootReceiver" android:process=":watchdog" android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+      </intent-filter>
+    </receiver>
+    <receiver android:name="com.vrclass.player.PlayerSystem$InstallResultReceiver" android:process=":watchdog" android:exported="false" />
     <meta-data android:name="unityplayer.SkipPermissionsDialog" android:value="false" />
     <meta-data android:name="com.oculus.ossplash.background" android:value="black" />
     <meta-data android:name="com.oculus.telemetry.project_guid" android:value="96b1210d-075b-4b60-859e-eff9283fb136" />
@@ -28,6 +40,17 @@
   <uses-permission android:name="android.permission.INTERNET" />
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
   <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
+  <!-- Autostart watchdog. SYSTEM_ALERT_WINDOW is granted once over USB (tools/quest_deploy.py)
+       and is what allows launching the player from the background. -->
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+  <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+  <!-- Silent self-update from the instructor server -->
+  <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+  <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
 
   <uses-feature android:name="android.hardware.vr.headtracking" android:version="1" android:required="true" />
   <horizonos:uses-horizonos-sdk horizonos:minSdkVersion="60" horizonos:targetSdkVersion="85" />
