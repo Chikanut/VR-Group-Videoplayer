@@ -42,6 +42,7 @@ class ConfigModel(BaseModel):
     mobileAppUrl: str = ""
     playerAppUrl: str = ""
     playerApkPath: str = ""
+    headsetSettings: str = "global/captive_portal_mode=0"
     requirementVideos: List[RequirementVideo] = Field(default_factory=list)
     batteryThreshold: int = 20
     scanInterval: int = 30
@@ -71,6 +72,7 @@ class DeviceState:
         self.online: bool = True
         self.player_connected: bool = False
         self.player_version: str = ""
+        self.settings_profile: str = ""  # "", ok, no permission, error (player 1.8.3+)
         self.requirements_met: Optional[bool] = None  # None = not checked yet
         self.requirements_detail: List[Dict] = []
         self.playback_state: str = "idle"  # idle/playing/paused/loading/completed/error
@@ -103,6 +105,7 @@ class DeviceState:
             "playerConnected": self.player_connected,
             "wsConnected": self.ws_connected,
             "playerVersion": self.player_version,
+            "settingsProfile": self.settings_profile,
             "requirementsMet": self.requirements_met,
             "requirementsDetail": self.requirements_detail,
             "playbackState": self.playback_state,

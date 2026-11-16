@@ -19,6 +19,29 @@ namespace VRClassroom
         /// <summary>Installs a downloaded APK file (Java checks its sha256 first).</summary>
         public static void InstallUpdate(string apkPath, string sha256) => Call("installUpdate", apkPath, sha256);
 
+        /// <summary>Applies the server's headset settings profile (see PlayerSystem.java). Returns "ok" or why it failed.</summary>
+        public static string ApplySettings(string profile)
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            try
+            {
+                using (var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+                using (var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
+                using (var system = new AndroidJavaClass("com.vrclass.player.PlayerSystem"))
+                {
+                    return system.CallStatic<string>("applySettings", activity, profile ?? string.Empty);
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[PlayerSystem] applySettings failed: {e.Message}");
+                return "error";
+            }
+#else
+            return "ok";
+#endif
+        }
+
         /// <summary>Path of the installed APK, to compare its sha256 with an offered update.</summary>
         public static string InstalledApkPath()
         {

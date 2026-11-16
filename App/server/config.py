@@ -26,6 +26,8 @@ DEFAULT_CONFIG = {
     "mobileAppUrl": "",
     "playerAppUrl": "",
     "playerApkPath": "",
+    # Lines "global/<key>=<value>" / "secure/<key>=<value>" applied by every player (headset_settings.py).
+    "headsetSettings": "global/captive_portal_mode=0",
     "requirementVideos": [],
     "batteryThreshold": 20,
     "scanInterval": 30,
@@ -147,6 +149,8 @@ def _normalize_config(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     normalized["mobileAppUrl"] = mobile_app_url
     normalized["playerAppUrl"] = _normalize_string(raw.get("playerAppUrl"))
     normalized["playerApkPath"] = _normalize_string(raw.get("playerApkPath")).strip('"')
+    if "headsetSettings" in raw:  # empty is meaningful: restore the headsets' own values
+        normalized["headsetSettings"] = str(raw.get("headsetSettings") or "").replace("\r", "").strip()
 
     normalized["batteryThreshold"] = _normalize_int(raw.get("batteryThreshold"), 20, minimum=0, maximum=100)
     normalized["scanInterval"] = _normalize_int(raw.get("scanInterval"), 30, minimum=5, maximum=300)

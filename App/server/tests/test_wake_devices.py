@@ -14,12 +14,12 @@ class WakeDevicesTests(unittest.TestCase):
         ]
         posted = []
 
-        async def post_wake(ip):
+        async def post_wake(ip, path):
             posted.append(ip)
             return {"success": ip != "10.0.0.2", "error": "timeout"}
 
         with mock.patch.object(playback_controller.device_manager, "get_all", return_value=devices), \
-                mock.patch.object(playback_controller, "_post_wake", side_effect=post_wake):
+                mock.patch.object(playback_controller, "_post_watchdog", side_effect=post_wake):
             return asyncio.run(playback_controller.wake_devices(device_ids)), posted
 
     def test_wakes_every_known_device_including_offline(self):
@@ -33,6 +33,20 @@ class WakeDevicesTests(unittest.TestCase):
         _, posted = self._run(["b"])
 
         self.assertEqual(posted, ["10.0.0.2"])
+
+    def test_autostart_posts_on_or_off_to_the_watchdog(self):
+        posted = []
+
+        async def post(ip, path):
+            posted.append((ip, path))
+            return {"success": True}
+
+        devices = [{"deviceId": "a", "ip": "10.0.0.1", "online": False}]
+        with mock.patch.object(playback_controller.device_manager, "get_all", return_value=devices),                 mock.patch.object(playback_controller, "_post_watchdog", side_effect=post):
+            asyncio.run(playback_controller.set_autostart(False, []))
+            asyncio.run(playback_controller.set_autostart(True, ["a"]))
+
+        self.assertEqual(posted, [("10.0.0.1", "/autostart/off"), ("10.0.0.1", "/autostart/on")])
 
 
 if __name__ == "__main__":

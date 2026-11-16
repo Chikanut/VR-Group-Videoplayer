@@ -169,25 +169,27 @@ async def send_command(command: str, device_ids: List[str]) -> Dict[str, Any]:
 WAKE_PORT = 8081  # player watchdog (WatchdogService.java), alive while the headset sleeps
 
 
-async def _post_wake(ip: str) -> Dict[str, Any]:
+async def _post_watchdog(ip: str, path: str) -> Dict[str, Any]:
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"http://{ip}:{WAKE_PORT}/wake",
+                f"http://{ip}:{WAKE_PORT}{path}",
                 timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT),
             ) as resp:
-                return {"success": resp.status == 200}
+                # Players older than 1.8.2 answer 404 to /autostart/*.
+                return {"success": True} if resp.status == 200 else {"success": False, "error": f"HTTP {resp.status}"}
     except Exception as exc:
         return {"success": False, "error": str(exc) or type(exc).__name__}
 
 
-async def wake_devices(device_ids: List[str]) -> Dict[str, Any]:
-    """Wake sleeping headsets. Asleep headsets show as offline, so every known device is targeted."""
+async def _watchdog_command(path: str, device_ids: List[str]) -> Dict[str, Any]:
+    """POST to the watchdog of every known device (or the given ones), online or not:
+    it answers while the headset sleeps or the player is closed."""
     devices = [d for d in await device_manager.get_all() if d.get("ip") and d["ip"] != "unknown"]
     if device_ids:
         devices = [d for d in devices if d["deviceId"] in device_ids]
 
-    results = await asyncio.gather(*[_post_wake(d["ip"]) for d in devices])
+    results = await asyncio.gather(*[_post_watchdog(d["ip"], path) for d in devices])
     success_list, failed_list = [], []
     for device, result in zip(devices, results):
         if result["success"]:
@@ -195,6 +197,16 @@ async def wake_devices(device_ids: List[str]) -> Dict[str, Any]:
         else:
             failed_list.append({"deviceId": device["deviceId"], "error": result.get("error", "Unknown error")})
     return {"success": success_list, "failed": failed_list}
+
+
+async def wake_devices(device_ids: List[str]) -> Dict[str, Any]:
+    """Wake sleeping headsets. Asleep headsets show as offline, so every known device is targeted."""
+    return await _watchdog_command("/wake", device_ids)
+
+
+async def set_autostart(enabled: bool, device_ids: List[str]) -> Dict[str, Any]:
+    """Switch the watchdog's relaunching of the player on/off (persists on the headset)."""
+    return await _watchdog_command("/autostart/on" if enabled else "/autostart/off", device_ids)
 
 
 async def seek_video(time: float, device_ids: List[str]) -> Dict[str, Any]:

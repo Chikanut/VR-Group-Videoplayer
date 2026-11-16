@@ -161,6 +161,14 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
                   {device.playerConnected ? `${t('Connected')} (v${device.playerVersion || '-'})` : t('Player offline')}
                 </td>
               </tr>
+              {device.settingsProfile && (
+                <tr>
+                  <td>{t('Headset system settings')}</td>
+                  <td className={device.settingsProfile === 'ok' ? 'text-ok' : 'text-warn'}>
+                    {t(`settingsProfile ${device.settingsProfile}`)}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

@@ -273,7 +273,11 @@ class ADB:
         - плеєр має бути сам собі «інсталятором» (інакше самооновлення питає підтвердження
           в окулярах). `pm set-installer` заборонено, тому перевстановлюємо з `-i`;
         - дозвіл «поверх інших вікон» дає запускати плеєр з фону (сторож після ввімкнення);
-        - дозвіл встановлювати APK для самооновлення.
+        - дозвіл встановлювати APK для самооновлення;
+        - WRITE_SECURE_SETTINGS: плеєр сам застосовує системні налаштування, які задає сервер
+          (Налаштування → «Системні налаштування окулярів»), тож кабель для них більше не потрібен.
+        Оновлювач Meta вимкнути не можна: `pm disable-user com.oculus.updater` на Horizon OS v209
+        відповідає "Cannot disable a protected package".
         Повертає список помилок (порожній = все добре).
         """
         errors = []
@@ -286,6 +290,10 @@ class ADB:
             code, out, err = self.run("shell", "appops", "set", package_name, op, "allow", serial=serial, timeout=20)
             if code != 0:
                 errors.append(f"appops {op}: {(err or out).strip()}")
+        code, out, err = self.run("shell", "pm", "grant", package_name,
+                                  "android.permission.WRITE_SECURE_SETTINGS", serial=serial, timeout=20)
+        if code != 0 or "Exception" in out + err:
+            errors.append(f"grant WRITE_SECURE_SETTINGS (потрібен плеєр 1.8.3+): {(err or out).strip()[:200]}")
         # Стартуємо сторожа: він відкриє плеєр, щойно окуляри вдягнуть (поки вони лежать,
         # Quest не відкриває жодних додатків).
         self.run("shell", "am", "broadcast", "-n", f"{package_name}/.BootReceiver", serial=serial, timeout=20)
@@ -1214,7 +1222,7 @@ class QuestDeployApp:
         if errors:
             self.log(f"  ✗ Налаштування плеєра: {'; '.join(errors)}")
         else:
-            self.log("  ✓ Плеєр налаштовано: автозапуск, тихе оновлення, запущено")
+            self.log("  ✓ Плеєр налаштовано: автозапуск, тихе оновлення, системні налаштування з сервера")
 
     def _uninstall(self, serial, pkg):
         code, out, err = self.adb.uninstall_package(serial, pkg)

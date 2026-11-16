@@ -40,11 +40,13 @@ from .playback_controller import (
     ping_device,
     seek_video,
     send_command,
+    set_autostart,
     wake_devices,
     set_device_volume,
     set_global_volume,
     toggle_debug,
 )
+from .headset_settings import push_headset_settings
 from .player_update import get_player_apk_path, update_players
 from .requirements_manager import check_requirements, refresh_all_requirements
 from .websocket_manager import ws_manager
@@ -108,7 +110,10 @@ async def get_config_endpoint():
 
 @app.put("/api/config")
 async def update_config_endpoint(config: ConfigModel):
+    old_settings = get_config().get("headsetSettings", "")
     new_config = update_config(_model_to_dict(config))
+    if new_config.get("headsetSettings", "") != old_settings:
+        await push_headset_settings()
     await refresh_all_requirements()
     await ws_manager.broadcast({"type": "config_updated", "config": new_config})
     return new_config
@@ -263,6 +268,13 @@ async def playback_wake(cmd: PlaybackCommand):
     return await wake_devices(cmd.deviceIds)
 
 
+@app.post("/api/devices/autostart/{state}")
+async def devices_autostart(state: str, cmd: PlaybackCommand):
+    if state not in ("on", "off"):
+        return JSONResponse({"error": "state must be on or off"}, status_code=400)
+    return await set_autostart(state == "on", cmd.deviceIds)
+
+
 @app.post("/api/playback/recenter")
 async def playback_recenter(cmd: PlaybackCommand):
     return await send_command("recenter", cmd.deviceIds)
@@ -358,6 +370,7 @@ async def device_websocket_endpoint(ws: WebSocket):
         if "deviceName" in msg:
             await device_manager.apply_device_name_from_device(device_id, msg.get("deviceName"))
 
+        await push_headset_settings([device_id])
         logger.info("Device %s registered via WS from %s", device_id, ip)
         await check_requirements(device_id)
 

@@ -57,6 +57,13 @@ export async function updatePlayers() {
   return request('/player/update', { method: 'POST' });
 }
 
+export async function setAutostart(enabled, deviceIds = []) {
+  return request(`/devices/autostart/${enabled ? 'on' : 'off'}`, {
+    method: 'POST',
+    body: JSON.stringify({ deviceIds }),
+  });
+}
+
 export async function pingDevice(id) {
   return request(`/devices/${id}/ping`, { method: 'POST' });
 }

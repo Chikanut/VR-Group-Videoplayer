@@ -52,6 +52,10 @@
   <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
   <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
 
+  <!-- Headset settings profile from the instructor server. Granted once over USB:
+       adb shell pm grant com.vrclass.player android.permission.WRITE_SECURE_SETTINGS -->
+  <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+
   <uses-feature android:name="android.hardware.vr.headtracking" android:version="1" android:required="true" />
   <horizonos:uses-horizonos-sdk horizonos:minSdkVersion="60" horizonos:targetSdkVersion="85" />
 </manifest>

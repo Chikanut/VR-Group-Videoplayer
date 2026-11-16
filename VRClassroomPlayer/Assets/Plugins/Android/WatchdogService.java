@@ -12,10 +12,12 @@ import android.content.IntentFilter;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.Log;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.ServerSocket;
@@ -31,6 +33,7 @@ import java.nio.charset.StandardCharsets;
  * permission (tools/quest_deploy.py: appops SYSTEM_ALERT_WINDOW allow). While a Quest
  * system dialog is showing, launches are dropped, so it simply keeps retrying.
  * To stop it until the next boot: Settings > Apps > VR Player > Force stop.
+ * The instructor can switch relaunching off/on: "POST /autostart/off|on" (port 8081).
  *
  * It also wakes the headset on "POST /wake" (port 8081): during a long sleep Quest freezes and
  * kills the player itself, but this foreground-service process stays reachable over Wi-Fi.
@@ -53,6 +56,9 @@ public class WatchdogService extends Service {
     private final BroadcastReceiver screenOn = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            // Bring the player back soon after wake instead of waiting for the next 10s tick.
+            handler.removeCallbacks(check);
+            handler.postDelayed(check, 2000);
             if (SystemClock.elapsedRealtime() - remoteWakeAt < REMOTE_WAKE_WINDOW_MS) return;
             sendBroadcast(new Intent("com.oculus.vrpowermanager.automation_disable"));
             Log.i(TAG, "Screen on: proximity sensor back to automatic");
@@ -62,7 +68,10 @@ public class WatchdogService extends Service {
     private final Runnable check = new Runnable() {
         @Override
         public void run() {
-            if (!isPlayerRunning()) launchPlayer();
+            // Not while the headset sleeps: a launch then resumes and pauses Unity every 10s for
+            // the whole sleep (seen in logcat), keeping a 1.7 GB GL context churning.
+            if (!autostartOff().exists() && getSystemService(PowerManager.class).isInteractive()
+                    && !isPlayerRunning()) launchPlayer();
             handler.postDelayed(this, CHECK_INTERVAL_MS);
         }
     };
@@ -85,6 +94,12 @@ public class WatchdogService extends Service {
             startWakeListener();
         }
         return START_STICKY;
+    }
+
+    // Instructor switch "POST /autostart/off|on" (port 8081). A marker file: survives reboots and
+    // app updates, and needs no sync between this process and the player.
+    private File autostartOff() {
+        return new File(getFilesDir(), "autostart_off");
     }
 
     private boolean isPlayerRunning() {
@@ -129,9 +144,22 @@ public class WatchdogService extends Service {
                                 sendBroadcast(new Intent("com.oculus.vrpowermanager.prox_close"));
                                 Log.i(TAG, "Remote wake");
                             }
-                            String body = wake ? "{\"ok\":true}" : "{\"error\":\"not found\"}";
+                            boolean known = wake;
+                            if (line != null && line.startsWith("POST /autostart/off")) {
+                                autostartOff().createNewFile();
+                                known = true;
+                            } else if (line != null && line.startsWith("POST /autostart/on")) {
+                                autostartOff().delete();
+                                known = true;
+                            } else if (line != null && line.startsWith("GET /autostart")) {
+                                known = true;
+                            }
+                            if (known && !wake) Log.i(TAG, line + " -> autostart " + !autostartOff().exists());
+                            String body = known
+                                    ? "{\"ok\":true,\"autostart\":" + !autostartOff().exists() + "}"
+                                    : "{\"error\":\"not found\"}";
                             OutputStream out = socket.getOutputStream();
-                            out.write(("HTTP/1.1 " + (wake ? "200 OK" : "404 Not Found")
+                            out.write(("HTTP/1.1 " + (known ? "200 OK" : "404 Not Found")
                                     + "\r\nContent-Type: application/json\r\nContent-Length: " + body.length()
                                     + "\r\nConnection: close\r\n\r\n" + body).getBytes(StandardCharsets.US_ASCII));
                             out.flush();

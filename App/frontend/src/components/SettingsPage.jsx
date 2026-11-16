@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getConfig, getDeviceNames, replaceDeviceNames, updateConfig, updatePlayers } from '../api';
+import { getConfig, getDeviceNames, replaceDeviceNames, setAutostart, updateConfig, updatePlayers } from '../api';
 import { useI18n } from '../i18n';
 import packageJson from '../../package.json';
 
@@ -123,6 +123,22 @@ export default function SettingsPage() {
       showSuccess(`${t('Update sent to headsets')}: ${result.sent}`);
     } catch {
       setError(t('Failed to update players'));
+    }
+  };
+
+  const handleAutostart = async (enabled) => {
+    setError('');
+    setSuccess('');
+    try {
+      const result = await setAutostart(enabled);
+      const summary = `${t(enabled ? 'Autostart enabled' : 'Autostart disabled')}: ${result.success.length}`;
+      if (result.failed.length) {
+        setError(`${summary}. ${t('No answer from')}: ${result.failed.length}`);
+        return;
+      }
+      showSuccess(summary);
+    } catch {
+      setError(t('Failed to switch autostart'));
     }
   };
 
@@ -757,9 +773,26 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        <div className="form-group">
+          <label>{t('Headset system settings')}</label>
+          <textarea
+            rows={3}
+            value={config.headsetSettings || ''}
+            onChange={(event) => updateField('headsetSettings', event.target.value)}
+            placeholder="global/captive_portal_mode=0"
+          />
+          <span className="form-hint">{t('Headset settings hint')}</span>
+        </div>
+
         <div className="settings-action-row">
           <button className="btn" onClick={handleUpdatePlayers}>
             {t('Update players')}
+          </button>
+          <button className="btn" title={t('Autostart hint')} onClick={() => handleAutostart(false)}>
+            {t('Disable autostart')}
+          </button>
+          <button className="btn" title={t('Autostart hint')} onClick={() => handleAutostart(true)}>
+            {t('Enable autostart')}
           </button>
         </div>
       </section>

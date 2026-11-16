@@ -932,7 +932,8 @@ body {
 
 .form-group input[type="text"],
 .form-group input[type="number"],
-.form-group select {
+.form-group select,
+.form-group textarea {
   padding: 8px 12px;
   background: var(--bg-input);
   border: 1px solid var(--border);

@@ -37,6 +37,9 @@ namespace VRClassroom
 
         public string PlayerVersion => UnityEngine.Application.version;
 
+        /// <summary>Result of the last settings profile from the server: "" (none yet), "ok", "no permission", "error". Main thread.</summary>
+        public static string SettingsProfile = "";
+
         private const float StatusRefreshInterval = 0.5f;
         private const float IpRefreshInterval = 5f;
         private const string DeviceNamePrefKey = "device_name";
@@ -202,7 +205,8 @@ namespace VRClassroom
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"globalVolume\":{0:F2},", globalVolume);
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"personalVolume\":{0:F2},", personalVolume);
             sb.AppendFormat(CultureInfo.InvariantCulture, "\"effectiveVolume\":{0:F2},", effectiveVolume);
-            sb.AppendFormat(CultureInfo.InvariantCulture, "\"playerVersion\":\"{0}\"", EscapeJson(PlayerVersion));
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"playerVersion\":\"{0}\",", EscapeJson(PlayerVersion));
+            sb.AppendFormat(CultureInfo.InvariantCulture, "\"settingsProfile\":\"{0}\"", EscapeJson(SettingsProfile));
             sb.Append('}');
 
             _cachedStatusJson = sb.ToString();

@@ -43,6 +43,7 @@ namespace VRClassroom
             public float time;
             public string url;
             public string sha256;
+            public string settings;
             public VideoAdvancedSettings advancedSettings;
         }
 
@@ -951,6 +952,16 @@ namespace VRClassroom
                             StartUpdate(url, command.sha256.Trim().ToLowerInvariant(), commandId);
                             break;
                         }
+                    case "apply_settings":
+                        if (!HasJsonField(raw, "settings"))
+                        {
+                            Debug.LogWarning("[ServerConnection] apply_settings ignored: 'settings' field missing");
+                            break;
+                        }
+                        StatusReporter.SettingsProfile = PlayerSystem.ApplySettings(command.settings);
+                        LogInfo("command_start", commandId, $"action=apply_settings, result={StatusReporter.SettingsProfile}");
+                        _sendStatusNow = true;
+                        break;
                     case "toggle_debug":
                         {
                             LogInfo("command_start", commandId, "action=toggle_debug");

@@ -30,6 +30,7 @@ STATUS_FIELD_MAP = {
     "loop": "loop",
     "uptimeMinutes": "uptime_minutes",
     "playerVersion": "player_version",
+    "settingsProfile": "settings_profile",
     "androidId": "android_id",
     "android_id": "android_id",
     "deviceModel": "device_model",

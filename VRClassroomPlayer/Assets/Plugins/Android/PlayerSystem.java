@@ -2,9 +2,12 @@ package com.vrclass.player;
 
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageInstaller;
+import android.provider.Settings;
 import android.util.Log;
 
 import java.io.File;
@@ -12,6 +15,9 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -41,6 +47,61 @@ public class PlayerSystem {
     public static void sleep(Context context) {
         context.sendBroadcast(new Intent("com.oculus.vrpowermanager.prox_far"));
         Log.i(TAG, "Sleep requested");
+    }
+
+    /**
+     * Applies the instructor's settings profile: lines "global/<key>=<value>" or
+     * "secure/<key>=<value>". The value a key had before its first change is remembered, and
+     * put back when the key disappears from the profile (an empty profile restores everything).
+     * Needs WRITE_SECURE_SETTINGS (adb pm grant, once). Returns "ok" or the reason it failed.
+     */
+    public static String applySettings(Context context, String profile) {
+        final String none = "__none__"; // the key had no value before we changed it
+        SharedPreferences originals = context.getSharedPreferences("settings_originals", Context.MODE_PRIVATE);
+        ContentResolver resolver = context.getContentResolver();
+        Map<String, String> wanted = new LinkedHashMap<>();
+        for (String line : (profile == null ? "" : profile).split("\n")) {
+            int eq = line.indexOf('=');
+            String key = eq < 0 ? "" : line.substring(0, eq).trim();
+            if (key.startsWith("global/") || key.startsWith("secure/")) wanted.put(key, line.substring(eq + 1).trim());
+        }
+        try {
+            for (String key : new ArrayList<>(originals.getAll().keySet())) {
+                if (wanted.containsKey(key)) continue;
+                String original = originals.getString(key, none);
+                putSetting(resolver, key, none.equals(original) ? null : original);
+                originals.edit().remove(key).apply();
+                Log.i(TAG, "Setting restored " + key + "=" + original);
+            }
+            for (Map.Entry<String, String> entry : wanted.entrySet()) {
+                String key = entry.getKey();
+                String current = getSetting(resolver, key);
+                if (!originals.contains(key)) originals.edit().putString(key, current == null ? none : current).apply();
+                if (entry.getValue().equals(current)) continue;
+                putSetting(resolver, key, entry.getValue());
+                Log.i(TAG, "Setting " + key + "=" + entry.getValue() + " (was " + current + ")");
+            }
+            return "ok";
+        } catch (SecurityException e) {
+            Log.w(TAG, "Settings profile not applied: " + e.getMessage());
+            return "no permission";
+        } catch (Exception e) {
+            Log.e(TAG, "Settings profile failed", e);
+            return "error";
+        }
+    }
+
+    private static String getSetting(ContentResolver resolver, String key) {
+        String name = key.substring(key.indexOf('/') + 1);
+        return key.startsWith("global/")
+                ? Settings.Global.getString(resolver, name)
+                : Settings.Secure.getString(resolver, name);
+    }
+
+    private static void putSetting(ContentResolver resolver, String key, String value) {
+        String name = key.substring(key.indexOf('/') + 1);
+        if (key.startsWith("global/")) Settings.Global.putString(resolver, name, value);
+        else Settings.Secure.putString(resolver, name, value);
     }
 
     public static void startWatchdog(Context context) {
