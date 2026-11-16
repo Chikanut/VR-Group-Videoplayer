@@ -364,8 +364,12 @@ namespace VRClassroom
             _appPaused = paused;
             if (paused)
             {
+                // Every sleep, video or not: measured 695 MB -> 1941 MB of GPU memory after one
+                // sleep/wake of an idle player (Quest 3S), and it is never given back.
                 Debug.Log($"[VideoPlayerController] Application paused (sleep). state={CurrentState}, file={CurrentFile}. Will restart on wake.");
                 _restartOnWake = true;
+                // Normally the process does not live to see the wake: see PlayerSystem.java closeIfAsleep.
+                PlayerSystem.CloseIfAsleep();
                 return;
             }
 

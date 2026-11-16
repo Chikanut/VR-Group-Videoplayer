@@ -16,6 +16,9 @@ namespace VRClassroom
 
         public static void StartWatchdog() => Call("startWatchdog");
 
+        /// <summary>Call on pause: if the headset is going to sleep, the player closes itself and the watchdog reopens it on wake.</summary>
+        public static void CloseIfAsleep() => Call("closeIfAsleep");
+
         /// <summary>Installs a downloaded APK file (Java checks its sha256 first).</summary>
         public static void InstallUpdate(string apkPath, string sha256) => Call("installUpdate", apkPath, sha256);
 

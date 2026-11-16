@@ -7,6 +7,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInstaller;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.PowerManager;
+import android.os.Process;
 import android.provider.Settings;
 import android.util.Log;
 
@@ -102,6 +106,29 @@ public class PlayerSystem {
         String name = key.substring(key.indexOf('/') + 1);
         if (key.startsWith("global/")) Settings.Global.putString(resolver, name, value);
         else Settings.Secure.putString(resolver, name, value);
+    }
+
+    /**
+     * Called when Unity pauses. If the headset really went to sleep, the player closes itself
+     * now and the watchdog opens a fresh one 2s after the screen turns on. Waking a paused
+     * player instead grows its GPU memory by ~1.25 GB within 3s (695 -> 1941 MB measured on a
+     * Quest 3S, video or not); on top of an 8K video that ran the headset out of memory before
+     * the restart-on-wake could act. Not done when autostart is off (nobody would reopen the
+     * player) or when the pause was not a sleep: then the restart-on-wake in
+     * VideoPlayerController still applies.
+     */
+    public static void closeIfAsleep(Context context) {
+        final Context app = context.getApplicationContext();
+        new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                boolean asleep = !app.getSystemService(PowerManager.class).isInteractive();
+                boolean autostart = !new File(app.getFilesDir(), "autostart_off").exists();
+                if (!asleep || !autostart) return;
+                Log.i(TAG, "Headset asleep: closing the player, the watchdog reopens it on wake");
+                Process.killProcess(Process.myPid());
+            }
+        }, 1500);
     }
 
     public static void startWatchdog(Context context) {

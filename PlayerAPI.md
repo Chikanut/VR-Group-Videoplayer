@@ -126,6 +126,16 @@ curl -X POST http://<IP>:8080/sleep
 curl -X POST http://<IP>:8081/wake
 ```
 
+### `POST :8081/autostart/off`, `POST :8081/autostart/on`, `GET :8081/autostart`
+
+Вимикає / вмикає автозапуск плеєра сторожем (плеєр 1.8.2+). Стан зберігається в окулярах і переживає
+перезавантаження та оновлення. Сторож і далі слухає порт `8081`, тож автозапуск можна повернути,
+навіть коли плеєр закритий. Відповідь: `{"ok":true,"autostart":false}`.
+
+```bash
+curl -X POST http://<IP>:8081/autostart/off
+```
+
 ### `GET /status`
 
 ```bash
@@ -275,6 +285,7 @@ curl -X POST http://<IP>:8080/media/scan \
 | `set_volume` | `globalVolume`, `personalVolume` | як `POST /volume` |
 | `set_mode` | `mode` | змінити режим перегляду |
 | `set_name` | `name` | зберегти ім'я/номер в окулярах (як `PUT /name`); плеєр одразу відповідає `status` з новим `deviceName` |
+| `apply_settings` | `settings` (рядки `global/<ключ>=<значення>` або `secure/<ключ>=<значення>`) | застосувати профіль системних налаштувань окулярів (плеєр 1.8.3+, потрібен дозвіл `WRITE_SECURE_SETTINGS`, який видає Deploy Manager по USB). Плеєр памʼятає початкові значення і повертає їх, коли рядок зникає з профілю; результат — поле `settingsProfile` у `status` (`ok` / `no permission` / `error`) |
 | `update` | `url` (шлях на сервері, `/api/player/apk`), `sha256` | тихе самооновлення: якщо встановлений APK має інший sha256, плеєр завантажує APK із сервера і встановлює без підтвердження (потрібне одноразове налаштування через `tools/quest_deploy.py`) |
 
 ### Іменування пристроїв
