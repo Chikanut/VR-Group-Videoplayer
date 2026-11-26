@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getConfig, getDeviceNames, replaceDeviceNames, setAutostart, updateConfig, updatePlayers } from '../api';
+import {
+  deleteEnvironmentLogo, getConfig, getDeviceNames, replaceDeviceNames, resetEnvironment, setAutostart,
+  updateConfig, updatePlayers, uploadEnvironmentLogo,
+} from '../api';
 import { useI18n } from '../i18n';
 import packageJson from '../../package.json';
 
@@ -107,6 +110,59 @@ export default function SettingsPage() {
   const showSuccess = (message) => {
     setSuccess(message);
     setTimeout(() => setSuccess(''), 3000);
+  };
+
+  // Picture upload / reset are saved at once; colour and placement go with "Save".
+  const environment = config?.environment || {};
+  const updateEnvironment = (key, value) => updateField('environment', { ...environment, [key]: value });
+  const updateEnvironmentVector = (key, index, value) => {
+    const vector = [...(environment[key] || [0, 0, 0])];
+    vector[index] = parseFloat(value) || 0;
+    updateEnvironment(key, vector);
+  };
+  const mergeEnvironment = (result, keys) => {
+    if (result?.error || !result?.environment) {
+      setError(t(result?.error || 'Command failed'));
+      return false;
+    }
+    setConfig((previous) => ({
+      ...previous,
+      environment: keys
+        ? { ...previous.environment, ...Object.fromEntries(keys.map((key) => [key, result.environment[key]])) }
+        : result.environment,
+    }));
+    return true;
+  };
+
+  const handleEnvironmentLogo = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setError('');
+    try {
+      if (mergeEnvironment(await uploadEnvironmentLogo(file), ['custom', 'logoSha256'])) showSuccess(t('Picture sent to headsets'));
+    } catch {
+      setError(t('Command failed'));
+    }
+  };
+
+  const handleRemoveEnvironmentLogo = async () => {
+    setError('');
+    try {
+      if (mergeEnvironment(await deleteEnvironmentLogo(), ['logoSha256'])) showSuccess(t('Picture removed'));
+    } catch {
+      setError(t('Command failed'));
+    }
+  };
+
+  const handleResetEnvironment = async () => {
+    if (!window.confirm(t('Reset environment confirm'))) return;
+    setError('');
+    try {
+      if (mergeEnvironment(await resetEnvironment())) showSuccess(t('Default environment restored'));
+    } catch {
+      setError(t('Command failed'));
+    }
   };
 
   const handleUpdatePlayers = async () => {
@@ -805,6 +861,90 @@ export default function SettingsPage() {
           <button className="btn" title={t('Autostart hint')} onClick={() => handleAutostart(true)}>
             {t('Enable autostart')}
           </button>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h2>{t('Headset environment')}</h2>
+        <span className="form-hint">{t('Environment hint')}</span>
+        <div className="form-group">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={!!environment.custom}
+              onChange={(event) => updateEnvironment('custom', event.target.checked)}
+            />
+            {t('Use own environment')}
+          </label>
+        </div>
+
+        {environment.custom && (
+          <>
+            <div className="settings-grid">
+              <div className="form-group">
+                <label>{t('Background colour')}</label>
+                <input
+                  type="color"
+                  value={environment.background || '#1a1a1a'}
+                  onChange={(event) => updateEnvironment('background', event.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>{t('Picture width (m)')}</label>
+                <input
+                  type="number"
+                  min="0.05"
+                  step="0.1"
+                  value={environment.logoSize ?? 4}
+                  onChange={(event) => updateEnvironment('logoSize', parseFloat(event.target.value) || 4)}
+                />
+              </div>
+              {[['logoPosition', 'Position (m): X / Y / Z', 0.1], ['logoRotation', 'Rotation (deg): X / Y / Z', 5]].map(([key, label, step]) => (
+                <div className="form-group" key={key}>
+                  <label>{t(label)}</label>
+                  <div className="environment-vector">
+                    {[0, 1, 2].map((index) => (
+                      <input
+                        key={index}
+                        type="number"
+                        step={step}
+                        value={(environment[key] || [0, 0, 0])[index]}
+                        onChange={(event) => updateEnvironmentVector(key, index, event.target.value)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="form-group">
+              <label>{t('Picture (PNG)')}</label>
+              {environment.logoSha256 ? (
+                <img
+                  className="environment-preview"
+                  style={{ background: environment.background || '#1a1a1a' }}
+                  src={`/api/environment/logo?v=${environment.logoSha256}`}
+                  alt=""
+                />
+              ) : (
+                <span className="form-hint">{t('No picture: only the background colour is shown')}</span>
+              )}
+              <div className="settings-action-row">
+                <label className="btn">
+                  {t('Upload picture')}
+                  <input type="file" accept="image/png" hidden onChange={handleEnvironmentLogo} />
+                </label>
+                {environment.logoSha256 && (
+                  <button className="btn" onClick={handleRemoveEnvironmentLogo}>{t('Remove picture')}</button>
+                )}
+              </div>
+              <span className="form-hint">{t('Picture hint')}</span>
+            </div>
+          </>
+        )}
+
+        <div className="settings-action-row">
+          <button className="btn" onClick={handleResetEnvironment}>{t('Reset to default environment')}</button>
         </div>
       </section>
 

@@ -202,8 +202,18 @@ export default function DeviceDialog({ deviceId, onClose }) {
                   <td className={device.content.state === 'error' ? 'text-warn' : ''}>{contentText(device.content, t)}</td>
                 </tr>
               )}
+              {device.environmentStatus && (
+                <tr>
+                  <td>{t('Environment')}</td>
+                  <td className={device.environmentStatus.startsWith('failed') ? 'text-warn' : ''}>
+                    {device.environmentStatus.startsWith('failed')
+                      ? `${t('Command failed')}: ${device.environmentStatus.replace(/^failed:?\s*/, '')}`
+                      : t(`env ${device.environmentStatus}`)}
+                  </td>
+                </tr>
+              )}
               {device.updateStatus && (
-                <tr><td>{t('Player update')}</td><td>{device.updateStatus}</td></tr>
+                <tr><td>{t('Player update')}</td><td className={device.updateStatus.startsWith('failed') ? 'text-warn' : ''}>{updateText(device.updateStatus, t)}</td></tr>
               )}
               <tr>
                 <td>{t('Player autostart')}</td>
@@ -318,6 +328,15 @@ function formatTime(seconds) {
   const minutes = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${minutes}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Agent update states: downloading[ N%], installing, up to date, failed: <reason>
+export function updateText(status, t) {
+  if (status.startsWith('failed')) return `${t('Update failed')}: ${status.replace(/^failed:?\s*/, '')}`;
+  if (status.startsWith('downloading')) return `${t('Downloading')} ${status.replace('downloading', '').trim()}`.trim();
+  if (status === 'installing') return t('Installing...');
+  if (status === 'up to date') return t('Up to date');
+  return status;
 }
 
 export function contentText(content, t) {

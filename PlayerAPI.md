@@ -275,7 +275,8 @@ curl -X POST http://<IP>:8080/media/scan \
 полями агента: `agent: true`, `agentVersion`, `playerRunning`, `autostart`, `files`
 (`[{name,size}]` у `/sdcard/Movies`), `storageFreeMb`, `content` (прогрес завантажень:
 `state` = `idle|downloading|waiting|error`, `file`, `done`, `total`, `queued`, `error`) та `update`
-(`up to date`, `downloading N%`, `installing`, `failed: …`). Без плеєра `state` = `closed`.
+(`up to date`, `downloading N%`, `installing`, `failed: …`), `environment` (`default`, `custom`,
+`downloading`, `failed: …`). Без плеєра `state` = `closed`.
 `GET :8081/status` віддає той самий JSON (сервер пробує його, коли `:8080` мовчить).
 
 **Сервер → агент:** ті самі `{"type":"command",...}`. Агент сам виконує:
@@ -291,6 +292,7 @@ curl -X POST http://<IP>:8080/media/scan \
 | `sync_content` | `files: [{name,size,url}]` | завантажити відео в `/sdcard/Movies`: файли з тим самим імʼям і розміром пропускаються, обрив докачується (HTTP Range), поки плеєр відтворює відео, завантаження на паузі |
 | `cancel_content` | — | зупинити завантаження |
 | `delete_content` | `files: [name]` | видалити відео з `/sdcard/Movies` |
+| `set_environment` | `environment`, `logoUrl` | оточення кімнати очікування: `{custom, background: "#rrggbb", logoSha256, logoPosition: [x,y,z], logoSize, logoRotation: [x,y,z]}` (метри / градуси від точки старту глядача, X праворуч, Y вгору, Z вперед). Агент зберігає його й PNG у `files/` застосунку і передає плеєру командою `apply_environment {environment, logoPath}` (також щоразу, коли плеєр підключається). `custom: false` — стандартне оточення (модель логотипу + скайбокс) |
 
 Решту команд (`open`, `play`, `pause`, `stop`, `seek`, …) агент передає плеєру. Для заміни файлів,
 скопійованих кабелем, потрібен дозвіл `MANAGE_EXTERNAL_STORAGE`, який `tools/quest_deploy.py` видає

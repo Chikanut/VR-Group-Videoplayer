@@ -46,6 +46,7 @@ STATUS_FIELD_MAP = {
     "storageFreeMb": "storage_free_mb",
     "content": "content",
     "update": "update_status",
+    "environment": "environment_status",
 }
 
 

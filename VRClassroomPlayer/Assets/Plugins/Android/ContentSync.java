@@ -13,6 +13,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -46,10 +48,13 @@ final class ContentSync {
     private volatile String lastError = "";
     private volatile String updateState = "";   // "", downloading N%, installing, up to date, failed: ...
     private volatile boolean cancelled;
+    private volatile String environmentState;   // default | custom | downloading | failed: ...
+    private final Object environmentLock = new Object();
 
     ContentSync(Context context, Agent agent) {
         this.context = context;
         this.agent = agent;
+        environmentState = environmentFile().isFile() ? "custom" : "default";
         Agent.startThread("agent-content", this::worker);
     }
 
@@ -139,6 +144,78 @@ final class ContentSync {
         });
     }
 
+    // ─── Environment (waiting-room look) ────────────────────────────────────────
+
+    File environmentFile() { return new File(context.getFilesDir(), "environment.json"); }
+
+    File environmentLogo() { return new File(context.getFilesDir(), "environment-logo.png"); }
+
+    /**
+     * env: {"custom", "background", "logoSha256", "logoPosition", "logoSize", "logoRotation"}.
+     * Stores it (and the PNG) in the app's files dir, then hands it to the player. Runs on its own
+     * thread so a long video sync does not hold it up; repeats with nothing new do not reach the player.
+     */
+    void environment(JSONObject env, String logoUrl) {
+        if (env == null) return;
+        Agent.startThread("agent-environment", () -> {
+            synchronized (environmentLock) {
+                try {
+                    boolean changed;
+                    if (!env.optBoolean("custom")) {
+                        changed = environmentFile().delete() | environmentLogo().delete();
+                        environmentState = "default";
+                    } else {
+                        File logo = environmentLogo();
+                        String sha = env.optString("logoSha256").toLowerCase();
+                        changed = false;
+                        if (sha.isEmpty()) {
+                            changed = logo.delete();
+                        } else if (!sha.equals(logo.isFile() ? PlayerSystem.sha256Of(logo) : "")) {
+                            environmentState = "downloading";
+                            agent.onContentChanged();
+                            File tmp = new File(context.getFilesDir(), "environment-logo.tmp");
+                            fetch(logoUrl, tmp);
+                            if (!sha.equals(PlayerSystem.sha256Of(tmp))) {
+                                tmp.delete();
+                                throw new IOException("checksum mismatch");
+                            }
+                            if (!tmp.renameTo(logo)) throw new IOException("cannot save picture");
+                            changed = true;
+                        }
+                        String text = env.toString();
+                        File file = environmentFile();
+                        if (!file.isFile() || !text.equals(new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8))) {
+                            Files.write(file.toPath(), text.getBytes(StandardCharsets.UTF_8));
+                            changed = true;
+                        }
+                        environmentState = "custom";
+                    }
+                    Log.i(TAG, "Environment " + environmentState + (changed ? " (changed)" : ""));
+                    if (changed) agent.sendEnvironmentToPlayer();
+                } catch (Exception e) {
+                    environmentState = "failed: " + e.getMessage();
+                    Log.e(TAG, "Environment failed: " + e);
+                } finally {
+                    agent.onContentChanged();
+                }
+            }
+        });
+    }
+
+    private static void fetch(String url, File file) throws IOException {
+        if (url == null || url.isEmpty()) throw new IOException("no picture url");
+        AgentHttp response = AgentHttp.get(url, 0, 5000, 30000);
+        try {
+            if (response.status != 200) throw new IOException("HTTP " + response.status);
+            try (InputStream in = response.body; OutputStream out = new FileOutputStream(file, false)) {
+                byte[] buffer = new byte[1 << 16];
+                for (int n; (n = in.read(buffer)) > 0; ) out.write(buffer, 0, n);
+            }
+        } finally {
+            response.close();
+        }
+    }
+
     // ─── Status ─────────────────────────────────────────────────────────────────
 
     void putStatus(JSONObject s) throws Exception {
@@ -160,6 +237,7 @@ final class ContentSync {
                 .put("queued", queued)
                 .put("error", lastError));
         s.put("update", updateState);
+        s.put("environment", environmentState);
     }
 
     // ─── Downloads ──────────────────────────────────────────────────────────────

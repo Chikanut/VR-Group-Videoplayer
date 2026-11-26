@@ -53,6 +53,23 @@ export async function getRequirements(id) {
   return request(`/devices/${id}/requirements`);
 }
 
+export async function uploadEnvironmentLogo(file) {
+  const res = await fetch(`${API_BASE}/environment/logo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'image/png' },
+    body: file,
+  });
+  return res.json();
+}
+
+export async function deleteEnvironmentLogo() {
+  return request('/environment/logo', { method: 'DELETE' });
+}
+
+export async function resetEnvironment() {
+  return request('/environment/reset', { method: 'POST' });
+}
+
 export async function updatePlayers() {
   return request('/player/update', { method: 'POST' });
 }

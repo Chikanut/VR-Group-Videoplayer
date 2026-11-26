@@ -26,6 +26,9 @@ const useDeviceStore = create((set, get) => ({
     return { selectedIds };
   }),
   clearSelection: () => set({ selectedIds: {} }),
+  selectAll: () => set((state) => ({
+    selectedIds: Object.fromEntries(Object.keys(state.devices).map((id) => [id, true])),
+  })),
 
   setConnected: (connected) => set({ connected }),
   setLoading: (loading) => set({ loading }),

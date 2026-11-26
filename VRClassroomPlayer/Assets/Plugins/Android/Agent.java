@@ -487,6 +487,9 @@ final class Agent {
                 case "cancel_content":
                     content.cancel();
                     break;
+                case "set_environment":
+                    content.environment(command.optJSONObject("environment"), serverUrl(command.optString("logoUrl")));
+                    break;
                 case "delete_content":
                     content.delete(command.optJSONArray("files"));
                     sendStatus();
@@ -568,6 +571,7 @@ final class Agent {
         playerOut = out;
         playerStatus = null;
         Log.i(TAG, "Player connected");
+        sendEnvironmentToPlayer();
         // The agent owns the name: hand it to a fresh player (its HUD shows it).
         if (prefs.contains("deviceName")) {
             try {
@@ -610,7 +614,22 @@ final class Agent {
         sendStatus();
     }
 
-    private boolean sendToPlayer(JSONObject command) {
+    /** The stored waiting-room look (ContentSync.environment) for the player; default when none. */
+    void sendEnvironmentToPlayer() {
+        try {
+            File file = content.environmentFile();
+            JSONObject env = file.isFile()
+                    ? new JSONObject(new String(java.nio.file.Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8))
+                    : new JSONObject().put("custom", false);
+            File logo = content.environmentLogo();
+            sendToPlayer(new JSONObject().put("type", "command").put("action", "apply_environment")
+                    .put("environment", env).put("logoPath", logo.isFile() ? logo.getAbsolutePath() : ""));
+        } catch (Exception e) {
+            Log.w(TAG, "Environment to player failed: " + e);
+        }
+    }
+
+    private synchronized boolean sendToPlayer(JSONObject command) {
         if (playerOut == null) return false;
         try {
             playerOut.write((command.toString() + "\n").getBytes(StandardCharsets.UTF_8));

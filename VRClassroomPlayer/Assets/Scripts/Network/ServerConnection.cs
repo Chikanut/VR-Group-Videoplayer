@@ -38,6 +38,8 @@ namespace VRClassroom
             public float personalVolume;
             public float time;
             public VideoAdvancedSettings advancedSettings;
+            public EnvironmentSettings environment;
+            public string logoPath;
         }
 
         [SerializeField] private StatusReporter statusReporter;
@@ -356,6 +358,10 @@ namespace VRClassroom
                             _sendStatusNow = true;
                             break;
                         }
+                    case "apply_environment":
+                        LogInfo("command_start", commandId, $"action=apply_environment, custom={command.environment?.custom}, logo='{SafeValue(command.logoPath)}'");
+                        viewModeManager?.ApplyEnvironment(command.environment, command.logoPath);
+                        break;
                     case "ping":
                         LogInfo("command_start", commandId, "action=ping");
                         PingSound.Play(gameObject);

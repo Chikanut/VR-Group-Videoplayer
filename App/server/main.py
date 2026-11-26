@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -50,6 +50,7 @@ from .playback_controller import (
     toggle_debug,
 )
 from .headset_settings import push_headset_settings
+from . import environment as env_store
 from .player_update import get_player_apk_path, update_players
 from .requirements_manager import apply_agent_files, check_requirements, refresh_all_requirements
 from .websocket_manager import ws_manager
@@ -114,9 +115,15 @@ async def get_config_endpoint():
 @app.put("/api/config")
 async def update_config_endpoint(config: ConfigModel):
     old_settings = get_config().get("headsetSettings", "")
-    new_config = update_config(_model_to_dict(config))
+    old_environment = get_config().get("environment", {})
+    data = _model_to_dict(config)
+    # The picture is managed by its own endpoints: a stale Settings page must not drop it.
+    data["environment"] = {**(data.get("environment") or {}), "logoSha256": old_environment.get("logoSha256", "")}
+    new_config = update_config(data)
     if new_config.get("headsetSettings", "") != old_settings:
         await push_headset_settings()
+    if new_config.get("environment") != old_environment:
+        await env_store.push_environment()
     await refresh_all_requirements()
     await ws_manager.broadcast({"type": "config_updated", "config": new_config})
     return new_config
@@ -433,6 +440,7 @@ async def _device_session(ws: WebSocket, agent: bool):
         logger.info("Device %s registered via %s from %s", device_id, "agent" if agent else "WS", ip)
         if agent:
             await apply_agent_files(device_id, msg.get("files"))
+            await env_store.push_environment([device_id])
         await check_requirements(device_id)
 
         while True:
@@ -494,6 +502,48 @@ def _register_kwargs(msg: Dict) -> Dict:
     if not kwargs.get("player_version"):
         kwargs.pop("player_version", None)
     return kwargs
+
+
+async def _set_environment(**changes) -> Dict:
+    environment = {**get_config().get("environment", {}), **changes}
+    new_config = update_config({**get_config(), "environment": environment})
+    await env_store.push_environment()
+    await ws_manager.broadcast({"type": "config_updated", "config": new_config})
+    return new_config
+
+
+@app.post("/api/environment/logo")
+async def upload_environment_logo(request: Request):
+    """Raw PNG body. Switches the environment to custom and sends it to the headsets."""
+    data = await request.body()
+    error = env_store.validate_png(data)
+    if error:
+        return JSONResponse({"error": error}, status_code=400)
+    return await _set_environment(custom=True, logoSha256=env_store.save_logo(data))
+
+
+@app.delete("/api/environment/logo")
+async def delete_environment_logo():
+    env_store.delete_logo()
+    return await _set_environment(logoSha256="")
+
+
+@app.post("/api/environment/reset")
+async def reset_environment():
+    """Back to the default look (logo model + maroon sky) on every headset."""
+    env_store.delete_logo()
+    new_config = update_config({**get_config(), "environment": {}})
+    await env_store.push_environment()
+    await ws_manager.broadcast({"type": "config_updated", "config": new_config})
+    return new_config
+
+
+@app.get("/api/environment/logo")
+async def get_environment_logo():
+    path = env_store.logo_path()
+    if not path.is_file():
+        return JSONResponse({"error": "No picture"}, status_code=404)
+    return FileResponse(path, media_type="image/png")
 
 
 @app.get("/api/player/apk")

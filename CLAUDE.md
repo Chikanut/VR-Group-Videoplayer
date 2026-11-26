@@ -27,7 +27,8 @@ VR-Group-Videoplayer/
 │   │   ├── requirements_manager.py   # APK + video push logic, progress tracking
 │   │   ├── websocket_manager.py      # WebSocket client management
 │   │   ├── player_probe.py           # Shared HTTP /status probe + status field mapping
-│   │   └── content_sync.py           # Video library on this PC → headset agents over Wi-Fi
+│   │   ├── content_sync.py           # Video library on this PC → headset agents over Wi-Fi
+│   │   └── environment.py            # Waiting-room look (colour + PNG) → headset agents
 │   ├── frontend/                     # React + Vite frontend
 │   │   ├── src/
 │   │   │   ├── App.jsx               # Router (/ and /settings)
@@ -130,6 +131,7 @@ Players older than 1.9.0: Unity Player ⇄ WS /ws/device ⇄ FastAPI Server (sti
 - Handles itself: `wake`, `sleep`, `launch/close/restart_player`, `autostart`, `set_name` (the agent owns the name, the player gets a copy for its HUD), `apply_settings`, `update`, `sync_content`/`cancel_content`/`delete_content` (`ContentSync.java`). Everything else is relayed to the player. `close_player` holds off the watchdog relaunch until `launch_player` or a reboot.
 - The player (`ServerConnection.cs`) only talks to the agent over localhost; discovery, keep-awake, self-update and the settings profile moved out of Unity.
 - Content over Wi-Fi (`App/server/content_sync.py`): Settings "Video library folder" (`videoLibraryPath`); "Sync content" sends each agent the configured videos found there; `GET /api/content/files/{name}` (FileResponse → Range/resume). Downloads go to `Movies/.partial-<name>`, resume after drops, pause while the player is `playing`/`loading`, skip files with the same name and size. Requirements use the agent's file list (size differs from the library → `outdated`). Replacing files copied over USB needs appop `MANAGE_EXTERNAL_STORAGE` (granted by `tools/quest_deploy.py setup_player()`).
+- Waiting-room environment (`App/server/environment.py`, player 1.9.1+): Settings "Headset environment" = default (logo model + procedural maroon skybox) or custom (solid camera background colour + optional PNG ≤4096² shown as a sprite instead of the model, position/size/rotation from the viewer start). Config `environment`; the PNG is stored next to config.json (`POST/DELETE /api/environment/logo`, `POST /api/environment/reset`); `logoSha256` is server-managed (a Settings save never changes it). Server sends WS `set_environment` on every agent registration and change; the agent (`ContentSync.environment`) keeps `files/environment.json` + `environment-logo.png` and sends the player `apply_environment` on change and whenever the player connects; `ViewModeManager.ApplyEnvironment` hides the model's renderers and parents the sprite under the logo object, so it shows only in the waiting room.
 - Launches while a Guardian/system dialog is up are cached by Quest and run when it closes (logcat: "Launch is blocked because: a Guardian dialog is currently showing") — not an agent bug.
 
 ### Device Discovery

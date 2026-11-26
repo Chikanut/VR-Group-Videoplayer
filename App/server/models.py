@@ -50,6 +50,7 @@ class ConfigModel(BaseModel):
     serverPort: int = 8000
     deviceOfflineTimeout: int = 30
     videoLibraryPath: str = ""
+    environment: Dict[str, Any] = Field(default_factory=dict)
 
 
 class DeviceRegistration(BaseModel):
@@ -99,6 +100,7 @@ class DeviceState:
         self.storage_free_mb: int = -1
         self.content: Dict[str, Any] = {}       # download progress, see ContentSync.java
         self.update_status: str = ""
+        self.environment_status: str = ""  # agent: default | custom | downloading | failed: ...
         self.files: Optional[List[Dict[str, Any]]] = None  # videos on the headset (agent); None = unknown
 
     def to_dict(self) -> Dict[str, Any]:
@@ -138,6 +140,7 @@ class DeviceState:
             "storageFreeMb": self.storage_free_mb,
             "content": self.content,
             "updateStatus": self.update_status,
+            "environmentStatus": self.environment_status,
         }
 
 

@@ -5,7 +5,7 @@ import sys
 import uuid
 from copy import deepcopy
 from pathlib import Path
-from threading import Lock
+from threading import Lock, RLock
 from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger("vrclassroom.config")
@@ -36,6 +36,8 @@ DEFAULT_CONFIG = {
     "deviceOfflineTimeout": 30,
     # Folder on this PC with the class videos; headset agents download from it (content_sync.py).
     "videoLibraryPath": "",
+    # Waiting-room look of the player: default or custom colour + PNG (environment.py).
+    "environment": {},
 }
 
 RUNTIME_ONLY_KEYS = {"isAndroidRuntime"}
@@ -43,7 +45,7 @@ VALID_VIDEO_TYPES = {"360", "2d"}
 VALID_PLACEMENT_MODES = {"default", "locked", "free"}
 
 _config: dict = {}
-_config_lock = Lock()
+_config_lock = RLock()  # get_config() falls back to load_config(), which locks too
 _device_names: dict = {}
 _device_names_lock = Lock()
 
@@ -154,6 +156,9 @@ def _normalize_config(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     normalized["videoLibraryPath"] = _normalize_string(raw.get("videoLibraryPath")).strip('"')
     if "headsetSettings" in raw:  # empty is meaningful: restore the headsets' own values
         normalized["headsetSettings"] = str(raw.get("headsetSettings") or "").replace("\r", "").strip()
+
+    from .environment import normalize_environment  # environment.py imports this module
+    normalized["environment"] = normalize_environment(raw.get("environment"))
 
     normalized["batteryThreshold"] = _normalize_int(raw.get("batteryThreshold"), 20, minimum=0, maximum=100)
     normalized["scanInterval"] = _normalize_int(raw.get("scanInterval"), 30, minimum=5, maximum=300)

@@ -1,6 +1,6 @@
 import React from 'react';
 import { pingDevice } from '../api';
-import { contentText } from './DeviceDialog';
+import { contentText, updateText } from './DeviceDialog';
 import { useI18n } from '../i18n';
 import useDeviceStore from '../store/deviceStore';
 
@@ -89,7 +89,12 @@ export default function DeviceTile({ device, onClick }) {
       </div>
 
       <div className="tile-info">
-        <span className="tile-ip">{device.ip}</span>
+        <span className="tile-ip">
+          {device.ip}
+          {(device.playerVersion || device.agentVersion) && (
+            <span className="tile-version"> · v{device.playerVersion || device.agentVersion}</span>
+          )}
+        </span>
         <BatteryIcon level={device.battery} charging={device.batteryCharging} />
       </div>
 
@@ -108,6 +113,12 @@ export default function DeviceTile({ device, onClick }) {
       {device.online && device.content?.state && device.content.state !== 'idle' && (
         <div className={`tile-content ${device.content.state === 'error' ? 'req-fail' : ''}`} title={contentText(device.content, t)}>
           ⬇ {contentText(device.content, t)}
+        </div>
+      )}
+
+      {device.online && device.updateStatus && device.updateStatus !== 'up to date' && (
+        <div className={`tile-content ${device.updateStatus.startsWith('failed') ? 'req-fail' : ''}`} title={updateText(device.updateStatus, t)}>
+          ⟳ {t('Player update')}: {updateText(device.updateStatus, t)}
         </div>
       )}
 

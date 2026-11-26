@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 
 namespace VRClassroom
@@ -52,6 +53,7 @@ namespace VRClassroom
 
         private void OnDestroy()
         {
+            DestroyCustomLogo();
             foreach (var kvp in _materials)
             {
                 if (kvp.Value != null)
@@ -93,6 +95,133 @@ namespace VRClassroom
             Debug.Log($"[ViewModeManager] Display states:{activeStates}");
 
             OnModeChanged?.Invoke(mode);
+        }
+
+        // ─── Waiting-room environment ──────────────────────────────────────────
+
+        private bool _environmentDefaultsSaved;
+        private Material _defaultSkybox;
+        private CameraClearFlags _defaultClearFlags;
+        private Color _defaultBackground;
+        private readonly List<Renderer> _logoRenderers = new List<Renderer>();
+        private readonly List<bool> _logoRendererStates = new List<bool>();
+        private GameObject _customLogo;
+        private Texture2D _customLogoTexture;
+        private Vector3 _logoRootPosition;
+
+        /// <summary>
+        /// custom=false (or null): the built-in look. Otherwise a solid background colour and, when
+        /// logoPath points to a PNG, that picture instead of the logo model. The picture lives under
+        /// the logo object, so it shows and hides with the waiting room like the model did.
+        /// </summary>
+        public void ApplyEnvironment(EnvironmentSettings env, string logoPath)
+        {
+            Camera cam = vrCamera != null ? vrCamera.GetComponent<Camera>() : null;
+            if (cam == null) cam = Camera.main;
+            if (!_environmentDefaultsSaved)
+            {
+                _environmentDefaultsSaved = true;
+                _defaultSkybox = RenderSettings.skybox;
+                if (cam != null)
+                {
+                    _defaultClearFlags = cam.clearFlags;
+                    _defaultBackground = cam.backgroundColor;
+                }
+                if (logoObject != null)
+                {
+                    _logoRootPosition = logoObject.transform.position;
+                    foreach (var r in logoObject.GetComponentsInChildren<Renderer>(true))
+                    {
+                        _logoRenderers.Add(r);
+                        _logoRendererStates.Add(r.enabled);
+                    }
+                }
+            }
+
+            DestroyCustomLogo();
+            bool custom = env != null && env.custom;
+
+            if (cam != null)
+            {
+                if (custom && ColorUtility.TryParseHtmlString(env.background, out Color background))
+                {
+                    cam.clearFlags = CameraClearFlags.SolidColor;
+                    cam.backgroundColor = background;
+                }
+                else
+                {
+                    cam.clearFlags = _defaultClearFlags;
+                    cam.backgroundColor = _defaultBackground;
+                }
+            }
+            RenderSettings.skybox = custom ? null : _defaultSkybox;
+
+            for (int i = 0; i < _logoRenderers.Count; i++)
+            {
+                if (_logoRenderers[i] != null) _logoRenderers[i].enabled = !custom && _logoRendererStates[i];
+            }
+
+            if (custom && !string.IsNullOrEmpty(logoPath) && File.Exists(logoPath) && logoObject != null)
+            {
+                CreateCustomLogo(env, logoPath);
+            }
+            Debug.Log($"[ViewModeManager] Environment applied: {(custom ? "custom" : "default")}, picture={(_customLogo != null)}");
+        }
+
+        private void CreateCustomLogo(EnvironmentSettings env, string logoPath)
+        {
+            var texture = new Texture2D(2, 2, TextureFormat.RGBA32, true);
+            if (!texture.LoadImage(File.ReadAllBytes(logoPath), true)) // non-readable: frees the CPU copy
+            {
+                Destroy(texture);
+                Debug.LogError($"[ViewModeManager] Environment picture could not be loaded: {logoPath}");
+                return;
+            }
+            texture.wrapMode = TextureWrapMode.Clamp;
+            _customLogoTexture = texture;
+
+            float size = env.logoSize > 0.01f ? env.logoSize : 4f;
+            var sprite = Sprite.Create(texture, new Rect(0, 0, texture.width, texture.height),
+                new Vector2(0.5f, 0.5f), texture.width / size);
+
+            _customLogo = new GameObject("CustomLogo");
+            _customLogo.transform.SetParent(logoObject.transform, false);
+            var spriteRenderer = _customLogo.AddComponent<SpriteRenderer>();
+            spriteRenderer.sprite = sprite;
+            // Reuse the scene's own sprite material so the shader is surely in the build.
+            foreach (var r in _logoRenderers)
+            {
+                if (r is SpriteRenderer existing && existing.sharedMaterial != null)
+                {
+                    spriteRenderer.sharedMaterial = existing.sharedMaterial;
+                    break;
+                }
+            }
+
+            Vector3 position = ToVector(env.logoPosition, _logoRootPosition);
+            _customLogo.transform.localPosition = position - _logoRootPosition;
+            _customLogo.transform.localEulerAngles = ToVector(env.logoRotation, Vector3.zero);
+        }
+
+        private void DestroyCustomLogo()
+        {
+            if (_customLogo != null)
+            {
+                var spriteRenderer = _customLogo.GetComponent<SpriteRenderer>();
+                if (spriteRenderer != null && spriteRenderer.sprite != null) Destroy(spriteRenderer.sprite);
+                Destroy(_customLogo);
+                _customLogo = null;
+            }
+            if (_customLogoTexture != null)
+            {
+                Destroy(_customLogoTexture);
+                _customLogoTexture = null;
+            }
+        }
+
+        private static Vector3 ToVector(float[] values, Vector3 fallback)
+        {
+            return values != null && values.Length == 3 ? new Vector3(values[0], values[1], values[2]) : fallback;
         }
 
         public void SetRenderTexture(RenderTexture rt)
