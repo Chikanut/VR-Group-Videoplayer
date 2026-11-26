@@ -2,13 +2,14 @@ import asyncio
 import logging
 import socket
 from typing import Dict, List, Optional
+from urllib.parse import quote
 
 import aiohttp
 
 from .config import PLAYER_HTTP_PORT, get_config
 from .device_manager import device_manager
 from .device_ws_manager import device_ws_manager
-from .player_probe import extract_device_id, probe_player_status
+from .player_probe import AGENT_HTTP_PORT, extract_device_id, probe_player_status
 
 logger = logging.getLogger("vrclassroom.discovery")
 
@@ -98,6 +99,31 @@ async def _push_server_ip_to_player(ip: str, server_url: str):
         logger.debug("Failed to push server IP to %s: %s", ip, exc)
 
 
+async def _point_agents_to_server(subnet: str):
+    """Headset agents (1.9.0+) answer on 8081 even with the player closed. Tell those that are
+    not connected where the server is, so they need not find it with their own scan."""
+    server_url = _get_server_url()
+    if not server_url:
+        return
+    connected_ips = {
+        d["ip"] for d in await device_manager.get_all()
+        if d.get("agentConnected") and device_ws_manager.is_connected(d["deviceId"])
+    }
+    for ip in await scan_subnet(subnet, AGENT_HTTP_PORT):
+        if ip in connected_ips:
+            continue
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"http://{ip}:{AGENT_HTTP_PORT}/server?address={quote(server_url)}",
+                    timeout=aiohttp.ClientTimeout(total=3),
+                ) as resp:
+                    # Watchdogs older than 1.9.0 answer 404: they have no agent.
+                    logger.debug("Server address pushed to agent %s: HTTP %d", ip, resp.status)
+        except Exception as exc:
+            logger.debug("Server address push to %s failed: %s", ip, exc)
+
+
 def _get_server_url() -> str:
     """Get the server's own IP:port for devices to connect back."""
     try:
@@ -173,6 +199,8 @@ async def discovery_loop():
             for result in results:
                 if isinstance(result, Exception):
                     logger.warning("Device processing failed: %s", result)
+
+            await _point_agents_to_server(subnet)
 
             logger.info("Discovery complete: discovered=%d", len(discovered_ips))
             await asyncio.sleep(interval)

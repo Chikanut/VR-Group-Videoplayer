@@ -49,6 +49,7 @@ class ConfigModel(BaseModel):
     networkSubnet: str = ""
     serverPort: int = 8000
     deviceOfflineTimeout: int = 30
+    videoLibraryPath: str = ""
 
 
 class DeviceRegistration(BaseModel):
@@ -90,6 +91,15 @@ class DeviceState:
         self.personal_volume: float = 1.0
         self.effective_volume: float = 1.0
         self.ws_connected: bool = False
+        # Headset agent (player 1.9.0+, WatchdogService process): the WS link that is up
+        # whether or not the player runs. Older players have no agent.
+        self.agent_connected: bool = False
+        self.agent_version: str = ""
+        self.autostart: Optional[bool] = None   # None = unknown
+        self.storage_free_mb: int = -1
+        self.content: Dict[str, Any] = {}       # download progress, see ContentSync.java
+        self.update_status: str = ""
+        self.files: Optional[List[Dict[str, Any]]] = None  # videos on the headset (agent); None = unknown
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -122,6 +132,12 @@ class DeviceState:
             "macAddress": self.mac_address,
             "personalVolume": self.personal_volume,
             "effectiveVolume": self.effective_volume,
+            "agentConnected": self.agent_connected,
+            "agentVersion": self.agent_version,
+            "autostart": self.autostart,
+            "storageFreeMb": self.storage_free_mb,
+            "content": self.content,
+            "updateStatus": self.update_status,
         }
 
 

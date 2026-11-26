@@ -771,6 +771,17 @@ export default function SettingsPage() {
             />
             <span className="form-hint">{t('Connected headsets download this APK and install it silently. Headsets that already have it skip the update.')}</span>
           </div>
+
+          <div className="form-group">
+            <label>{t('Video library folder')}</label>
+            <input
+              type="text"
+              value={config.videoLibraryPath || ''}
+              onChange={(event) => updateField('videoLibraryPath', event.target.value)}
+              placeholder="D:\VRClassroom\Videos"
+            />
+            <span className="form-hint">{t('Video library hint')}</span>
+          </div>
         </div>
 
         <div className="form-group">

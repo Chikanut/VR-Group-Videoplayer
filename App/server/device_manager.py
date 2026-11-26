@@ -9,7 +9,7 @@ from .config import PLAYER_HTTP_PORT, get_config, get_device_name, load_device_n
 from .device_ws_manager import device_ws_manager
 from .models import DeviceState
 from .pending_stops import pending_stops
-from .player_probe import extract_device_id, probe_player_status, status_to_kwargs
+from .player_probe import AGENT_HTTP_PORT, extract_device_id, probe_player_status, status_to_kwargs
 from .websocket_manager import ws_manager
 
 logger = logging.getLogger("vrclassroom.devices")
@@ -176,12 +176,8 @@ class DeviceManager:
             logger.warning("Ignoring status from %s without a device ID: %s", ip, status)
             return None
 
-        device = await self.add_or_update(
-            device_id,
-            ip,
-            player_connected=True,
-            **status_to_kwargs(status),
-        )
+        # An agent status (port 8081) carries its own player_connected (playerRunning).
+        device = await self.add_or_update(device_id, ip, **{"player_connected": True, **status_to_kwargs(status)})
         if device is None:
             return None
 
@@ -241,6 +237,10 @@ class DeviceManager:
             "deviceId": device_id,
         })
         return True
+
+    async def get_online_devices(self) -> List[DeviceState]:
+        async with self._lock:
+            return [d for d in self._devices.values() if d.online]
 
     async def get_online_player_devices(self) -> List[DeviceState]:
         async with self._lock:
@@ -464,7 +464,7 @@ class DeviceManager:
         # Do not demote player_connected here: the HTTP API is usually still up and the
         # liveness loop verifies that, marking the device offline only if it really stops
         # answering.
-        await self.add_or_update(device_id, "", seen=False, ws_connected=False)
+        await self.add_or_update(device_id, "", seen=False, ws_connected=False, agent_connected=False)
 
     # --- Liveness -----------------------------------------------------------
 
@@ -516,7 +516,9 @@ class DeviceManager:
 
         async def probe(device_id: str, ip: str):
             async with semaphore:
-                return device_id, ip, await probe_player_status(ip)
+                # The agent (1.9.0+) answers on 8081 while the player is closed.
+                status = await probe_player_status(ip) or await probe_player_status(ip, port=AGENT_HTTP_PORT)
+                return device_id, ip, status
 
         results = await asyncio.gather(*(probe(did, ip) for did, ip in targets), return_exceptions=True)
 
@@ -554,6 +556,7 @@ class DeviceManager:
                     online=False,
                     player_connected=False,
                     ws_connected=False,
+                    agent_connected=False,
                 )
 
 

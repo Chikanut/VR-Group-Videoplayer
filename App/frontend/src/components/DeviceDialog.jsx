@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import useDeviceStore from '../store/deviceStore';
 import {
   getAutostart,
+  playerAction,
   setAutostart,
   getRequirements,
   pingDevice,
@@ -168,9 +169,42 @@ export default function DeviceDialog({ deviceId, onClose }) {
               <tr>
                 <td>{t('Player')}</td>
                 <td className={device.playerConnected ? 'text-ok' : 'text-warn'}>
-                  {device.playerConnected ? `${t('Connected')} (v${device.playerVersion || '-'})` : t('Player offline')}
+                  {device.playerConnected
+                    ? `${t('Connected')} (v${device.playerVersion || '-'})`
+                    : t(device.agentConnected ? 'Player closed' : 'Player offline')}
+                  {device.agentConnected && (
+                    <span style={{ marginLeft: 8 }}>
+                      {!device.playerConnected && (
+                        <button className="btn btn-dim" onClick={() => playerAction('launch', [device.deviceId])}>{t('Open')}</button>
+                      )}
+                      {device.playerConnected && (
+                        <button className="btn btn-dim" onClick={() => playerAction('restart', [device.deviceId])}>{t('Restart')}</button>
+                      )}
+                      {device.playerConnected && (
+                        <button className="btn btn-dim" onClick={() => playerAction('close', [device.deviceId])}>{t('Close')}</button>
+                      )}
+                    </span>
+                  )}
                 </td>
               </tr>
+              <tr>
+                <td>{t('Agent')}</td>
+                <td className={device.agentConnected ? 'text-ok' : 'text-warn'}>
+                  {device.agentConnected ? `${t('Connected')} (v${device.agentVersion || '-'})` : t('Agent offline hint')}
+                </td>
+              </tr>
+              {device.storageFreeMb >= 0 && (
+                <tr><td>{t('Free storage')}</td><td>{(device.storageFreeMb / 1024).toFixed(1)} GB</td></tr>
+              )}
+              {device.content?.state && device.content.state !== 'idle' && (
+                <tr>
+                  <td>{t('Content')}</td>
+                  <td className={device.content.state === 'error' ? 'text-warn' : ''}>{contentText(device.content, t)}</td>
+                </tr>
+              )}
+              {device.updateStatus && (
+                <tr><td>{t('Player update')}</td><td>{device.updateStatus}</td></tr>
+              )}
               <tr>
                 <td>{t('Player autostart')}</td>
                 <td className={autostart === true ? 'text-ok' : 'text-warn'}>
@@ -202,8 +236,11 @@ export default function DeviceDialog({ deviceId, onClose }) {
             <div className="req-list">
               {requirements.map((requirement, index) => (
                 <div key={index} className={`req-item ${requirement.present ? 'req-item-ok' : 'req-item-fail'}`}>
-                  <span>{requirement.present ? '\u2705' : '\u274C'}</span>
-                  <span className="req-name">{requirement.name || requirement.filename}</span>
+                  <span>{requirement.present ? '\u2705' : requirement.outdated ? '\u26A0\uFE0F' : '\u274C'}</span>
+                  <span className="req-name">
+                    {requirement.name || requirement.filename}
+                    {requirement.outdated && ` (${t('different from the library copy')})`}
+                  </span>
                   <span className="req-type">{requirement.filename}</span>
                 </div>
               ))}
@@ -281,4 +318,14 @@ function formatTime(seconds) {
   const minutes = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
   return `${minutes}:${secs.toString().padStart(2, '0')}`;
+}
+
+export function contentText(content, t) {
+  if (content.state === 'error') {
+    return `${t('Download error')}: ${content.error}`;
+  }
+  const percent = content.total > 0 ? Math.floor((content.done / content.total) * 100) : 0;
+  const waiting = content.state === 'waiting' ? ` — ${t('paused while playing')}` : '';
+  const queued = content.queued > 0 ? ` (+${content.queued})` : '';
+  return `${content.file} ${percent}%${queued}${waiting}`;
 }

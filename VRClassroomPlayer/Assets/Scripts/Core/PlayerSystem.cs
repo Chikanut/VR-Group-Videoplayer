@@ -4,67 +4,19 @@ using UnityEngine;
 namespace VRClassroom
 {
     /// <summary>
-    /// C# side of Assets/Plugins/Android/PlayerSystem.java: keep-awake, relaunch watchdog,
-    /// silent self-update. Main thread only. No-op in the Editor.
+    /// C# side of Assets/Plugins/Android/PlayerSystem.java. Keep-awake, self-update and the
+    /// settings profile moved to the headset agent (Agent.java). Main thread only. No-op in the Editor.
     /// </summary>
     public static class PlayerSystem
     {
-        public static void SetKeepAwake(bool keepAwake) => Call("setKeepAwake", keepAwake);
-
-        /// <summary>Puts the headset to sleep (virtual proximity FAR). Woken by the watchdog's POST :8081/wake or the power button.</summary>
+        /// <summary>Puts the headset to sleep (virtual proximity FAR). Used by the legacy HTTP /sleep route.</summary>
         public static void Sleep() => Call("sleep");
 
+        /// <summary>Starts the watchdog service, which hosts the agent.</summary>
         public static void StartWatchdog() => Call("startWatchdog");
 
         /// <summary>Call on pause: if the headset is going to sleep, the player closes itself and the watchdog reopens it on wake.</summary>
         public static void CloseIfAsleep() => Call("closeIfAsleep");
-
-        /// <summary>Installs a downloaded APK file (Java checks its sha256 first).</summary>
-        public static void InstallUpdate(string apkPath, string sha256) => Call("installUpdate", apkPath, sha256);
-
-        /// <summary>Applies the server's headset settings profile (see PlayerSystem.java). Returns "ok" or why it failed.</summary>
-        public static string ApplySettings(string profile)
-        {
-#if UNITY_ANDROID && !UNITY_EDITOR
-            try
-            {
-                using (var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
-                using (var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
-                using (var system = new AndroidJavaClass("com.vrclass.player.PlayerSystem"))
-                {
-                    return system.CallStatic<string>("applySettings", activity, profile ?? string.Empty);
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[PlayerSystem] applySettings failed: {e.Message}");
-                return "error";
-            }
-#else
-            return "ok";
-#endif
-        }
-
-        /// <summary>Path of the installed APK, to compare its sha256 with an offered update.</summary>
-        public static string InstalledApkPath()
-        {
-#if UNITY_ANDROID && !UNITY_EDITOR
-            try
-            {
-                using (var unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
-                using (var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
-                using (var appInfo = activity.Call<AndroidJavaObject>("getApplicationInfo"))
-                {
-                    return appInfo.Get<string>("sourceDir");
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"[PlayerSystem] InstalledApkPath failed: {e.Message}");
-            }
-#endif
-            return null;
-        }
 
         private static void Call(string method, params object[] args)
         {

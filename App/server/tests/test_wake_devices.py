@@ -55,7 +55,7 @@ class WakeDevicesTests(unittest.TestCase):
 
     def test_autostart_state_is_unknown_when_the_watchdog_does_not_answer(self):
         from types import SimpleNamespace
-        device = SimpleNamespace(ip="127.0.0.1")
+        device = SimpleNamespace(ip="127.0.0.1", agent_connected=False, autostart=None)
         with mock.patch.object(playback_controller.device_manager, "get", new=mock.AsyncMock(return_value=device)),                 mock.patch.object(playback_controller, "WAKE_PORT", 9),                 mock.patch.object(playback_controller, "REQUEST_TIMEOUT", 2):
             result = asyncio.run(playback_controller.get_autostart("a"))
         self.assertIsNone(result["autostart"])

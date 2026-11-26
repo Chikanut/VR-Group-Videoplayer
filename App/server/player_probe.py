@@ -39,6 +39,13 @@ STATUS_FIELD_MAP = {
     "mac": "mac_address",
     "personalVolume": "personal_volume",
     "effectiveVolume": "effective_volume",
+    # Headset agent (player 1.9.0+): sent whether or not the player runs.
+    "playerRunning": "player_connected",
+    "agentVersion": "agent_version",
+    "autostart": "autostart",
+    "storageFreeMb": "storage_free_mb",
+    "content": "content",
+    "update": "update_status",
 }
 
 
@@ -60,12 +67,15 @@ def extract_device_id(status: Dict[str, Any], fallback: str) -> str:
     return fallback
 
 
-async def probe_player_status(ip: str, timeout: float = PROBE_TIMEOUT_SEC) -> Optional[Dict[str, Any]]:
-    """GET http://<ip>:8080/status. Returns the parsed dict, or None if unreachable/invalid."""
+AGENT_HTTP_PORT = 8081  # headset agent / watchdog (WatchdogService.java), up while the player is closed
+
+
+async def probe_player_status(ip: str, timeout: float = PROBE_TIMEOUT_SEC, port: int = PLAYER_HTTP_PORT) -> Optional[Dict[str, Any]]:
+    """GET http://<ip>:<port>/status. Returns the parsed dict, or None if unreachable/invalid."""
     if not ip or ip == "unknown":
         return None
 
-    url = f"http://{ip}:{PLAYER_HTTP_PORT}/status"
+    url = f"http://{ip}:{port}/status"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:

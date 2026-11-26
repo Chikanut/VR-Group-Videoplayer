@@ -40,17 +40,30 @@ async def _send_to_player(ip: str, method: str, path: str, json_body: Optional[D
         return {"success": False, "error": str(exc)}
 
 
-async def _resolve_devices(device_ids: List[str]) -> List:
-    """Resolve device IDs to online player-connected DeviceState objects."""
-    if device_ids:
-        devices = []
-        for device_id in device_ids:
-            device = await device_manager.get(device_id)
-            if device and device.online and device.player_connected:
-                devices.append(device)
-        return devices
+async def _resolve_devices(device_ids: List[str], agent_ok: bool = False) -> List:
+    """Resolve device IDs (empty = all) to online DeviceState objects whose player is
+    connected - or, with agent_ok, whose headset agent is (commands the agent handles)."""
+    devices = []
+    for device_id in device_ids or await device_manager.get_all_ids():
+        device = await device_manager.get(device_id)
+        if device and device.online and (device.player_connected or (agent_ok and device.agent_connected)):
+            devices.append(device)
+    return devices
 
-    return await device_manager.get_online_player_devices()
+
+async def agent_command(action: str, device_ids: List[str], payload: Optional[Dict] = None) -> Dict[str, Any]:
+    """Send a command handled by the headset agent itself (launch/close/restart_player, ...)."""
+    success_list, failed_list = [], []
+    for device in await _resolve_devices(device_ids, agent_ok=True):
+        if not device.agent_connected:
+            failed_list.append({"deviceId": device.device_id, "error": "No agent (player older than 1.9.0)"})
+            continue
+        command = {"type": "command", "action": action, **(payload or {})}
+        if await device_ws_manager.send_command(device.device_id, command):
+            success_list.append({"deviceId": device.device_id})
+        else:
+            failed_list.append({"deviceId": device.device_id, "error": "Agent is not reachable"})
+    return {"success": success_list, "failed": failed_list}
 
 
 async def _send_command_to_device(device, command: str, path: str, payload: Optional[Dict] = None) -> Dict[str, Any]:
@@ -145,7 +158,8 @@ async def send_command(command: str, device_ids: List[str]) -> Dict[str, Any]:
         # but must still be stopped when they wake up (see pending_stops).
         pending_stops.mark(device_ids or await device_manager.get_all_ids())
 
-    devices = await _resolve_devices(device_ids)
+    # The agent puts a headset to sleep even while its player is closed.
+    devices = await _resolve_devices(device_ids, agent_ok=command == "sleep")
     if not devices:
         return {"success": [], "failed": [], "message": "No online devices available"}
 
@@ -182,14 +196,21 @@ async def _post_watchdog(ip: str, path: str) -> Dict[str, Any]:
         return {"success": False, "error": str(exc) or type(exc).__name__}
 
 
-async def _watchdog_command(path: str, device_ids: List[str]) -> Dict[str, Any]:
-    """POST to the watchdog of every known device (or the given ones), online or not:
-    it answers while the headset sleeps or the player is closed."""
+async def _watchdog_command(path: str, device_ids: List[str], agent_command: Optional[Dict] = None) -> Dict[str, Any]:
+    """Reach the watchdog of every known device (or the given ones), online or not: it answers
+    while the headset sleeps or the player is closed. Through the agent's WebSocket when it is
+    connected (player 1.9.0+), else HTTP POST to port 8081."""
     devices = [d for d in await device_manager.get_all() if d.get("ip") and d["ip"] != "unknown"]
     if device_ids:
         devices = [d for d in devices if d["deviceId"] in device_ids]
 
-    results = await asyncio.gather(*[_post_watchdog(d["ip"], path) for d in devices])
+    async def reach(device: Dict[str, Any]) -> Dict[str, Any]:
+        if agent_command and device.get("agentConnected") and device_ws_manager.is_connected(device["deviceId"]):
+            if await device_ws_manager.send_command(device["deviceId"], {"type": "command", **agent_command}):
+                return {"success": True}
+        return await _post_watchdog(device["ip"], path)
+
+    results = await asyncio.gather(*[reach(d) for d in devices])
     success_list, failed_list = [], []
     for device, result in zip(devices, results):
         if result["success"]:
@@ -201,7 +222,7 @@ async def _watchdog_command(path: str, device_ids: List[str]) -> Dict[str, Any]:
 
 async def wake_devices(device_ids: List[str]) -> Dict[str, Any]:
     """Wake sleeping headsets. Asleep headsets show as offline, so every known device is targeted."""
-    return await _watchdog_command("/wake", device_ids)
+    return await _watchdog_command("/wake", device_ids, {"action": "wake"})
 
 
 async def get_autostart(device_id: str) -> Dict[str, Any]:
@@ -210,6 +231,8 @@ async def get_autostart(device_id: str) -> Dict[str, Any]:
     device = await device_manager.get(device_id)
     if not device:
         return {"error": "Device not found"}
+    if device.agent_connected and device.autostart is not None:
+        return {"autostart": device.autostart}  # the agent reports it in every status
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -224,7 +247,9 @@ async def get_autostart(device_id: str) -> Dict[str, Any]:
 
 async def set_autostart(enabled: bool, device_ids: List[str]) -> Dict[str, Any]:
     """Switch the watchdog's relaunching of the player on/off (persists on the headset)."""
-    return await _watchdog_command("/autostart/on" if enabled else "/autostart/off", device_ids)
+    return await _watchdog_command(
+        "/autostart/on" if enabled else "/autostart/off", device_ids, {"action": "autostart", "enabled": enabled}
+    )
 
 
 async def seek_video(time: float, device_ids: List[str]) -> Dict[str, Any]:

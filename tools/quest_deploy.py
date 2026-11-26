@@ -291,7 +291,9 @@ class ADB:
             code, out, err = self.run("install", "-r", "-g", "-i", package_name, apk_path, serial=serial, timeout=300)
             if code != 0 or "Success" not in out + err:
                 errors.append(f"install -i: {(err or out).strip()}")
-        for op in ("SYSTEM_ALERT_WINDOW", "REQUEST_INSTALL_PACKAGES"):
+        # MANAGE_EXTERNAL_STORAGE: агент сам завантажує відео з сервера в /sdcard/Movies і може
+        # замінити файли, які колись скопіювали кабелем (плеєр 1.9.0+).
+        for op in ("SYSTEM_ALERT_WINDOW", "REQUEST_INSTALL_PACKAGES", "MANAGE_EXTERNAL_STORAGE"):
             code, out, err = self.run("shell", "appops", "set", package_name, op, "allow", serial=serial, timeout=20)
             if code != 0:
                 errors.append(f"appops {op}: {(err or out).strip()}")

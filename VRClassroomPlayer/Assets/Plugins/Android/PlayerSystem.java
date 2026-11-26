@@ -25,10 +25,9 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Headset-level helpers called from C# (ServerConnection):
- *  - keep the headset awake while the server is connected (virtual proximity sensor),
- *  - start the relaunch watchdog,
- *  - silent self-update from the instructor server.
+ * Headset-level helpers:
+ *  - from the player (C#): start the watchdog/agent, close the player when the headset sleeps;
+ *  - from the agent (Agent.java): settings profile, silent self-update.
  *
  * Silent update works only when this app is its own "installer of record"
  * (tools/quest_deploy.py installs with `adb install -i com.vrclass.player`); otherwise
@@ -38,16 +37,7 @@ public class PlayerSystem {
     private static final String TAG = "VRPlayerSystem";
     private static final AtomicBoolean updating = new AtomicBoolean(false);
 
-    public static void setKeepAwake(Context context, boolean keepAwake) {
-        // Accepted from any app on Horizon OS; resets on reboot.
-        String action = keepAwake
-                ? "com.oculus.vrpowermanager.prox_close"
-                : "com.oculus.vrpowermanager.automation_disable";
-        context.sendBroadcast(new Intent(action));
-        Log.i(TAG, "Keep awake " + keepAwake);
-    }
-
-    /** Instructor "sleep": virtual proximity FAR, the headset turns off its display and sleeps (~15s). */
+    /** Legacy HTTP "POST :8080/sleep": virtual proximity FAR, the headset sleeps (~15s). */
     public static void sleep(Context context) {
         context.sendBroadcast(new Intent("com.oculus.vrpowermanager.prox_far"));
         Log.i(TAG, "Sleep requested");
@@ -139,10 +129,7 @@ public class PlayerSystem {
         }
     }
 
-    /**
-     * Installs a downloaded APK file if its sha256 matches. The download happens in C#:
-     * Unity's network security config blocks plain HTTP for Java, not for Mono sockets.
-     */
+    /** Installs a downloaded APK file if its sha256 matches (downloaded by the agent, ContentSync). */
     public static void installUpdate(final Context context, final String apkPath, final String sha256) {
         if (!updating.compareAndSet(false, true)) {
             Log.w(TAG, "Update already in progress");
@@ -194,6 +181,12 @@ public class PlayerSystem {
             Log.i(TAG, "Update committed, the app restarts when it is installed");
         } finally {
             apk.delete(); // the session keeps its own copy
+        }
+    }
+
+    static String sha256Of(File file) throws Exception {
+        try (InputStream in = new FileInputStream(file)) {
+            return sha256Of(in, null);
         }
     }
 

@@ -34,6 +34,8 @@ DEFAULT_CONFIG = {
     "networkSubnet": "",
     "serverPort": 8000,
     "deviceOfflineTimeout": 30,
+    # Folder on this PC with the class videos; headset agents download from it (content_sync.py).
+    "videoLibraryPath": "",
 }
 
 RUNTIME_ONLY_KEYS = {"isAndroidRuntime"}
@@ -149,6 +151,7 @@ def _normalize_config(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     normalized["mobileAppUrl"] = mobile_app_url
     normalized["playerAppUrl"] = _normalize_string(raw.get("playerAppUrl"))
     normalized["playerApkPath"] = _normalize_string(raw.get("playerApkPath")).strip('"')
+    normalized["videoLibraryPath"] = _normalize_string(raw.get("videoLibraryPath")).strip('"')
     if "headsetSettings" in raw:  # empty is meaningful: restore the headsets' own values
         normalized["headsetSettings"] = str(raw.get("headsetSettings") or "").replace("\r", "").strip()
 

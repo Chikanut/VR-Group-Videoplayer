@@ -114,3 +114,25 @@ export async function setDeviceVolume(deviceId, volume) {
     body: JSON.stringify({ volume }),
   });
 }
+
+// Headset agent (player 1.9.0+): action = launch | close | restart
+export async function playerAction(action, deviceIds = []) {
+  return request(`/devices/player/${action}`, {
+    method: 'POST',
+    body: JSON.stringify({ deviceIds }),
+  });
+}
+
+export async function syncContent(deviceIds = []) {
+  return request('/content/sync', {
+    method: 'POST',
+    body: JSON.stringify({ deviceIds }),
+  });
+}
+
+export async function cancelContent(deviceIds = []) {
+  return request('/content/cancel', {
+    method: 'POST',
+    body: JSON.stringify({ deviceIds }),
+  });
+}

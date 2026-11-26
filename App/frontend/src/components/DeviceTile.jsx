@@ -1,5 +1,6 @@
 import React from 'react';
 import { pingDevice } from '../api';
+import { contentText } from './DeviceDialog';
 import { useI18n } from '../i18n';
 import useDeviceStore from '../store/deviceStore';
 
@@ -34,6 +35,12 @@ function BatteryIcon({ level, charging }) {
 function ConnectionBadge({ device, t }) {
   if (!device.online) {
     return <span className="badge badge-offline">{t('Offline')}</span>;
+  }
+  if (device.agentConnected) {
+    // Player 1.9.0+: one link through the headset agent, up whether or not the player runs.
+    return device.playerConnected
+      ? <span className="badge badge-ok" title={t('Connected via the headset agent')}>{t('Online')}</span>
+      : <span className="badge badge-warn" title={t('Headset is on, the player app is closed')}>{t('Player closed')}</span>;
   }
   if (device.playerConnected && device.wsConnected) {
     return <span className="badge badge-ok" title={t('Connected via WebSocket')}>WS</span>;
@@ -95,6 +102,12 @@ export default function DeviceTile({ device, onClick }) {
           {device.requirementsMet === null && <span className="req-checking">{t('Checking...')}</span>}
           {device.requirementsMet === true && <span className="req-ok">{t('Requirements met')}</span>}
           {device.requirementsMet === false && <span className="req-fail">{t('Requirements missing')}</span>}
+        </div>
+      )}
+
+      {device.online && device.content?.state && device.content.state !== 'idle' && (
+        <div className={`tile-content ${device.content.state === 'error' ? 'req-fail' : ''}`} title={contentText(device.content, t)}>
+          ⬇ {contentText(device.content, t)}
         </div>
       )}
 

@@ -34,7 +34,9 @@ from .models import (
     SeekCommand,
     VolumeUpdate,
 )
+from .content_sync import cancel_content, library_file, library_listing, sync_content
 from .playback_controller import (
+    agent_command,
     get_autostart,
     get_global_volume,
     open_video,
@@ -49,7 +51,7 @@ from .playback_controller import (
 )
 from .headset_settings import push_headset_settings
 from .player_update import get_player_apk_path, update_players
-from .requirements_manager import check_requirements, refresh_all_requirements
+from .requirements_manager import apply_agent_files, check_requirements, refresh_all_requirements
 from .websocket_manager import ws_manager
 
 logging.basicConfig(
@@ -284,6 +286,39 @@ async def devices_autostart(state: str, cmd: PlaybackCommand):
     return await set_autostart(state == "on", cmd.deviceIds)
 
 
+@app.post("/api/devices/player/{action}")
+async def devices_player(action: str, cmd: PlaybackCommand):
+    """Open / close / restart the player app through the headset agents (1.9.0+)."""
+    if action not in ("launch", "close", "restart"):
+        return JSONResponse({"error": "action must be launch, close or restart"}, status_code=400)
+    return await agent_command(f"{action}_player", cmd.deviceIds)
+
+
+@app.get("/api/content/library")
+async def content_library():
+    return library_listing()
+
+
+@app.get("/api/content/files/{name}")
+async def content_file(name: str):
+    # FileResponse answers Range requests, so headsets resume interrupted downloads.
+    path = library_file(name)
+    if path is None:
+        return JSONResponse({"error": "File not in the video library"}, status_code=404)
+    return FileResponse(path, media_type="video/mp4")
+
+
+@app.post("/api/content/sync")
+async def content_sync_endpoint(cmd: PlaybackCommand):
+    result = await sync_content(cmd.deviceIds)
+    return result if result.get("success") else JSONResponse(result, status_code=400)
+
+
+@app.post("/api/content/cancel")
+async def content_cancel_endpoint(cmd: PlaybackCommand):
+    return await cancel_content(cmd.deviceIds)
+
+
 @app.post("/api/playback/recenter")
 async def playback_recenter(cmd: PlaybackCommand):
     return await send_command("recenter", cmd.deviceIds)
@@ -334,7 +369,24 @@ async def websocket_endpoint(ws: WebSocket):
 
 @app.websocket("/ws/device")
 async def device_websocket_endpoint(ws: WebSocket):
-    """WebSocket endpoint for player devices."""
+    """Players older than 1.9.0 connect here directly."""
+    await _device_session(ws, agent=False)
+
+
+@app.websocket("/ws/agent")
+async def agent_websocket_endpoint(ws: WebSocket):
+    """Headset agent (player 1.9.0+, WatchdogService process): the headset's only link, with or
+    without the player running. Same messages as /ws/device; the agent relays player commands."""
+    await _device_session(ws, agent=True)
+
+
+def _link_kwargs(agent: bool, msg: Dict) -> Dict:
+    if agent:
+        return {"ws_connected": True, "agent_connected": True, "player_connected": bool(msg.get("playerRunning"))}
+    return {"ws_connected": True, "player_connected": True}
+
+
+async def _device_session(ws: WebSocket, agent: bool):
     await ws.accept()
     device_id = None
     ip = ""
@@ -363,9 +415,7 @@ async def device_websocket_endpoint(ws: WebSocket):
         device = await device_manager.add_or_update(
             device_id,
             ip=ip or "unknown",
-            player_connected=True,
-            ws_connected=True,
-            **_register_kwargs(msg),
+            **{**_register_kwargs(msg), **_link_kwargs(agent, msg)},
         )
         # DeviceManager may have aliased this ID onto an already-known device; keep the
         # socket registered under the same ID the rest of the server will look up.
@@ -380,7 +430,9 @@ async def device_websocket_endpoint(ws: WebSocket):
             await device_manager.apply_device_name_from_device(device_id, msg.get("deviceName"))
 
         await push_headset_settings([device_id])
-        logger.info("Device %s registered via WS from %s", device_id, ip)
+        logger.info("Device %s registered via %s from %s", device_id, "agent" if agent else "WS", ip)
+        if agent:
+            await apply_agent_files(device_id, msg.get("files"))
         await check_requirements(device_id)
 
         while True:
@@ -393,12 +445,12 @@ async def device_websocket_endpoint(ws: WebSocket):
                 await device_manager.add_or_update(
                     device_id,
                     ip=new_ip or ip or "unknown",
-                    player_connected=True,
-                    ws_connected=True,
-                    **status_to_kwargs(msg),
+                    **{**status_to_kwargs(msg), **_link_kwargs(agent, msg)},
                 )
                 if "deviceName" in msg:
                     await device_manager.apply_device_name_from_device(device_id, msg.get("deviceName"))
+                if agent:
+                    await apply_agent_files(device_id, msg.get("files"))
                 await pending_stops.reconcile(device_id, new_ip or ip, msg.get("state"))
 
             elif msg_type == "register":
@@ -406,9 +458,7 @@ async def device_websocket_endpoint(ws: WebSocket):
                 await device_manager.add_or_update(
                     device_id,
                     ip=ip or "unknown",
-                    player_connected=True,
-                    ws_connected=True,
-                    **_register_kwargs(msg),
+                    **{**_register_kwargs(msg), **_link_kwargs(agent, msg)},
                 )
                 if "deviceName" in msg:
                     await device_manager.apply_device_name_from_device(device_id, msg.get("deviceName"))

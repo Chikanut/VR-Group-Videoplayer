@@ -1,7 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useDeviceStore from '../store/deviceStore';
-import { getGlobalVolume, playbackCommand, playbackSeek, setAutostart, setGlobalVolume } from '../api';
+import {
+  getGlobalVolume,
+  playbackCommand,
+  playbackSeek,
+  playerAction,
+  setAutostart,
+  setGlobalVolume,
+  syncContent,
+} from '../api';
 import { useI18n } from '../i18n';
 
 export default function TopControlPanel({ onPlayAll, panelRef }) {
@@ -21,6 +29,40 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
   const label = (all, one) => (scoped ? `${t(one)} (${selectedDevices.length})` : t(all));
   const [autostartResult, setAutostartResult] = useState('');
   const hasCommandTargets = commandTargets.length > 0;
+  // Headset agents (player 1.9.0+) answer with the player closed.
+  const agentTargets = scopeDevices.filter((device) => device.online && device.agentConnected);
+  const hasAgentTargets = agentTargets.length > 0;
+  const [agentResult, setAgentResult] = useState('');
+
+  const showAgentResult = (text) => {
+    setAgentResult(text);
+    setTimeout(() => setAgentResult(''), 5000);
+  };
+
+  const runPlayerAction = async (action, doneLabel) => {
+    try {
+      const result = await playerAction(action, scopeIds);
+      showAgentResult(`${t(doneLabel)}: ${result.success.length}`);
+    } catch {
+      showAgentResult(t('Command failed'));
+    }
+  };
+
+  const runSync = async () => {
+    try {
+      const result = await syncContent(scopeIds);
+      if (result.success === false) {
+        showAgentResult(t(result.error || 'Command failed'));
+        return;
+      }
+      const missing = result.missingInLibrary?.length
+        ? ` · ${t('Not in the library')}: ${result.missingInLibrary.join(', ')}`
+        : '';
+      showAgentResult(`${t('Sync sent to headsets')}: ${result.sent}${missing}`);
+    } catch {
+      showAgentResult(t('Command failed'));
+    }
+  };
   const isAndroidRuntime = config?.isAndroidRuntime === true;
   const debounceRef = useRef({});
   const volumeDebounceRef = useRef(null);
@@ -130,7 +172,7 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
         </button>
         <button
           className="btn"
-          disabled={!hasCommandTargets}
+          disabled={!hasCommandTargets && !hasAgentTargets}
           title={t('Sleep hint')}
           onClick={() => debounce('sleepAll', () => playbackCommand('sleep', scopeIds))}
         >
@@ -159,6 +201,40 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
           {label('Disable autostart', 'Disable autostart')}
         </button>
         {autostartResult && <span className="device-count">{autostartResult}</span>}
+
+        <button
+          className="btn"
+          disabled={!hasAgentTargets}
+          title={t('Open player hint')}
+          onClick={() => debounce('launchPlayer', () => runPlayerAction('launch', 'Open sent'))}
+        >
+          {label('Open player', 'Open player')}
+        </button>
+        <button
+          className="btn"
+          disabled={!hasAgentTargets}
+          title={t('Restart player hint')}
+          onClick={() => debounce('restartPlayer', () => runPlayerAction('restart', 'Restart sent'))}
+        >
+          {label('Restart player', 'Restart player')}
+        </button>
+        <button
+          className="btn"
+          disabled={!hasAgentTargets}
+          title={t('Close player hint')}
+          onClick={() => debounce('closePlayer', () => runPlayerAction('close', 'Close sent'))}
+        >
+          {label('Close player', 'Close player')}
+        </button>
+        <button
+          className="btn"
+          disabled={!hasAgentTargets}
+          title={t('Sync content hint')}
+          onClick={() => debounce('syncContent', runSync)}
+        >
+          {label('Sync content', 'Sync content')}
+        </button>
+        {agentResult && <span className="device-count">{agentResult}</span>}
         {scoped && (
           <button className="btn btn-dim" onClick={clearSelection} title={t('Commands go to the ticked headsets only')}>
             {t('Selected: {count}', { count: selectedDevices.length })} ✕
