@@ -1,3 +1,5 @@
+using System.Net;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.UI;
 #if UNITY_EDITOR
@@ -18,6 +20,16 @@ namespace VRClassroom
         private Text _nameText;
 
         private Text _version;
+        private Text _autostartText;
+
+        // In-headset autostart switch (no controllers in class): hold an index pinch on BOTH
+        // hands for AutostartHoldSec while the HUD is up. Asks the watchdog on :8081, like the server does.
+        private const float AutostartHoldSec = 3f;
+        private const float AutostartPollSec = 10f;
+        private float _pinchStart = -1f;
+        private float _nextAutostartPoll;
+        private volatile int _autostart = -1; // -1 unknown, 0 off, 1 on (written by the HTTP task)
+        private volatile bool _autostartBusy;
 
         private const float CanvasDistance = 3f;
         private const float CanvasScale = 0.005f;
@@ -78,6 +90,85 @@ namespace VRClassroom
             }
 
             StatusReporter.OnDeviceNameChanged -= HandleDeviceNameChanged;
+        }
+
+        private void Update()
+        {
+            if (!_canvas.gameObject.activeSelf)
+            {
+                _pinchStart = -1f;
+                return;
+            }
+
+            float now = Time.unscaledTime;
+            if (now >= _nextAutostartPoll && !_autostartBusy)
+            {
+                _nextAutostartPoll = now + AutostartPollSec;
+                AutostartRequest("GET", "/autostart");
+            }
+
+            string hold = "";
+            if (IsIndexPinching(OVRPlugin.Hand.HandLeft) && IsIndexPinching(OVRPlugin.Hand.HandRight))
+            {
+                if (_pinchStart < 0f) _pinchStart = now;
+                float left = AutostartHoldSec - (now - _pinchStart);
+                if (left <= 0f)
+                {
+                    _pinchStart = float.MaxValue; // once per hold: release to toggle again
+                    if (!_autostartBusy && _autostart >= 0)
+                        AutostartRequest("POST", _autostart == 1 ? "/autostart/off" : "/autostart/on");
+                }
+                else if (_pinchStart != float.MaxValue)
+                {
+                    hold = $"  ({Mathf.CeilToInt(left)}...)";
+                }
+            }
+            else
+            {
+                _pinchStart = -1f;
+            }
+
+            _autostartText.text = (_autostart < 0 ? "Autostart: ?" : _autostart == 1 ? "Autostart: ON" : "Autostart: OFF") + hold;
+        }
+
+        private static bool IsIndexPinching(OVRPlugin.Hand hand)
+        {
+            var state = new OVRPlugin.HandState();
+            return OVRPlugin.GetHandState(OVRPlugin.Step.Render, hand, ref state)
+                && (state.Status & OVRPlugin.HandStatus.HandTracked) != 0
+                && (state.Pinches & OVRPlugin.HandFingerPinch.Index) != 0;
+        }
+
+        // Off the main thread: only touches the volatile fields above.
+        private void AutostartRequest(string method, string path)
+        {
+            _autostartBusy = true;
+            Task.Run(() =>
+            {
+                try
+                {
+                    var request = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:8081" + path);
+                    request.Method = method;
+                    request.Timeout = 3000;
+                    if (method == "POST") request.ContentLength = 0;
+                    using (var response = (HttpWebResponse)request.GetResponse())
+                    using (var reader = new System.IO.StreamReader(response.GetResponseStream()))
+                    {
+                        string body = reader.ReadToEnd();
+                        _autostart = body.Contains("\"autostart\":true") ? 1 : body.Contains("\"autostart\":false") ? 0 : -1;
+                    }
+                    if (method == "POST") Debug.Log($"[PlayerHUD] Autostart switched by hand gesture: {path}");
+                }
+                catch (System.Exception e)
+                {
+                    _autostart = -1; // watchdog not running (editor, or player older than 1.8.2)
+                    if (method == "POST") Debug.LogWarning($"[PlayerHUD] Autostart switch failed: {e.Message}");
+                }
+                finally
+                {
+                    _autostartBusy = false;
+                }
+            });
         }
 
         private void HandleDeviceNameChanged(string name)
@@ -329,6 +420,12 @@ namespace VRClassroom
 
             _version = CreateText(canvasTransform, "VersionText",  new Vector2(1f, 0f), new Vector2(1f, 0f), new Vector2(-100f, 15f), new Vector2(700f, 50f), 28, TextAnchor.MiddleCenter);
             _version.color = new Color(0.7f, 0.7f, 0.7f, 1f);
+
+            // Autostart state (bottom-left); toggled by holding a pinch on both hands.
+            _autostartText = CreateText(canvasTransform, "AutostartText",
+                new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(170f, 15f),
+                new Vector2(320f, 50f), 28, TextAnchor.MiddleLeft);
+            _autostartText.color = new Color(0.7f, 0.7f, 0.7f, 1f);
 
             // Device name / number (top-left corner, large so it is readable at a glance)
             _nameText = CreateText(canvasTransform, "DeviceNameText",

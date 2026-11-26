@@ -26,6 +26,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.request
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, scrolledtext
 from threading import Thread, Event
@@ -39,6 +40,8 @@ from pathlib import Path
 SCRIPT_DIR = Path(os.path.dirname(os.path.abspath(sys.argv[0])))
 CONFIG_FILE = SCRIPT_DIR / "quest_deploy_config.json"
 PLAYER_PACKAGE = "com.vrclass.player"
+# Що робити з автозапуском плеєра під час налаштування (значення лежать у конфігу як є).
+AUTOSTART_KEEP, AUTOSTART_ON, AUTOSTART_OFF = "не змінювати", "увімкнути", "вимкнути"
 LOG_FILE = SCRIPT_DIR / "quest_deploy.log"
 
 DEFAULT_CONFIG = {
@@ -267,7 +270,7 @@ class ADB:
         code, out, err = self.run("install", "-r", "-g", apk_path, serial=serial, timeout=300)
         return code, out, err
 
-    def setup_player(self, serial, apk_path, package_name):
+    def setup_player(self, serial, apk_path, package_name, autostart=None):
         """Одноразове налаштування плеєра для автозапуску і тихого самооновлення.
 
         - плеєр має бути сам собі «інсталятором» (інакше самооновлення питає підтвердження
@@ -276,6 +279,8 @@ class ADB:
         - дозвіл встановлювати APK для самооновлення;
         - WRITE_SECURE_SETTINGS: плеєр сам застосовує системні налаштування, які задає сервер
           (Налаштування → «Системні налаштування окулярів»), тож кабель для них більше не потрібен.
+        autostart: True/False вмикає/вимикає автозапуск плеєра сторожем (потім його можна
+        перемкнути з сервера), None не чіпає.
         Оновлювач Meta вимкнути не можна: `pm disable-user com.oculus.updater` на Horizon OS v209
         відповідає "Cannot disable a protected package".
         Повертає список помилок (порожній = все добре).
@@ -294,10 +299,48 @@ class ADB:
                                   "android.permission.WRITE_SECURE_SETTINGS", serial=serial, timeout=20)
         if code != 0 or "Exception" in out + err:
             errors.append(f"grant WRITE_SECURE_SETTINGS (потрібен плеєр 1.8.3+): {(err or out).strip()[:200]}")
+        # Роутер без інтернету, що перенаправляє перевірку зв'язку, Quest вважає мережею «з входом»
+        # (captive portal). Ставимо одразу по кабелю, щоб діяло ще до першого підключення до
+        # сервера (той самий рядок є в його профілі налаштувань). Скасувати:
+        # adb shell settings delete global captive_portal_mode
+        code, out, err = self.run("shell", "settings", "put", "global", "captive_portal_mode", "0",
+                                  serial=serial, timeout=20)
+        if code != 0 or (err or out).strip():
+            errors.append(f"captive_portal_mode: {(err or out).strip()[:200]}")
         # Стартуємо сторожа: він відкриє плеєр, щойно окуляри вдягнуть (поки вони лежать,
         # Quest не відкриває жодних додатків).
         self.run("shell", "am", "broadcast", "-n", f"{package_name}/.BootReceiver", serial=serial, timeout=20)
+        if autostart is not None:
+            error = self.set_autostart(serial, autostart)
+            if error:
+                errors.append(f"автозапуск (потрібен плеєр 1.8.2+): {error}")
         return errors
+
+    def set_autostart(self, serial, enabled):
+        """Перемикає автозапуск через сторожа плеєра (порт 8081 окулярів, прокинутий по USB).
+
+        Прапорець лежить у приватній теці застосунку, куди adb не пише, тому просимо самого
+        сторожа. Повертає текст помилки або None.
+        """
+        code, out, err = self.run("forward", "tcp:0", "tcp:8081", serial=serial, timeout=10)
+        port = out.strip()
+        if code != 0 or not port.isdigit():
+            return (err or out).strip() or "adb forward не вдався"
+        url = f"http://127.0.0.1:{port}/autostart/{'on' if enabled else 'off'}"
+        error = "сторож не відповів"
+        try:
+            for _ in range(8):  # сторож щойно запущено, даємо йому піднятись
+                try:
+                    with urllib.request.urlopen(urllib.request.Request(url, method="POST"), timeout=3) as resp:
+                        if json.load(resp).get("autostart") is enabled:
+                            return None
+                        error = "сторож не змінив стан"
+                except Exception as exc:
+                    error = str(exc)
+                time.sleep(1)
+            return error
+        finally:
+            self.run("forward", "--remove", f"tcp:{port}", serial=serial, timeout=10)
 
     def uninstall_package(self, serial, package_name):
         """adb uninstall. Видаляє застосунок разом з його даними."""
@@ -614,6 +657,14 @@ class QuestDeployApp:
                         variable=self.force_reinstall_var,
                         command=self.save_deploy_options).pack(side="left", padx=2)
 
+        ttk.Separator(frame_deploy, orient="vertical").pack(side="left", fill="y", padx=8)
+        ttk.Label(frame_deploy, text="Автозапуск плеєра:").pack(side="left", padx=(0, 3))
+        self.autostart_var = tk.StringVar(value=self.config.get("autostart", AUTOSTART_KEEP))
+        autostart_box = ttk.Combobox(frame_deploy, textvariable=self.autostart_var, state="readonly", width=14,
+                                     values=(AUTOSTART_KEEP, AUTOSTART_ON, AUTOSTART_OFF))
+        autostart_box.pack(side="left", padx=2)
+        autostart_box.bind("<<ComboboxSelected>>", lambda _event: self.save_deploy_options())
+
         # Лог
         self.log_text = scrolledtext.ScrolledText(frame_bottom, height=8, font=("Consolas", 9),
                                                    state="disabled", wrap="word")
@@ -852,6 +903,7 @@ class QuestDeployApp:
     def save_deploy_options(self):
         self.config["deploy_content"] = self.deploy_content_var.get()
         self.config["force_reinstall"] = self.force_reinstall_var.get()
+        self.config["autostart"] = self.autostart_var.get()
         save_config(self.config)
 
     # ── Wi-Fi ─────────────────────────────────────────────
@@ -1218,11 +1270,14 @@ class QuestDeployApp:
 
     def _setup_player(self, serial, apk_path):
         self.update_current("Налаштовую автозапуск і самооновлення…", -1)
-        errors = self.adb.setup_player(serial, apk_path, PLAYER_PACKAGE)
+        choice = self.autostart_var.get()
+        autostart = {AUTOSTART_ON: True, AUTOSTART_OFF: False}.get(choice)
+        errors = self.adb.setup_player(serial, apk_path, PLAYER_PACKAGE, autostart=autostart)
         if errors:
             self.log(f"  ✗ Налаштування плеєра: {'; '.join(errors)}")
         else:
-            self.log("  ✓ Плеєр налаштовано: автозапуск, тихе оновлення, системні налаштування з сервера")
+            self.log("  ✓ Плеєр налаштовано: тихе оновлення, мережа без інтернету, системні налаштування з сервера, "
+                     f"автозапуск — {choice}")
 
     def _uninstall(self, serial, pkg):
         code, out, err = self.adb.uninstall_package(serial, pkg)

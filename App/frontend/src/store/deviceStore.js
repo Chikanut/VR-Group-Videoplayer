@@ -17,6 +17,15 @@ const useDeviceStore = create((set, get) => ({
   config: null,
   connected: false,
   loading: true,
+  selectedIds: {}, // deviceId -> true; tiles ticked for the top-panel commands
+
+  toggleSelected: (deviceId) => set((state) => {
+    const selectedIds = { ...state.selectedIds };
+    if (selectedIds[deviceId]) delete selectedIds[deviceId];
+    else selectedIds[deviceId] = true;
+    return { selectedIds };
+  }),
+  clearSelection: () => set({ selectedIds: {} }),
 
   setConnected: (connected) => set({ connected }),
   setLoading: (loading) => set({ loading }),
@@ -56,7 +65,9 @@ const useDeviceStore = create((set, get) => ({
     set((state) => {
       const devices = { ...state.devices };
       delete devices[deviceId];
-      return { devices };
+      const selectedIds = { ...state.selectedIds };
+      delete selectedIds[deviceId];
+      return { devices, selectedIds };
     });
   },
 

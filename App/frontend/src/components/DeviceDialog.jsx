@@ -1,17 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import useDeviceStore from '../store/deviceStore';
 import {
+  getAutostart,
+  setAutostart,
   getRequirements,
   pingDevice,
-  playbackCommand,
-  playbackSeek,
   setDeviceName,
   setDeviceVolume,
   toggleDeviceDebug,
 } from '../api';
 import { useI18n } from '../i18n';
 
-export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
+export default function DeviceDialog({ deviceId, onClose }) {
   const { t } = useI18n();
   const device = useDeviceStore((state) => state.devices[deviceId]);
   const [editName, setEditName] = useState('');
@@ -21,9 +21,28 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
   const [loadingReqs, setLoadingReqs] = useState(false);
   const [personalVolume, setPersonalVolume] = useState(1);
   const volumeDebounceRef = useRef(null);
-  const [seekValue, setSeekValue] = useState(0);
-  const [seeking, setSeeking] = useState(false);
-  const seekDebounceRef = useRef(null);
+  const [autostart, setAutostartState] = useState(undefined); // undefined = asking, null = unknown
+
+  // Asked from the headset's watchdog each time the card opens: it answers even with the player closed.
+  useEffect(() => {
+    let cancelled = false;
+    setAutostartState(undefined);
+    getAutostart(deviceId)
+      .then((result) => { if (!cancelled) setAutostartState(result.autostart ?? null); })
+      .catch(() => { if (!cancelled) setAutostartState(null); });
+    return () => { cancelled = true; };
+  }, [deviceId]);
+
+  const toggleAutostart = async () => {
+    const wanted = !autostart;
+    setAutostartState(undefined);
+    try {
+      const result = await setAutostart(wanted, [deviceId]);
+      setAutostartState(result.success.length ? wanted : null);
+    } catch {
+      setAutostartState(null);
+    }
+  };
 
   useEffect(() => {
     if (device) {
@@ -32,15 +51,6 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
       setRequirements(device.requirementsDetail || null);
     }
   }, [device]);
-
-  const playbackTime = device?.playbackTime || 0;
-
-  // Follow live playback unless the user is actively dragging the seek slider.
-  useEffect(() => {
-    if (!seeking) {
-      setSeekValue(playbackTime);
-    }
-  }, [playbackTime, seeking]);
 
   const loadRequirements = async () => {
     setLoadingReqs(true);
@@ -161,6 +171,17 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
                   {device.playerConnected ? `${t('Connected')} (v${device.playerVersion || '-'})` : t('Player offline')}
                 </td>
               </tr>
+              <tr>
+                <td>{t('Player autostart')}</td>
+                <td className={autostart === true ? 'text-ok' : 'text-warn'}>
+                  {autostart === undefined ? '…' : t(autostart === null ? 'Autostart unknown' : autostart ? 'Autostart on' : 'Autostart off')}
+                  {typeof autostart === 'boolean' && (
+                    <button className="btn btn-dim" style={{ marginLeft: 8 }} onClick={toggleAutostart}>
+                      {t(autostart ? 'Disable' : 'Enable')}
+                    </button>
+                  )}
+                </td>
+              </tr>
               {device.settingsProfile && (
                 <tr>
                   <td>{t('Headset system settings')}</td>
@@ -225,23 +246,19 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
         </div>
 
         <div className="dialog-section">
-          <h3>{t('Playback Controls')}</h3>
+          <h3>{t('Playback')}</h3>
+          <p className="dialog-playback-info">
+            {t('State')}: <strong>{device.playbackState}</strong>
+            {device.playbackState !== 'idle' && <> | {t('Mode')}: <strong>{device.currentMode}</strong>{device.loop && ` | ${t('Loop')}`}</>}
+          </p>
+          {device.currentVideo && device.playbackState !== 'idle' && (
+            <p className="dialog-playback-info">
+              {t('File')}: {device.currentVideo}
+              {device.playbackDuration > 0 && ` (${formatTime(device.playbackTime || 0)} / ${formatTime(device.playbackDuration)})`}
+            </p>
+          )}
+          <p className="dialog-playback-info">{t('Commands hint')}</p>
           <div className="dialog-controls">
-            <button className="btn btn-success" disabled={!device.online || !device.playerConnected} onClick={onPlayVideo}>
-              {t('Open Video')}
-            </button>
-            <button className="btn" disabled={!device.online || !device.playerConnected} onClick={() => playbackCommand('play', [deviceId])}>
-              {t('Play')}
-            </button>
-            <button className="btn" disabled={!device.online || !device.playerConnected} onClick={() => playbackCommand('pause', [deviceId])}>
-              {t('Pause')}
-            </button>
-            <button className="btn" disabled={!device.online || !device.playerConnected} onClick={() => playbackCommand('stop', [deviceId])}>
-              {t('Stop')}
-            </button>
-            <button className="btn" disabled={!device.online || !device.playerConnected} onClick={() => playbackCommand('recenter', [deviceId])}>
-              {t('Recenter')}
-            </button>
             <button className="btn" disabled={!device.online || !device.playerConnected} onClick={() => pingDevice(deviceId)}>
               {t('Ping')}
             </button>
@@ -254,49 +271,6 @@ export default function DeviceDialog({ deviceId, onClose, onPlayVideo }) {
               {t('Debug')}
             </button>
           </div>
-
-          {device.playbackState !== 'idle' && (
-            <div className="dialog-playback-info">
-              <p>
-                {t('State')}: <strong>{device.playbackState}</strong> | {t('Mode')}: <strong>{device.currentMode}</strong>
-                {device.loop && ` | ${t('Loop')}`}
-              </p>
-              {device.currentVideo && <p>{t('File')}: {device.currentVideo}</p>}
-              {device.playbackDuration > 0 && (
-                <div className="seek-control device-seek-control">
-                  <input
-                    type="range"
-                    min="0"
-                    max={device.playbackDuration}
-                    step="0.1"
-                    value={seekValue}
-                    disabled={!device.online || !device.playerConnected}
-                    onChange={(event) => {
-                      const value = Number(event.target.value);
-                      setSeeking(true);
-                      setSeekValue(value);
-                      if (seekDebounceRef.current) {
-                        clearTimeout(seekDebounceRef.current);
-                      }
-                      seekDebounceRef.current = setTimeout(async () => {
-                        // Hold the slider at the requested position until the server has
-                        // sent the seek and broadcast the new playbackTime; otherwise the
-                        // live-follow effect snaps it back to the stale pre-seek time.
-                        try {
-                          await playbackSeek(value, [deviceId]);
-                        } catch {}
-                        setSeekValue(value);
-                        setSeeking(false);
-                      }, 200);
-                    }}
-                  />
-                  <span className="seek-time">
-                    {formatTime(seekValue)} / {formatTime(device.playbackDuration)}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
     </div>

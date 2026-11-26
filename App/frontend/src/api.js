@@ -57,6 +57,10 @@ export async function updatePlayers() {
   return request('/player/update', { method: 'POST' });
 }
 
+export async function getAutostart(id) {
+  return request(`/devices/${id}/autostart`);
+}
+
 export async function setAutostart(enabled, deviceIds = []) {
   return request(`/devices/autostart/${enabled ? 'on' : 'off'}`, {
     method: 'POST',

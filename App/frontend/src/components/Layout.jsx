@@ -35,13 +35,8 @@ export default function Layout() {
     };
   }, []);
 
-  const handlePlayAll = () => {
-    setVideoSelectorDeviceIds([]);
-    setVideoSelectorOpen(true);
-  };
-
-  const handlePlaySingle = (deviceId) => {
-    setVideoSelectorDeviceIds([deviceId]);
+  const handlePlayAll = (deviceIds) => {
+    setVideoSelectorDeviceIds(deviceIds);
     setVideoSelectorOpen(true);
   };
 
@@ -72,7 +67,6 @@ export default function Layout() {
         <DeviceDialog
           deviceId={selectedDeviceId}
           onClose={() => setSelectedDeviceId(null)}
-          onPlayVideo={() => handlePlaySingle(selectedDeviceId)}
         />
       )}
       {videoSelectorOpen && (

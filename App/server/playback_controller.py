@@ -204,6 +204,24 @@ async def wake_devices(device_ids: List[str]) -> Dict[str, Any]:
     return await _watchdog_command("/wake", device_ids)
 
 
+async def get_autostart(device_id: str) -> Dict[str, Any]:
+    """Ask the headset's watchdog whether it relaunches the player. autostart is None when unknown
+    (headset off, or a player older than 1.8.2)."""
+    device = await device_manager.get(device_id)
+    if not device:
+        return {"error": "Device not found"}
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"http://{device.ip}:{WAKE_PORT}/autostart",
+                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT),
+            ) as resp:
+                data = await resp.json(content_type=None) if resp.status == 200 else {}
+                return {"autostart": data.get("autostart")}
+    except Exception as exc:
+        return {"autostart": None, "error": str(exc) or type(exc).__name__}
+
+
 async def set_autostart(enabled: bool, device_ids: List[str]) -> Dict[str, Any]:
     """Switch the watchdog's relaunching of the player on/off (persists on the headset)."""
     return await _watchdog_command("/autostart/on" if enabled else "/autostart/off", device_ids)

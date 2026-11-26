@@ -35,6 +35,7 @@ from .models import (
     VolumeUpdate,
 )
 from .playback_controller import (
+    get_autostart,
     get_global_volume,
     open_video,
     ping_device,
@@ -211,6 +212,14 @@ async def remove_device(device_id: str):
 async def register_device(reg: DeviceRegistration):
     await handle_self_registration(_model_to_dict(reg))
     return {"ok": True}
+
+
+@app.get("/api/devices/{device_id}/autostart")
+async def device_autostart(device_id: str):
+    result = await get_autostart(device_id)
+    if result.get("error") == "Device not found":
+        return JSONResponse(result, status_code=404)
+    return result
 
 
 @app.post("/api/devices/{device_id}/ping")

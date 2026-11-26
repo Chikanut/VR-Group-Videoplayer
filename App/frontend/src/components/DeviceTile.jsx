@@ -50,6 +50,8 @@ export default function DeviceTile({ device, onClick }) {
   const threshold = config?.batteryThreshold || 20;
   const isLowBattery = device.battery > 0 && device.battery <= threshold;
   const isPlaying = device.playbackState === 'playing' || device.playbackState === 'paused';
+  const selected = useDeviceStore((state) => !!state.selectedIds[device.deviceId]);
+  const toggleSelected = useDeviceStore((state) => state.toggleSelected);
 
   const handlePing = (event) => {
     event.stopPropagation();
@@ -57,8 +59,16 @@ export default function DeviceTile({ device, onClick }) {
   };
 
   return (
-    <div className={`device-tile ${getBorderClass(device)}`} onClick={onClick}>
+    <div className={`device-tile ${getBorderClass(device)}${selected ? ' tile-selected' : ''}`} onClick={onClick}>
       <div className="tile-header">
+        <input
+          type="checkbox"
+          className="tile-select"
+          checked={selected}
+          title={t('Select for commands')}
+          onClick={(event) => event.stopPropagation()}
+          onChange={() => toggleSelected(device.deviceId)}
+        />
         <span className="tile-name" title={`${device.name || device.deviceId} (${device.deviceId})`}>
           {device.name || device.deviceId}
           {device.nameSource === 'pending' && (

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useDeviceStore from '../store/deviceStore';
-import { getGlobalVolume, playbackCommand, playbackSeek, setGlobalVolume } from '../api';
+import { getGlobalVolume, playbackCommand, playbackSeek, setAutostart, setGlobalVolume } from '../api';
 import { useI18n } from '../i18n';
 
 export default function TopControlPanel({ onPlayAll, panelRef }) {
@@ -10,7 +10,16 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
   const config = useDeviceStore((state) => state.config);
   const devices = useDeviceStore((state) => state.getDeviceList());
   const onlineDevices = devices.filter((device) => device.online);
-  const commandTargets = onlineDevices.filter((device) => device.playerConnected);
+  const selectedIds = useDeviceStore((state) => state.selectedIds);
+  const clearSelection = useDeviceStore((state) => state.clearSelection);
+  // Ticked tiles narrow every command; none or all ticked = whole class (empty deviceIds).
+  const selectedDevices = devices.filter((device) => selectedIds[device.deviceId]);
+  const scoped = selectedDevices.length > 0 && selectedDevices.length < devices.length;
+  const scopeIds = scoped ? selectedDevices.map((device) => device.deviceId) : [];
+  const scopeDevices = scoped ? selectedDevices : devices;
+  const commandTargets = scopeDevices.filter((device) => device.online && device.playerConnected);
+  const label = (all, one) => (scoped ? `${t(one)} (${selectedDevices.length})` : t(all));
+  const [autostartResult, setAutostartResult] = useState('');
   const hasCommandTargets = commandTargets.length > 0;
   const isAndroidRuntime = config?.isAndroidRuntime === true;
   const debounceRef = useRef({});
@@ -41,6 +50,16 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
       debounceRef.current[key] = false;
     }, 1000);
   }, []);
+
+  const switchAutostart = async (enabled) => {
+    try {
+      const result = await setAutostart(enabled, scopeIds);
+      setAutostartResult(`${t(enabled ? 'Autostart enabled' : 'Autostart disabled')}: ${result.success.length}`);
+    } catch {
+      setAutostartResult(t('Failed to switch autostart'));
+    }
+    setTimeout(() => setAutostartResult(''), 5000);
+  };
 
   useEffect(() => {
     const loadGlobalVolume = async () => {
@@ -77,53 +96,74 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
         <button
           className="btn btn-success"
           disabled={!hasCommandTargets}
-          onClick={() => debounce('playAll', onPlayAll)}
+          onClick={() => debounce('playAll', () => onPlayAll(scopeIds))}
         >
-          {t('Play All')}
+          {label('Play All', 'Play')}
         </button>
         <button
           className="btn"
           disabled={!hasCommandTargets}
-          onClick={() => debounce('pauseAll', () => playbackCommand('pause'))}
+          onClick={() => debounce('pauseAll', () => playbackCommand('pause', scopeIds))}
         >
-          {t('Pause All')}
+          {label('Pause All', 'Pause')}
         </button>
         <button
           className="btn"
           disabled={!hasCommandTargets}
-          onClick={() => debounce('resumeAll', () => playbackCommand('play'))}
+          onClick={() => debounce('resumeAll', () => playbackCommand('play', scopeIds))}
         >
-          {t('Resume All')}
+          {label('Resume All', 'Resume')}
         </button>
         <button
           className="btn"
           disabled={!hasCommandTargets}
-          onClick={() => debounce('stopAll', () => playbackCommand('stop'))}
+          onClick={() => debounce('stopAll', () => playbackCommand('stop', scopeIds))}
         >
-          {t('Stop All')}
+          {label('Stop All', 'Stop')}
         </button>
         <button
           className="btn"
           disabled={!hasCommandTargets}
-          onClick={() => debounce('recenterAll', () => playbackCommand('recenter'))}
+          onClick={() => debounce('recenterAll', () => playbackCommand('recenter', scopeIds))}
         >
-          {t('Recenter All')}
+          {label('Recenter All', 'Recenter')}
         </button>
         <button
           className="btn"
           disabled={!hasCommandTargets}
           title={t('Sleep hint')}
-          onClick={() => debounce('sleepAll', () => playbackCommand('sleep'))}
+          onClick={() => debounce('sleepAll', () => playbackCommand('sleep', scopeIds))}
         >
-          {t('Sleep All')}
+          {label('Sleep All', 'Sleep')}
         </button>
         <button
           className="btn"
           title={t('Wake hint')}
-          onClick={() => debounce('wakeAll', () => playbackCommand('wake'))}
+          onClick={() => debounce('wakeAll', () => playbackCommand('wake', scopeIds))}
         >
-          {t('Wake All')}
+          {label('Wake All', 'Wake')}
         </button>
+
+        <button
+          className="btn"
+          title={t('Autostart hint')}
+          onClick={() => debounce('autostartOn', () => switchAutostart(true))}
+        >
+          {label('Enable autostart', 'Enable autostart')}
+        </button>
+        <button
+          className="btn"
+          title={t('Autostart hint')}
+          onClick={() => debounce('autostartOff', () => switchAutostart(false))}
+        >
+          {label('Disable autostart', 'Disable autostart')}
+        </button>
+        {autostartResult && <span className="device-count">{autostartResult}</span>}
+        {scoped && (
+          <button className="btn btn-dim" onClick={clearSelection} title={t('Commands go to the ticked headsets only')}>
+            {t('Selected: {count}', { count: selectedDevices.length })} ✕
+          </button>
+        )}
 
         <div className="volume-control global-volume-control">
           <label htmlFor="global-volume-slider">{t('Global volume')}</label>
@@ -165,7 +205,7 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
               }
               seekDebounceRef.current = setTimeout(async () => {
                 try {
-                  await playbackSeek(value);
+                  await playbackSeek(value, scopeIds);
                 } catch {}
                 setSeekValue(value);
                 setSeeking(false);
