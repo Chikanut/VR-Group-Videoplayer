@@ -5,6 +5,8 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.app.usage.UsageEvents;
+import android.app.usage.UsageStatsManager;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -13,6 +15,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.os.SystemClock;
 import android.util.Log;
 
 import java.io.BufferedReader;
@@ -45,12 +48,17 @@ public class WatchdogService extends Service {
     private static final String TAG = "VRPlayerWatchdog";
     private static final String CHANNEL_ID = "watchdog";
     private static final long CHECK_INTERVAL_MS = 10000;
+    private static final long STORE_CHECK_MS = 3000;
+    private static final String META_STORE = "com.oculus.store";
     private static final int FOREGROUND_SERVICE_TYPE_SPECIAL_USE = 1 << 30; // ServiceInfo, API 34
     private static final int WAKE_PORT = 8081;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean started;
     private Agent agent;
+    private long usageQueriedUntil;     // wall clock: usage events read up to here
+    private boolean storeResumed;       // last Meta Store activity event was "resumed"
+    private long launchFailingSince; // elapsedRealtime of the first launch that did not bring the player up
 
     private final BroadcastReceiver screenOn = new BroadcastReceiver() {
         @Override
@@ -70,11 +78,57 @@ public class WatchdogService extends Service {
             if (!autostartOff(WatchdogService.this).exists() && !agent.holdRelaunch()
                     && getSystemService(PowerManager.class).isInteractive() && !isPlayerRunning()) {
                 Log.i(TAG, "Player not visible");
+                if (launchFailingSince == 0) launchFailingSince = SystemClock.elapsedRealtime();
                 Agent.launchPlayer(WatchdogService.this);
+            } else {
+                launchFailingSince = 0;
             }
+            // Quest silently queues launches while a system dialog is up (seen: Meta's first-time
+            // setup looping on a router without internet). The app cannot close it; the dashboard
+            // says so, and Deploy Manager "Recover" does it over USB.
+            agent.setLaunchFailingSince(launchFailingSince);
             handler.postDelayed(this, CHECK_INTERVAL_MS);
         }
     };
+
+    // Quest sometimes reopens the Meta Store panel over the player (restored after wake or a
+    // delayed launch). The player stays "visible" beside it, so the 10s check does not react,
+    // but launching the player again sends the Store to the background. Needs appop
+    // GET_USAGE_STATS (tools/quest_deploy.py setup_player); without it the events are empty.
+    private final Runnable storeGuard = new Runnable() {
+        @Override
+        public void run() {
+            try {
+                if (storeInFront() && !autostartOff(WatchdogService.this).exists() && !agent.holdRelaunch()
+                        && getSystemService(PowerManager.class).isInteractive()) {
+                    Log.i(TAG, "Meta Store in front of the player: bringing the player back");
+                    storeResumed = false; // until the Store is resumed again
+                    Agent.launchPlayer(WatchdogService.this);
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Store check failed: " + e);
+            }
+            handler.postDelayed(this, STORE_CHECK_MS);
+        }
+    };
+
+    private boolean storeInFront() {
+        UsageStatsManager usage = getSystemService(UsageStatsManager.class);
+        long now = System.currentTimeMillis();
+        long from = usageQueriedUntil == 0 ? now - 60000 : usageQueriedUntil;
+        usageQueriedUntil = now;
+        UsageEvents events = usage.queryEvents(from, now);
+        if (events == null) return false;
+        UsageEvents.Event event = new UsageEvents.Event();
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event);
+            if (!META_STORE.equals(event.getPackageName())) continue;
+            int type = event.getEventType();
+            if (type == UsageEvents.Event.ACTIVITY_RESUMED) storeResumed = true;
+            else if (type == UsageEvents.Event.ACTIVITY_PAUSED || type == UsageEvents.Event.ACTIVITY_STOPPED) storeResumed = false;
+        }
+        return storeResumed;
+    }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -91,6 +145,7 @@ public class WatchdogService extends Service {
             Log.i(TAG, "Watchdog started");
             agent = Agent.start(this);
             handler.postDelayed(check, CHECK_INTERVAL_MS);
+            handler.postDelayed(storeGuard, STORE_CHECK_MS);
             registerReceiver(screenOn, new IntentFilter(Intent.ACTION_SCREEN_ON), Context.RECEIVER_NOT_EXPORTED);
             startWakeListener();
         }

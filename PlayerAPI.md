@@ -276,7 +276,10 @@ curl -X POST http://<IP>:8080/media/scan \
 (`[{name,size}]` у `/sdcard/Movies`), `storageFreeMb`, `content` (прогрес завантажень:
 `state` = `idle|downloading|waiting|error`, `file`, `done`, `total`, `queued`, `error`) та `update`
 (`up to date`, `downloading N%`, `installing`, `failed: …`), `environment` (`default`, `custom`,
-`downloading`, `failed: …`). Без плеєра `state` = `closed`.
+`downloading`, `failed: …`), `launchBlockedSec` (скільки секунд сторож не може відкрити плеєр, хоча
+окуляри не сплять; 0 = усе гаразд, рахується після 90 с — зазвичай зависло системне вікно Quest). Без плеєра `state` = `closed`.
+Сторож (1.9.2+) також кожні 3 с перевіряє, чи не відкрився поверх плеєра магазин Meta (`com.oculus.store`),
+і тоді знову відкриває плеєр. Потрібен appop `GET_USAGE_STATS` (видає QuestDeployManager).
 `GET :8081/status` віддає той самий JSON (сервер пробує його, коли `:8080` мовчить).
 
 **Сервер → агент:** ті самі `{"type":"command",...}`. Агент сам виконує:

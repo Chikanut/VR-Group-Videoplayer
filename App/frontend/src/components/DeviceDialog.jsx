@@ -202,6 +202,12 @@ export default function DeviceDialog({ deviceId, onClose }) {
                   <td className={device.content.state === 'error' ? 'text-warn' : ''}>{contentText(device.content, t)}</td>
                 </tr>
               )}
+              {device.launchBlockedSec > 0 && (
+                <tr>
+                  <td>{t('Player launch')}</td>
+                  <td className="text-warn">{t('Launch blocked hint')}</td>
+                </tr>
+              )}
               {device.environmentStatus && (
                 <tr>
                   <td>{t('Environment')}</td>

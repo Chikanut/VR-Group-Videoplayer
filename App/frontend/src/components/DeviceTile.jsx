@@ -116,6 +116,12 @@ export default function DeviceTile({ device, onClick }) {
         </div>
       )}
 
+      {device.online && device.launchBlockedSec > 0 && (
+        <div className="tile-content req-fail" title={t('Launch blocked hint')}>
+          ⚠ {t('Player will not open: {minutes} min', { minutes: Math.max(1, Math.round(device.launchBlockedSec / 60)) })}
+        </div>
+      )}
+
       {device.online && device.updateStatus && device.updateStatus !== 'up to date' && (
         <div className={`tile-content ${device.updateStatus.startsWith('failed') ? 'req-fail' : ''}`} title={updateText(device.updateStatus, t)}>
           ⟳ {t('Player update')}: {updateText(device.updateStatus, t)}

@@ -47,6 +47,7 @@ STATUS_FIELD_MAP = {
     "content": "content",
     "update": "update_status",
     "environment": "environment_status",
+    "launchBlockedSec": "launch_blocked_sec",
 }
 
 

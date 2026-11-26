@@ -60,6 +60,8 @@
   <!-- Headset settings profile from the instructor server. Granted once over USB:
        adb shell pm grant com.vrclass.player android.permission.WRITE_SECURE_SETTINGS -->
   <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+  <!-- Watchdog: sees the Meta Store opening over the player (appop GET_USAGE_STATS, granted over USB) -->
+  <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
 
   <uses-feature android:name="android.hardware.vr.headtracking" android:version="1" android:required="true" />
   <horizonos:uses-horizonos-sdk horizonos:minSdkVersion="60" horizonos:targetSdkVersion="85" />

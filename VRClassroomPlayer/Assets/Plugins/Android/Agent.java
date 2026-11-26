@@ -60,6 +60,7 @@ final class Agent {
     private static final int SERVER_PORT = 8000;
     static final int PLAYER_LINK_PORT = 8082;
     private static final long STATUS_INTERVAL_MS = 5000;
+    private static final long LAUNCH_BLOCKED_AFTER_SEC = 90; // a normal launch takes seconds; a Guardian prompt after wake less than this
     private static final long KEEP_AWAKE_RELEASE_MS = 60000;
     private static final long WAKE_DISCOVERY_HOLD_MS = 30000;
     private static final long REMOTE_WAKE_WINDOW_MS = 60000;
@@ -131,6 +132,15 @@ final class Agent {
 
     boolean holdRelaunch() {
         return holdRelaunch;
+    }
+
+    private volatile long launchFailingSince;
+
+    /** WatchdogService: since when its launches do not bring the player up (0 = fine). */
+    void setLaunchFailingSince(long elapsedRealtime) {
+        boolean changed = (launchFailingSince == 0) != (elapsedRealtime == 0);
+        launchFailingSince = elapsedRealtime;
+        if (changed && elapsedRealtime == 0) sendStatus();
     }
 
     String statusJson() {
@@ -250,6 +260,9 @@ final class Agent {
             s.put("ip", localIp());
             s.put("playerRunning", linked);
             s.put("autostart", !WatchdogService.autostartOff(context).exists());
+            long failing = launchFailingSince;
+            long failingSec = failing == 0 ? 0 : (SystemClock.elapsedRealtime() - failing) / 1000;
+            s.put("launchBlockedSec", failingSec >= LAUNCH_BLOCKED_AFTER_SEC ? failingSec : 0);
             s.put("settingsProfile", settingsProfile);
             Intent battery = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
             if (battery != null) {

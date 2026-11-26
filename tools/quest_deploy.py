@@ -40,6 +40,11 @@ from pathlib import Path
 SCRIPT_DIR = Path(os.path.dirname(os.path.abspath(sys.argv[0])))
 CONFIG_FILE = SCRIPT_DIR / "quest_deploy_config.json"
 PLAYER_PACKAGE = "com.vrclass.player"
+# Перша настройка Meta. На роутері без інтернету вона нескінченно перевіряє portal.fb.com,
+# і поки вона відкрита, Quest нічого не показує і блокує запуск будь-яких додатків
+# (logcat: "Launch is blocked because: a Reprojected OS dialog is currently showing").
+# Окуляри вже налаштовані, тож її можна вимкнути; повернути: adb shell pm enable com.oculus.firsttimenux
+META_FIRST_TIME_SETUP = "com.oculus.firsttimenux"
 # Що робити з автозапуском плеєра під час налаштування (значення лежать у конфігу як є).
 AUTOSTART_KEEP, AUTOSTART_ON, AUTOSTART_OFF = "не змінювати", "увімкнути", "вимкнути"
 LOG_FILE = SCRIPT_DIR / "quest_deploy.log"
@@ -293,7 +298,8 @@ class ADB:
                 errors.append(f"install -i: {(err or out).strip()}")
         # MANAGE_EXTERNAL_STORAGE: агент сам завантажує відео з сервера в /sdcard/Movies і може
         # замінити файли, які колись скопіювали кабелем (плеєр 1.9.0+).
-        for op in ("SYSTEM_ALERT_WINDOW", "REQUEST_INSTALL_PACKAGES", "MANAGE_EXTERNAL_STORAGE"):
+        # GET_USAGE_STATS: сторож бачить, що поверх плеєра відкрився магазин Meta, і повертає плеєр (1.9.2+).
+        for op in ("SYSTEM_ALERT_WINDOW", "REQUEST_INSTALL_PACKAGES", "MANAGE_EXTERNAL_STORAGE", "GET_USAGE_STATS"):
             code, out, err = self.run("shell", "appops", "set", package_name, op, "allow", serial=serial, timeout=20)
             if code != 0:
                 errors.append(f"appops {op}: {(err or out).strip()}")
@@ -309,6 +315,9 @@ class ADB:
                                   serial=serial, timeout=20)
         if code != 0 or (err or out).strip():
             errors.append(f"captive_portal_mode: {(err or out).strip()[:200]}")
+        error = self.disable_first_time_setup(serial)
+        if error:
+            errors.append(f"перша настройка Meta: {error}")
         # Стартуємо сторожа: він відкриє плеєр, щойно окуляри вдягнуть (поки вони лежать,
         # Quest не відкриває жодних додатків).
         self.run("shell", "am", "broadcast", "-n", f"{package_name}/.BootReceiver", serial=serial, timeout=20)
@@ -317,6 +326,38 @@ class ADB:
             if error:
                 errors.append(f"автозапуск (потрібен плеєр 1.8.2+): {error}")
         return errors
+
+    def disable_first_time_setup(self, serial):
+        """Вимикає першу настройку Meta (див. META_FIRST_TIME_SETUP). Повертає помилку або None.
+
+        Перевірено на Quest 3S, Horizon OS v209: вимикається, лишається вимкненою після
+        перезавантаження, сон / пробудження й головний екран працюють.
+        """
+        code, out, err = self.run("shell", "pm", "disable-user", "--user", "0", META_FIRST_TIME_SETUP,
+                                  serial=serial, timeout=20)
+        if code != 0 or "disabled" not in out + err:
+            return (err or out).strip()[:200] or "pm disable-user не вдався"
+        return None
+
+    def recover(self, serial, package_name):
+        """Знімає зависле системне вікно, яке не дає відкрити плеєр, і знову запускає сторожа.
+
+        Повертає список (ок, текст) для журналу.
+        """
+        steps = []
+        code, out, err = self.run("shell", "am", "force-stop", META_FIRST_TIME_SETUP, serial=serial, timeout=20)
+        steps.append((code == 0, "закрито першу настройку Meta" if code == 0 else f"force-stop: {(err or out).strip()}"))
+        self.run("shell", "am", "force-stop", "com.oculus.store", serial=serial, timeout=20)
+        error = self.disable_first_time_setup(serial)
+        steps.append((error is None, "першу настройку Meta вимкнено" if error is None else f"вимкнення: {error}"))
+        self.run("shell", "am", "broadcast", "-n", f"{package_name}/.BootReceiver", serial=serial, timeout=20)
+        code, out, err = self.run("shell", "monkey", "-p", package_name, "-c", "android.intent.category.LAUNCHER", "1",
+                                  serial=serial, timeout=20)
+        steps.append((code == 0, "плеєр запущено" if code == 0 else f"запуск плеєра: {(err or out).strip()[:200]}"))
+        return steps
+
+    def reboot(self, serial):
+        return self.run("reboot", serial=serial, timeout=20)
 
     def set_autostart(self, serial, enabled):
         """Перемикає автозапуск через сторожа плеєра (порт 8081 окулярів, прокинутий по USB).
@@ -487,6 +528,9 @@ class QuestDeployApp:
         frame_dev_btn.pack(fill="x", pady=5)
         ttk.Button(frame_dev_btn, text="Оновити", command=self.refresh_devices).pack(side="left", padx=3)
         ttk.Button(frame_dev_btn, text="Вибрати всі", command=self.select_all_devices).pack(side="left", padx=3)
+        ttk.Button(frame_dev_btn, text="🛠  Відновити (немає інтерфейсу / плеєр не відкривається)",
+                   command=self.recover_devices).pack(side="left", padx=3)
+        ttk.Button(frame_dev_btn, text="⟳  Перезавантажити", command=self.reboot_devices).pack(side="left", padx=3)
 
         # ── Вкладка: Файли ───────────────────────────────
         tab_files = ttk.Frame(notebook, padding=8)
@@ -1038,6 +1082,43 @@ class QuestDeployApp:
             self.log("═══ Застосування Wi-Fi завершено ═══")
 
         Thread(target=_apply, daemon=True).start()
+
+    def _target_devices(self):
+        devices = self.get_selected_devices() or list(self.dev_tree.get_children())
+        if not devices:
+            messagebox.showwarning("Увага", "Немає підключених пристроїв.")
+        return devices
+
+    def recover_devices(self):
+        """Окуляри працюють, але без інтерфейсу Quest і плеєр не відкривається (на панелі:
+        «Плеєр не відкривається»): закриває зависле системне вікно і запускає плеєр."""
+        devices = self._target_devices()
+        if not devices:
+            return
+
+        def _recover():
+            self.log("═══ Відновлення окулярів ═══")
+            for serial in devices:
+                model = self.config.get("devices", {}).get(serial, {}).get("name", serial)
+                for ok, text in self.adb.recover(serial, PLAYER_PACKAGE):
+                    self.log(f"  {'✓' if ok else '✗'} {model} ({serial}): {text}")
+            self.log("Якщо інтерфейс не повернувся за хвилину — «Перезавантажити».")
+
+        Thread(target=_recover, daemon=True).start()
+
+    def reboot_devices(self):
+        devices = self._target_devices()
+        if not devices or not messagebox.askyesno("Перезавантаження", f"Перезавантажити {len(devices)} окулярів?"):
+            return
+
+        def _reboot():
+            for serial in devices:
+                model = self.config.get("devices", {}).get(serial, {}).get("name", serial)
+                code, out, err = self.adb.reboot(serial)
+                self.log(f"  {'✓' if code == 0 else '✗'} {model} ({serial}): "
+                         f"{'перезавантажуються' if code == 0 else (err or out).strip()}")
+
+        Thread(target=_reboot, daemon=True).start()
 
     def enable_wireless_adb(self):
         """Перевести всі підключені пристрої в tcpip режим для wireless ADB."""
