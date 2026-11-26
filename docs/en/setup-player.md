@@ -1,42 +1,47 @@
 # Set Up the Quest Player
 
-## Goal
+The player is the app on each headset. It plays the videos, and a small agent inside it keeps the headset connected to the control panel, also while the player is closed or the headset sleeps.
 
-Install the VR player on each Meta Quest headset and confirm it is visible to the control panel.
+## Recommended: Deploy Manager
 
-## What You Need
+Install the player with [Deploy Manager](deploy-manager.md). Besides installing the APK, it does the one-time setup that silent updates, autostart and the system settings need, and it connects the headset to the classroom Wi-Fi.
 
-- a Meta Quest headset
-- `VRClassroomPlayer-Quest.apk` from [GitHub Releases](https://github.com/Chikanut/VR-Group-Videoplayer/releases/latest)
-- a way to install APK files on the headset
-- local network access
+1. Switch on Developer mode for the headset (Meta Horizon phone app).
+2. Add `VRClassroomPlayer-Quest.apk` in **Додатки (APK)** and the classroom network in **Wi-Fi**.
+3. Connect the headset by USB, allow USB debugging, and press **Розгорнути** (Deploy).
 
-## Installation Steps
+## Installing the APK by Hand
 
-1. Download `VRClassroomPlayer-Quest.apk`.
-2. Install the APK on the Meta Quest headset using your normal sideloading process.
-3. Launch the player app on the headset.
-4. Put on the headset and confirm the app opens without errors.
-5. Leave the app running while you continue setup.
+`adb install VRClassroomPlayer-Quest.apk` or SideQuest also work, but then the player:
 
-## First Launch Check
+- cannot update itself silently;
+- may not start by itself after a reboot;
+- cannot apply the headset system settings.
 
-The player should:
+Run Deploy once later to add these.
 
-- open its VR interface
-- show basic status information
-- be ready to receive control commands over the network
+## What You See in the Headset
 
-## After Installation
+While no video plays, the player shows its waiting room with a heads-up display:
 
-1. Connect the headset to the same Wi-Fi or LAN as the instructor device.
-2. Copy lesson videos to `/sdcard/Movies/`.
-3. Keep the player app open.
-4. Open the control panel and look for the headset in the device grid.
+- top left: the headset number or name;
+- the state and the control panel address;
+- bottom left: whether autostart is on.
 
-## Expected Result
+The waiting room is the logo model on a maroon sky, or your own colour and picture from **Settings → Headset environment**.
 
-The headset should appear in the control panel as an online device. Once videos are prepared, it should be ready for playback control.
+## Autostart
+
+With autostart on, the player opens by itself after the headset wakes up or reboots, and comes back if someone closes it. This is what a classroom normally wants. To use the headset for something else:
+
+- switch autostart off for one headset (device window), for the selected headsets or for the class (dashboard), or with Deploy Manager;
+- or, in the headset, hold a pinch with both index fingers for 3 seconds while no video plays.
+
+Autostart stays off across reboots until you switch it on again.
+
+## Finding the Control Panel
+
+The headset remembers the control panel address. On a new network it searches the local `/24` subnet for port 8000 by itself; the control panel also tells every headset it can see where it is. Nothing has to be typed in the headset.
 
 ## Next Step
 

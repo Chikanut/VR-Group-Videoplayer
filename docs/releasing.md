@@ -9,6 +9,13 @@ Upload release files with these exact names:
 - `VRClassroomPlayer-Quest.apk`
 - `VRClassroomControlPanel-Android.apk`
 - `VRClassroomControlPanel-Windows.exe`
+- `QuestDeployManager.exe`
+
+The update check in the control panel and Deploy Manager looks for these exact names in the latest release.
+
+## 0. Bump the Version
+
+Set the same version in `App/server/version.py`, `App/frontend/package.json`, `DEPLOY_VERSION` in `tools/quest_deploy.py`, `versionName`/`versionCode` in `App/android/chaquopy/app/build.gradle` and `bundleVersion`/`AndroidBundleVersionCode` in `VRClassroomPlayer/ProjectSettings/ProjectSettings.asset`. The release tag is the same version, for example `2.0.0`.
 
 ## 1. Build the Windows Control Panel
 
@@ -50,9 +57,18 @@ Rename before upload:
 
 - `VRClassroomVideoPlayer.apk` -> `VRClassroomPlayer-Quest.apk`
 
+## 3b. Build Deploy Manager
+
+```bat
+cd tools
+build.bat
+```
+
+Expected output: `tools/dist/QuestDeployManager.exe` (it bundles `tools/deploy_ui`).
+
 ## 4. Verify Before Publishing
 
-Check all three artifacts:
+Check all four artifacts:
 
 - Windows EXE starts the control panel
 - Android APK opens the embedded control panel
@@ -70,7 +86,7 @@ Check product behavior:
 1. Create a new GitHub Release from the repository Releases page.
 2. Use a clear version tag such as `v1.0.0`.
 3. Use the template in [release-notes-template.md](release-notes-template.md).
-4. Upload all three assets.
+4. Upload all four assets.
 5. Mark in the release body which asset is for Quest, Android, and Windows.
 
 ## 6. Final Public Check
@@ -80,5 +96,5 @@ After publishing:
 1. Open the repository as a public visitor.
 2. Open `README.md`.
 3. Click the Releases link.
-4. Confirm all three files are present with the public names.
+4. Confirm all four files are present with the public names.
 5. Confirm the English and Ukrainian documentation links still work.

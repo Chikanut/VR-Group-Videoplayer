@@ -1,44 +1,27 @@
 # Завантаження
 
-Усі публічні інсталяційні файли доступні на сторінці [GitHub Releases](https://github.com/Chikanut/VR-Group-Videoplayer/releases/latest).
+Усе завантажуйте з [GitHub Releases](https://github.com/Chikanut/VR-Group-Videoplayer/releases/latest).
 
-## Який файл потрібен
-
-| Файл | Платформа | Для чого |
+| Файл | Платформа | Призначення |
 |---|---|---|
-| `VRClassroomPlayer-Quest.apk` | Meta Quest | Player для кожної гарнітури |
-| `VRClassroomControlPanel-Android.apk` | Android | Панель керування для телефона або планшета |
-| `VRClassroomControlPanel-Windows.exe` | Windows | Панель керування для ПК або ноутбука |
+| `VRClassroomPlayer-Quest.apk` | Meta Quest | Плеєр для кожних окулярів |
+| `QuestDeployManager.exe` | Windows | Налаштування, відновлення і відкат окулярів через USB |
+| `VRClassroomControlPanel-Windows.exe` | Windows | Панель керування викладача на ПК |
+| `VRClassroomControlPanel-Android.apk` | Android | Панель керування викладача на телефоні чи планшеті |
 
-## Рекомендовані комбінації
+## Що потрібно
 
-### Невеликий клас
+- плеєр і Deploy Manager — завжди;
+- одна панель керування: Windows, якщо клас ведуть з ПК, Android — для телефона чи планшета.
 
-- одна панель керування на Windows або Android
-- один Quest player APK на кожну гарнітуру
+Панель також можна відкрити в браузері на будь-якому іншому пристрої в тій самій мережі.
 
-### Мобільний сценарій для викладача
+## Після першого встановлення
 
-- `VRClassroomControlPanel-Android.apk`
-- `VRClassroomPlayer-Quest.apk` для кожної гарнітури
+Повертатися сюди за оновленнями не треба: панель керування і Deploy Manager самі завантажують нові версії. Дивіться [Оновлення](updates.md).
 
-### Сценарій з ПК викладача
-
-- `VRClassroomControlPanel-Windows.exe`
-- `VRClassroomPlayer-Quest.apk` для кожної гарнітури
-
-## Перед завантаженням
-
-Переконайтеся, що ви знаєте:
-
-- скільки гарнітур потрібно підключити
-- чи буде викладач працювати з Windows або Android
-- чи можуть усі пристрої підключитися до однієї локальної мережі
-
-## Після завантаження
-
-Перейдіть далі:
+## Далі
 
 - [Швидкий старт](quick-start.md)
+- [Deploy Manager](deploy-manager.md)
 - [Налаштування панелі керування](setup-control-panel.md)
-- [Налаштування Quest player](setup-player.md)

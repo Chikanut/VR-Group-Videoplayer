@@ -11,6 +11,8 @@ import {
   toggleDeviceDebug,
 } from '../api';
 import { useI18n } from '../i18n';
+import Icon from './Icons';
+import { deviceStatus } from './DeviceTile';
 
 export default function DeviceDialog({ deviceId, onClose }) {
   const { t } = useI18n();
@@ -129,11 +131,17 @@ export default function DeviceDialog({ deviceId, onClose }) {
               autoFocus
             />
           ) : (
-            <h2 className="dialog-title" onClick={() => setEditingName(true)} title={t('Click to rename')}>
-              {device.name || device.deviceId}
-            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <h2 className="dialog-title" onClick={() => setEditingName(true)} title={t('Click to rename')}>
+                {device.name || device.deviceId}
+              </h2>
+              {(() => {
+                const [key, kind, title] = deviceStatus(device);
+                return <span className={`chip chip-${kind}`} title={title ? t(title) : undefined}><span className="chip-dot" />{t(key)}</span>;
+              })()}
+            </div>
           )}
-          <button className="btn-close" onClick={onClose}>x</button>
+          <button className="btn-close" aria-label={t('Close')} onClick={onClose}><Icon name="close" /></button>
         </div>
 
         {!device.online && <div className="dialog-warning">{t('Device is offline')}</div>}

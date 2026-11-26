@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quest Deploy Manager</title>
+<style>
+@font-face { font-family: 'Inter Variable'; font-weight: 100 900; src: url(fonts/inter-latin-wght-normal.woff2) format('woff2'); unicode-range: U+0000-00FF, U+2000-206F; }
+@font-face { font-family: 'Inter Variable'; font-weight: 100 900; src: url(fonts/inter-cyrillic-wght-normal.woff2) format('woff2'); unicode-range: U+0400-04FF; }
+@font-face { font-family: 'Manrope Variable'; font-weight: 200 800; src: url(fonts/manrope-latin-wght-normal.woff2) format('woff2'); unicode-range: U+0000-00FF, U+2000-206F; }
+@font-face { font-family: 'Manrope Variable'; font-weight: 200 800; src: url(fonts/manrope-cyrillic-wght-normal.woff2) format('woff2'); unicode-range: U+0400-04FF; }
+
+/* Same tokens as App/frontend/src/styles/globals.css (control panel): keep them in sync. */
+:root {
+  --bg: #0b0d12; --bg-bar: #0e1016; --bg-card: #12151c; --bg-raised: #171b24; --bg-raised-hover: #1e2330;
+  --border: #222734; --text: #e8eaf0; --text-2: #c9ceda; --text-dim: #8a92a6;
+  --primary: #3d5cf5; --primary-hover: #4b69ff; --accent: #9db2ff; --accent-bg: #172140; --accent-border: #2a4380;
+  --success: #7ee2b8; --success-bg: #10291f; --warning: #fbc560; --warning-bg: #2e2410;
+  --danger: #ff9b9b; --danger-bg: #33171a; --danger-fill: #b4232f; --offline-bg: #1c1f27;
+  --font: 'Inter Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Manrope Variable', 'Inter Variable', 'Segoe UI', sans-serif;
+  --font-mono: 'Cascadia Mono', Consolas, ui-monospace, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+:focus-visible { outline: 2px solid #6e8bff; outline-offset: 2px; }
+a { color: var(--accent); }
+input, select, textarea, button { font-family: inherit; }
+.mono { font-family: var(--font-mono); font-size: .92em; }
+.app { display: flex; min-height: 100%; }
+aside { width: 232px; flex: none; padding: 18px 14px; border-right: 1px solid #1c202b; background: var(--bg-bar); display: flex; flex-direction: column; gap: 18px; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 6px; }
+.brand-mark { width: 34px; height: 34px; border-radius: 10px; background: var(--primary); display: flex; align-items: center; justify-content: center; color: #fff; }
+.brand-title { font: 800 15px/1.1 var(--font-display); }
+.brand-sub { font-size: 12px; color: var(--text-dim); }
+.side { display: flex; flex-direction: column; gap: 2px; }
+.side button { display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 12px; border-radius: 9px; border: 0; background: transparent; color: #a8afbf; font: 500 14px var(--font); cursor: pointer; text-align: left; }
+.side button:hover { background: #151922; color: #fff; }
+.side button.on { background: #1a1e29; color: #fff; }
+.side svg { width: 16px; height: 16px; flex: none; }
+.side .pill { margin-left: auto; }
+main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.topbar { padding: 16px 24px; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #1c202b; flex-wrap: wrap; }
+h1 { font: 700 18px/1 var(--font-display); }
+h2 { font: 700 16px/1.2 var(--font-display); }
+.spacer { flex: 1 1 auto; }
+.content { flex: 1; padding: 20px 24px; display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+.col { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.card { border-radius: 14px; background: var(--bg-card); border: 1px solid var(--border); padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+.card.flush { padding: 0; overflow: hidden; }
+.lbl { font: 600 11px/1 var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--text-dim); }
+.hint { font-size: 12px; line-height: 1.5; color: var(--text-dim); }
+.row { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 38px; padding: 0 14px; border-radius: 10px; border: 1px solid #262b38; background: var(--bg-raised); color: var(--text); font: 500 13px/1 var(--font); cursor: pointer; white-space: nowrap; text-decoration: none; }
+.btn:hover:not(:disabled) { background: var(--bg-raised-hover); border-color: #333a4a; }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn svg { width: 16px; height: 16px; }
+.btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
+.btn-danger { color: var(--danger); border-color: #4a2328; }
+.btn-danger-fill { background: var(--danger-fill); border-color: var(--danger-fill); color: #fff; font-weight: 600; }
+.btn-lg { height: 42px; padding: 0 18px; }
+.pill { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; font: 500 12px/1 var(--font); white-space: nowrap; }
+.p-ok { background: var(--success-bg); color: var(--success); }
+.p-info { background: var(--accent-bg); color: #c4d1ff; }
+.p-warn { background: var(--warning-bg); color: var(--warning); }
+.p-err { background: var(--danger-bg); color: var(--danger); }
+.p-off { background: var(--offline-bg); color: var(--text-2); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { text-align: left; font: 600 11px/1 var(--font); letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); padding: 12px; border-bottom: 1px solid var(--border); }
+td { padding: 10px 12px; border-bottom: 1px solid #1b1f2a; vertical-align: middle; word-break: break-all; }
+tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: #151922; }
+.empty { padding: 28px; text-align: center; color: var(--text-dim); }
+input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--primary); margin: 0; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > label, .field > span { font-size: 12px; color: var(--text-dim); }
+.inp, select { height: 38px; padding: 0 10px; border-radius: 9px; border: 1px solid #262b38; background: #0e1016; color: var(--text); font-size: 13px; min-width: 0; }
+.inp:focus, select:focus { outline: none; border-color: #6e8bff; }
+.check { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; height: 38px; cursor: pointer; }
+.bar { height: 6px; border-radius: 6px; background: #222734; overflow: hidden; }
+.bar > div { height: 100%; background: #6e8bff; border-radius: 6px; transition: width .4s; }
+.bar.indet > div { width: 30% !important; animation: indet 1.2s ease-in-out infinite; }
+@keyframes indet { from { margin-left: -30%; } to { margin-left: 100%; } }
+.progress-head { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; color: var(--text-2); }
+.log { background: #0e1016; border: 1px solid #1e2330; border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; min-height: 180px; }
+.log pre { font: 12px/1.7 var(--font-mono); color: #a8afbf; white-space: pre-wrap; overflow: auto; max-height: 300px; }
+.side-panel { flex: 1 1 320px; max-width: 360px; border-color: #4a2328; }
+.opt { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; line-height: 1.4; cursor: pointer; }
+.opt input { margin-top: 2px; }
+.opt small { display: block; color: var(--text-dim); font-size: 12px; }
+.warnbox { padding: 10px 12px; border-radius: 10px; background: var(--danger-bg); color: var(--danger); font-size: 12px; line-height: 1.5; }
+.toast { position: fixed; right: 20px; bottom: 20px; max-width: 420px; padding: 10px 14px; border-radius: 10px; font-size: 13px; box-shadow: 0 10px 30px rgba(0,0,0,.5); z-index: 50; }
+.overlay { position: fixed; inset: 0; background: rgba(6,7,10,.82); display: flex; align-items: center; justify-content: center; z-index: 40; padding: 20px; }
+.modal { width: 460px; max-width: 100%; border-radius: 18px; background: var(--bg-card); border: 1px solid #262b38; box-shadow: 0 24px 80px rgba(0,0,0,.6); padding: 22px 24px; display: flex; flex-direction: column; gap: 14px; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.presets .btn { height: 30px; padding: 0 10px; font-size: 12px; }
+.release .notes { font: 13px/1.55 var(--font); color: var(--text-2); max-height: 320px; overflow: auto; }
+.release .notes h4 { margin: 10px 0 4px; font-size: 13px; color: var(--text); }
+.release .notes h4:first-child { margin-top: 0; }
+.release .notes p { margin: 0 0 6px; }
+.release .notes ul { margin: 0 0 6px; padding-left: 18px; }
+.release .notes strong { color: var(--text); }
+.release .notes code { font: 12px Consolas, monospace; }
+.update-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.update-card { border-radius: 12px; background: var(--bg-raised); border: 1px solid #232836; padding: 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.update-card em { font-style: normal; color: var(--accent); }
+@media (max-width: 820px) { aside { width: 72px; } .side button span, .brand-text { display: none; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div class="brand">
+      <div class="brand-mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></div>
+      <div class="brand-text"><div class="brand-title">Deploy Manager</div><div class="brand-sub" id="brand-sub">USB</div></div>
+    </div>
+    <nav class="side" id="nav" aria-label="Розділи"></nav>
+  </aside>
+  <main id="main"></main>
+</div>
+<div id="modal-root"></div>
+<div id="toast-root" aria-live="polite"></div>
+
+<script>
+'use strict';
+const ICONS = {
+  devices: '<rect x="3" y="7" width="18" height="10" rx="3"/><circle cx="8" cy="12" r="1.5"/><circle cx="16" cy="12" r="1.5"/>',
+  files: '<path d="M4 4h10l6 6v10H4z"/><path d="M14 4v6h6"/>',
+  apks: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12h6M12 9v6"/>',
+  wifi: '<path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1"/>',
+  updates: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
+  play: '<path d="M7 5v14l12-7z" fill="currentColor" stroke="none"/>',
+  undo: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+  sync: '<path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2"/><path d="M21 4v5h-5M3 20v-5h5"/>',
+};
+const icon = (name) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const SECTIONS = [
+  ['devices', 'Окуляри'], ['files', 'Файли'], ['apks', 'Додатки (APK)'],
+  ['wifi', 'Wi-Fi'], ['updates', 'Оновлення'], ['settings', 'Налаштування'],
+];
+const ui = {
+  section: 'devices', selected: new Set(), fileSel: new Set(), apkSel: new Set(), wifiSel: new Set(),
+  rollbackOpen: false, rollback: { player: true, meta: true, settings: true, videos: false, wifi: false },
+};
+let state = null;
+let logText = [];
+let logSeq = 0;
+
+async function api(path, body) {
+  const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  const data = await res.json().catch(() => ({}));
+  if (data.ok === false) toast(data.error || 'Помилка', true);
+  return data;
+}
+
+function toast(text, error) {
+  const root = document.getElementById('toast-root');
+  root.innerHTML = `<div class="toast ${error ? 'p-err' : 'p-ok'}">${esc(text)}</div>`;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { root.innerHTML = ''; }, 4000);
+}
+
+const serials = () => [...ui.selected].filter((s) => state.devices.some((d) => d.serial === s));
+const targetCount = () => serials().length || state.devices.length;
+
+function statusPill(status) {
+  const kind = /✓|Готов|Відкочено/.test(status) ? 'p-ok'
+    : /помил|✗|Скасовано/i.test(status) ? 'p-err'
+      : /Копіювання|Встановлення|Розгортання|Відкат…/.test(status) ? 'p-info' : 'p-off';
+  return `<span class="pill ${kind}">${esc(status)}</span>`;
+}
+
+function renderNav() {
+  const upd = state?.update;
+  document.getElementById('nav').innerHTML = SECTIONS.map(([id, label]) => `
+    <button type="button" class="${ui.section === id ? 'on' : ''}" data-section="${id}" aria-label="${label}">
+      ${icon(id)}<span>${label}</span>
+      ${id === 'updates' && upd?.self_available ? `<span class="pill p-info">${esc(upd.latest.version)}</span>` : ''}
+    </button>`).join('');
+  document.getElementById('brand-sub').textContent = `USB · v${state?.version || ''}`;
+}
+
+function busyAttr() {
+  return state.deploying || state.busy ? 'disabled' : '';
+}
+
+function viewDevices() {
+  const devs = state.devices;
+  const allOn = devs.length > 0 && devs.every((d) => ui.selected.has(d.serial));
+  const rows = devs.map((d) => `
+    <tr>
+      <td style="width:36px"><input type="checkbox" data-sel="${esc(d.serial)}" ${ui.selected.has(d.serial) ? 'checked' : ''} aria-label="Вибрати ${esc(d.serial)}"></td>
+      <td class="mono">${esc(d.serial)}</td><td>${esc(d.model)}</td><td>${esc(d.android)}</td>
+      <td class="mono">${esc(d.player || '—')}</td><td>${statusPill(d.status)}</td>
+    </tr>`).join('');
+  const o = state.options;
+  const ov = state.overall;
+  const cur = state.current;
+  const pct = ov.total ? Math.round((ov.done / ov.total) * 100) : 0;
+  const n = targetCount();
+  return `
+  <div class="topbar">
+    <h1>Підключені окуляри</h1>
+    <span class="pill p-off">${devs.length} через USB</span>
+    ${state.busy ? `<span class="pill p-info">${esc(state.busy)}…</span>` : ''}
+    <div class="spacer"></div>
+    <button class="btn" data-act="refresh" ${busyAttr()}>${icon('sync')}Оновити список</button>
+    <button class="btn" data-act="recover" ${busyAttr()} title="Немає інтерфейсу Quest або плеєр не відкривається: закриває зависле вікно Meta і запускає плеєр">Відновити</button>
+    <button class="btn" data-act="reboot" ${busyAttr()}>Перезавантажити</button>
+    <button class="btn btn-danger" data-act="rollback-toggle" ${busyAttr()}>${icon('undo')}Відкотити окуляри…</button>
+  </div>
+  <div class="content">
+    <div class="col">
+      <div class="card flush">
+        <table>
+          <thead><tr>
+            <th><input type="checkbox" data-sel-all ${allOn ? 'checked' : ''} aria-label="Вибрати всі"></th>
+            <th>Serial</th><th>Модель</th><th>Android</th><th>Плеєр</th><th>Стан</th>
+          </tr></thead>
+          <tbody>${rows || '<tr><td colspan="6" class="empty">Підключіть Quest кабелем USB і дозвольте USB-налагодження в окулярах, потім «Оновити список».</td></tr>'}</tbody>
+        </table>
+      </div>
+      <p class="hint" style="margin-top:-6px">Нічого не вибрано — дія йде на всі підключені окуляри.</p>
+
+      <div class="card">
+        <span class="lbl">Розгортання</span>
+        <div class="row">
+          <div class="field"><label for="opt-content">Контент</label>
+            <select id="opt-content" data-opt="deploy_content">
+              ${[['all', 'Додатки і файли'], ['files', 'Лише файли / відео'], ['apks', 'Лише APK']].map(([v, l]) => `<option value="${v}" ${o.deploy_content === v ? 'selected' : ''}>${l}</option>`).join('')}
+            </select></div>
+          <div class="field"><label for="opt-autostart">Автозапуск плеєра</label>
+            <select id="opt-autostart" data-opt="autostart">
+              ${state.autostart_choices.map((v) => `<option ${o.autostart === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}
+            </select></div>
+          <label class="check" title="Видалити застосунок з даними і встановити заново"><input type="checkbox" data-opt="force_reinstall" ${o.force_reinstall ? 'checked' : ''}>Перевстановити APK</label>
+          <div class="spacer"></div>
+          ${state.deploying
+    ? '<button class="btn btn-lg" data-act="cancel">Скасувати</button>'
+    : `<button class="btn btn-primary btn-lg" data-act="deploy" ${state.busy || !n ? 'disabled' : ''}>${icon('play')}Розгорнути на ${n === devs.length ? 'всі' : 'вибрані'} (${n})</button>`}
+        </div>
+        ${state.deploying || ov.total ? `
+        <div class="field">
+          <div class="progress-head"><span>${esc(ov.label)}</span><span class="mono">${ov.done} / ${ov.total}</span></div>
+          <div class="bar"><div style="width:${pct}%"></div></div>
+        </div>` : ''}
+        ${cur.text ? `
+        <div class="field">
+          <div class="progress-head"><span>${esc(cur.text)}</span><span class="mono">${cur.pct >= 0 ? `${cur.pct}%` : ''}</span></div>
+          <div class="bar ${cur.pct < 0 ? 'indet' : ''}"><div style="width:${Math.max(cur.pct, 0)}%"></div></div>
+        </div>` : ''}
+      </div>
+
+      <div class="log">
+        <span class="lbl">Журнал</span>
+        <pre id="log"></pre>
+      </div>
+    </div>
+    ${ui.rollbackOpen ? viewRollback() : ''}
+  </div>`;
+}
+
+function viewRollback() {
+  const r = ui.rollback;
+  const opt = (key, title, sub) => `<label class="opt"><input type="checkbox" data-rb="${key}" ${r[key] ? 'checked' : ''}><span>${title}<small>${sub}</small></span></label>`;
+  const n = targetCount();
+  return `
+  <section class="card side-panel" aria-label="Відкат окулярів">
+    <div class="field" style="gap:6px">
+      <h2>Відкотити окуляри</h2>
+      <span class="hint">Повертає окуляри до стану до встановлення VR Classroom. Окуляри мають бути підключені через USB.</span>
+    </div>
+    ${opt('player', 'Видалити плеєр', 'com.vrclass.player разом з даними, дозволами й автозапуском')}
+    ${opt('meta', 'Увімкнути вікна Meta', 'перша настройка і підказки (pm enable)')}
+    ${opt('settings', 'Повернути системні налаштування', 'captive_portal_mode до стандартного')}
+    ${opt('videos', 'Видалити відео уроку', `файли зі списку «Файли» (${state.files.length}) і недокачані .partial-*`)}
+    ${opt('wifi', 'Забути Wi-Fi мережі', `мережі зі списку «Wi-Fi» (${state.wifi.length})`)}
+    <p class="hint">Інші рядки профілю «Системні налаштування окулярів» з панелі плеєр повертає сам: перед відкатом очистіть профіль у панелі і дайте окулярам підключитися.</p>
+    <div class="warnbox">Дію не скасувати. Щоб повернути, розгорніть окуляри знову.</div>
+    <div class="row">
+      <button class="btn" data-act="rollback-toggle">Закрити</button>
+      <button class="btn btn-danger-fill" data-act="rollback" ${state.busy || state.deploying || !n ? 'disabled' : ''} style="flex:1">Відкотити ${n} окуляри</button>
+    </div>
+  </section>`;
+}
+
+function listView(title, key, sel, cols, rows, buttons, hint) {
+  const all = rows.length > 0 && rows.every((_, i) => sel.has(i));
+  return `
+  <div class="topbar"><h1>${title}</h1><span class="pill p-off">${rows.length}</span><div class="spacer"></div>${buttons}
+    <button class="btn btn-danger" data-act="remove" data-list="${key}" ${sel.size ? '' : 'disabled'}>Видалити вибране</button>
+  </div>
+  <div class="content"><div class="col">
+    ${hint ? `<p class="hint">${hint}</p>` : ''}
+    <div class="card flush"><table>
+      <thead><tr><th style="width:36px"><input type="checkbox" data-list-all="${key}" ${all ? 'checked' : ''} aria-label="Вибрати всі"></th>${cols.map((c) => `<th>${c}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map((cells, i) => `<tr><td><input type="checkbox" data-list-sel="${key}" data-i="${i}" ${sel.has(i) ? 'checked' : ''} aria-label="Вибрати"></td>${cells.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')
+      || `<tr><td colspan="${cols.length + 1}" class="empty">Порожньо</td></tr>`}</tbody>
+    </table></div>
+  </div></div>`;
+}
+
+function viewFiles() {
+  return listView('Файли для копіювання на Quest', 'files', ui.fileSel, ['Файл на ПК', 'Папка на Quest', 'Розмір'],
+    state.files.map((f) => [`<span class="mono">${esc(f.src)}</span>`, `<span class="mono">${esc(f.dst)}</span>`, esc(f.size)]),
+    '<button class="btn" data-act="add-files">Додати файли…</button><button class="btn" data-act="add-folder">Додати папку…</button>',
+    'Файли з тим самим розміром на окулярах пропускаються. Відео кладіть у /sdcard/Movies/.');
+}
+
+function viewApks() {
+  return listView('APK для встановлення', 'apks', ui.apkSel, ['APK файл', 'Package name', 'Розмір'],
+    state.apks.map((a) => [`<span class="mono">${esc(a.path)}</span>`, `<span class="mono">${esc(a.package || '—')}</span>`, esc(a.size)]),
+    '<button class="btn" data-act="add-apks">Додати APK…</button>',
+    'Плеєр VR Classroom після встановлення одразу налаштовується: тихе самооновлення, автозапуск, дозволи. Новий APK плеєра можна взяти з GitHub у розділі «Оновлення».');
+}
+
+function viewWifi() {
+  const o = state.options;
+  return `${listView('Wi-Fi мережі для окулярів', 'wifi_networks', ui.wifiSel, ['Назва мережі (SSID)', 'Безпека'],
+    state.wifi.map((w) => [esc(w.ssid), esc(w.security)]),
+    `<button class="btn" data-act="add-wifi">Додати мережу…</button>
+     <button class="btn" data-act="apply-wifi" ${busyAttr()}>Застосувати на окуляри</button>
+     <button class="btn" data-act="tcpip" ${busyAttr()} title="Перевести вибрані окуляри в Wireless ADB (порт 5555); скидається після перезавантаження">Wireless ADB</button>`,
+    '')}`.replace('<div class="col">', `<div class="col"><label class="check"><input type="checkbox" data-opt="wifi_auto_deploy" ${o.wifi_auto_deploy ? 'checked' : ''}>Застосовувати Wi-Fi перед кожним розгортанням</label>`);
+}
+
+// Release notes are bilingual markdown ("## English" / "## Українська"): show the Ukrainian half.
+// shortcut: headings, bullets, bold and code only, which is all the release notes use.
+function notesHtml(notes) {
+  const halves = notes.split(/^## /m).filter((s) => s.trim());
+  const half = halves.length > 1 ? (halves.find((s) => /Українськ/.test(s.split('\n')[0])) || halves[0]).split('\n').slice(1) : notes.split('\n');
+  const inline = (s) => esc(s).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/`([^`]+)`/g, '<code>$1</code>');
+  let html = '', inList = false;
+  for (const raw of half) {
+    const line = raw.trim();
+    const item = /^[-*] /.test(line);
+    if (inList && !item) { html += '</ul>'; inList = false; }
+    if (item) { html += `${inList ? '' : '<ul>'}<li>${inline(line.slice(2))}</li>`; inList = true; }
+    else if (line && line !== '---') html += line.startsWith('#') ? `<h4>${inline(line.replace(/^#+\s*/, ''))}</h4>` : `<p>${inline(line)}</p>`;
+  }
+  return html + (inList ? '</ul>' : '');
+}
+
+function viewUpdates() {
+  const u = state.update;
+  const job = u.job;
+  const jobPct = job && job.total ? Math.round((job.done / job.total) * 100) : 0;
+  const jobText = !job ? '' : job.stage === 'downloading' ? `Завантаження ${(job.done / 1048576).toFixed(1)} МБ${job.total ? ` / ${(job.total / 1048576).toFixed(1)} МБ` : ''}`
+    : job.stage === 'failed' ? `Помилка: ${job.error}` : job.stage === 'restarting' ? 'Перезапуск…' : 'Готово';
+  return `
+  <div class="topbar"><h1>Оновлення з GitHub</h1>
+    ${u.self_available ? `<span class="pill p-info">Доступна ${esc(u.latest.version)}</span>` : u.latest ? '<span class="pill p-ok">Актуальна версія</span>' : ''}
+    <div class="spacer"></div>
+    <button class="btn" data-act="check-update" ${busyAttr()}>${icon('sync')}Перевірити зараз</button>
+  </div>
+  <div class="content"><div class="col">
+    ${u.error ? `<div class="warnbox">GitHub не відповів: ${esc(u.error)}. Потрібен інтернет на цьому компʼютері.</div>` : ''}
+    <div class="update-cards">
+      <div class="update-card">
+        <span class="hint">Deploy Manager</span>
+        <span class="mono">${esc(u.current)}${u.self_available ? ` → <em>${esc(u.latest.version)}</em>` : ''}</span>
+        ${u.can_self_update
+    ? `<button class="btn btn-primary" data-act="update-self" ${u.self_available && !state.busy ? '' : 'disabled'}>${icon('updates')}Завантажити і перезапустити</button>`
+    : (u.latest ? `<a class="btn" href="${esc(u.latest.url)}" target="_blank" rel="noreferrer">Відкрити реліз</a>` : '')}
+      </div>
+      <div class="update-card">
+        <span class="hint">Плеєр для окулярів</span>
+        <span class="mono">${u.latest ? `<em>${esc(u.latest.version)}</em>` : '—'}</span>
+        <button class="btn" data-act="update-player" ${u.has_player && !state.busy ? '' : 'disabled'}>${icon('updates')}Завантажити APK плеєра</button>
+        <span class="hint">APK потрапить у «Додатки» замість старого; далі — «Розгорнути».</span>
+      </div>
+    </div>
+    ${job ? `<div class="card"><div class="progress-head"><span>${esc(jobText)}</span><span class="mono">${job.total ? `${jobPct}%` : ''}</span></div>${job.stage === 'downloading' ? `<div class="bar"><div style="width:${jobPct}%"></div></div>` : ''}</div>` : ''}
+    ${u.latest ? `<div class="card release"><h2>Що нового в ${esc(u.latest.version)}</h2>${u.latest.notes ? `<div class="notes">${notesHtml(u.latest.notes)}</div>` : ''}<a href="${esc(u.latest.url)}" target="_blank" rel="noreferrer">Відкрити реліз на GitHub</a></div>` : ''}
+  </div></div>`;
+}
+
+function viewSettings() {
+  return `
+  <div class="topbar"><h1>Налаштування</h1></div>
+  <div class="content"><div class="col">
+    <div class="card">
+      <div class="field"><label for="adb-path">Шлях до ADB</label>
+        <div class="row" style="align-items:center"><input id="adb-path" class="inp mono" style="flex:1" value="${esc(state.adb_path)}">
+          <button class="btn" data-act="adb-browse">Огляд…</button><button class="btn btn-primary" data-act="adb-save">Зберегти</button></div>
+        <span class="hint">platform-tools від Android: developer.android.com/tools/releases/platform-tools</span>
+      </div>
+    </div>
+    <div class="card">
+      <span class="lbl">Конфіг</span>
+      <span class="mono hint">${esc(state.config_path)}</span>
+      <div class="row"><button class="btn" data-act="config-open">Відкрити конфіг</button><button class="btn" data-act="config-reload">Перезавантажити конфіг</button></div>
+    </div>
+  </div></div>`;
+}
+
+const VIEWS = { devices: viewDevices, files: viewFiles, apks: viewApks, wifi: viewWifi, updates: viewUpdates, settings: viewSettings };
+
+function render() {
+  if (!state) return;
+  renderNav();
+  const main = document.getElementById('main');
+  const focus = document.activeElement?.id;
+  const value = focus && document.getElementById(focus)?.value;
+  main.innerHTML = VIEWS[ui.section]();
+  if (focus && document.getElementById(focus)) {
+    const el = document.getElementById(focus);
+    if (value != null && el.tagName === 'INPUT' && el.type !== 'checkbox') el.value = value;
+    el.focus();
+  }
+  const log = document.getElementById('log');
+  if (log) { log.textContent = logText.join('\n'); log.scrollTop = log.scrollHeight; }
+}
+
+async function poll() {
+  try {
+    const res = await fetch(`/api/state?since=${logSeq}`);
+    const next = await res.json();
+    if (next.log_seq < logSeq) logText = []; // менеджер перезапустили
+    logText = logText.concat(next.log).slice(-500);
+    logSeq = next.log_seq;
+    const changed = JSON.stringify({ ...next, log: [] }) !== JSON.stringify({ ...state, log: [] }) || next.log.length;
+    state = next;
+    // Не перемальовуємо, поки людина друкує в полі: інакше збивається курсор.
+    const typing = document.activeElement?.matches?.('input.inp');
+    if (changed && !typing) render();
+  } catch {
+    /* сервер перезапускається */
+  }
+  setTimeout(poll, 1000);
+}
+
+function modal(html, onSubmit) {
+  const root = document.getElementById('modal-root');
+  root.innerHTML = `<div class="overlay"><form class="modal">${html}</form></div>`;
+  const form = root.querySelector('form');
+  form.addEventListener('submit', async (e) => { e.preventDefault(); if (await onSubmit(new FormData(form)) !== false) root.innerHTML = ''; });
+  form.querySelector('[data-close]')?.addEventListener('click', () => { root.innerHTML = ''; });
+  form.querySelectorAll('[data-preset]').forEach((b) => b.addEventListener('click', () => { form.dst.value = b.dataset.preset; }));
+  form.querySelector('input')?.focus();
+}
+
+function askDestination(folder) {
+  const presets = [['Movies', '/sdcard/Movies/'], ['Download', '/sdcard/Download/'], ['Music', '/sdcard/Music/'], ['Pictures', '/sdcard/Pictures/'], ['Oculus', '/sdcard/Oculus/']];
+  modal(`<h2>Папка на Quest</h2>
+    <div class="field"><label for="dst">Куди копіювати ${folder ? 'файли з папки' : 'файли'}</label><input id="dst" name="dst" class="inp mono" value="/sdcard/Movies/"></div>
+    <div class="presets">${presets.map(([n, p]) => `<button type="button" class="btn" data-preset="${p}">${n}</button>`).join('')}</div>
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn" data-close>Скасувати</button><button class="btn btn-primary">Вибрати ${folder ? 'папку' : 'файли'}…</button></div>`,
+  async (data) => { const r = await api('/api/files/add', { dst: data.get('dst'), folder }); if (r.ok) toast(`Додано: ${r.added}`); });
+}
+
+function askWifi() {
+  modal(`<h2>Додати Wi-Fi мережу</h2>
+    <div class="field"><label for="ssid">SSID (назва мережі)</label><input id="ssid" name="ssid" class="inp" required></div>
+    <div class="field"><label for="security">Тип безпеки</label><select id="security" name="security"><option>wpa2</option><option>wpa3</option><option>open</option></select></div>
+    <div class="field"><label for="password">Пароль</label><input id="password" name="password" type="password" class="inp" autocomplete="off"></div>
+    <div class="row" style="justify-content:flex-end"><button type="button" class="btn" data-close>Скасувати</button><button class="btn btn-primary">Додати</button></div>`,
+  async (data) => { const r = await api('/api/wifi/add', Object.fromEntries(data)); return r.ok; });
+}
+
+const LIST_SEL = { files: () => ui.fileSel, apks: () => ui.apkSel, wifi_networks: () => ui.wifiSel };
+
+async function act(name, el) {
+  const s = serials();
+  const n = targetCount();
+  switch (name) {
+    case 'refresh': return api('/api/devices/refresh');
+    case 'recover': return api('/api/recover', { serials: s });
+    case 'reboot': return confirm(`Перезавантажити ${n} окулярів?`) && api('/api/reboot', { serials: s });
+    case 'deploy':
+      if (state.options.force_reinstall && !confirm('Застосунки буде видалено з окулярів разом з даними (налаштування, назва окулярів) і встановлено заново. Продовжити?')) return null;
+      return api('/api/deploy', { serials: s });
+    case 'cancel': return api('/api/cancel');
+    case 'rollback-toggle': ui.rollbackOpen = !ui.rollbackOpen; return render();
+    case 'rollback':
+      if (!confirm(`Відкотити ${n} окулярів? Плеєр і його дані буде видалено, дію не скасувати.`)) return null;
+      return api('/api/rollback', { serials: s, options: ui.rollback });
+    case 'add-files': return askDestination(false);
+    case 'add-folder': return askDestination(true);
+    case 'add-apks': return api('/api/apks/add');
+    case 'add-wifi': return askWifi();
+    case 'apply-wifi': return api('/api/wifi/apply', { serials: s });
+    case 'tcpip': return api('/api/tcpip', { serials: s });
+    case 'remove': {
+      const sel = LIST_SEL[el.dataset.list]();
+      await api(`/api/${el.dataset.list === 'wifi_networks' ? 'wifi' : el.dataset.list}/remove`, { indices: [...sel] });
+      sel.clear();
+      return null;
+    }
+    case 'check-update': return api('/api/update/check');
+    case 'update-player': return api('/api/update/player');
+    case 'update-self': return confirm('Завантажити нову версію Deploy Manager і перезапустити його?') && api('/api/update/self');
+    case 'adb-browse': {
+      const r = await api('/api/adb/browse');
+      if (r.path) document.getElementById('adb-path').value = r.path;
+      return null;
+    }
+    case 'adb-save': { const r = await api('/api/adb/save', { path: document.getElementById('adb-path').value }); if (r.ok) toast('Шлях до ADB збережено'); return null; }
+    case 'config-open': return api('/api/config/open');
+    case 'config-reload': return api('/api/config/reload');
+    default: return null;
+  }
+}
+
+document.addEventListener('click', async (e) => {
+  const nav = e.target.closest('[data-section]');
+  if (nav) { ui.section = nav.dataset.section; render(); return; }
+  const btn = e.target.closest('[data-act]');
+  if (btn && !btn.disabled) { await act(btn.dataset.act, btn); }
+});
+
+document.addEventListener('change', (e) => {
+  const t = e.target;
+  if (t.dataset.sel) { t.checked ? ui.selected.add(t.dataset.sel) : ui.selected.delete(t.dataset.sel); render(); }
+  else if (t.hasAttribute('data-sel-all')) { ui.selected = new Set(t.checked ? state.devices.map((d) => d.serial) : []); render(); }
+  else if (t.dataset.listSel) { const sel = LIST_SEL[t.dataset.listSel](); const i = Number(t.dataset.i); t.checked ? sel.add(i) : sel.delete(i); render(); }
+  else if (t.dataset.listAll) { const sel = LIST_SEL[t.dataset.listAll](); const count = t.dataset.listAll === 'wifi_networks' ? state.wifi.length : state[t.dataset.listAll].length; sel.clear(); if (t.checked) for (let i = 0; i < count; i += 1) sel.add(i); render(); }
+  else if (t.dataset.rb) { ui.rollback[t.dataset.rb] = t.checked; }
+  else if (t.dataset.opt) { api('/api/options', { [t.dataset.opt]: t.type === 'checkbox' ? t.checked : t.value }); }
+});
+
+poll();
+</script>
+</body>
+</html>

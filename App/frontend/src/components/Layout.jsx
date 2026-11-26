@@ -21,7 +21,9 @@ export default function Layout() {
 
     const node = topPanelRef.current;
     const updateHeight = () => {
-      setTopPanelHeight(node.offsetHeight || 80);
+      // On short or narrow screens the panel scrolls with the page (CSS), so no space is reserved for it.
+      const fixed = getComputedStyle(node).position === 'fixed';
+      setTopPanelHeight(fixed ? node.offsetHeight || 80 : 0);
     };
 
     updateHeight();

@@ -140,7 +140,7 @@ final class Agent {
     void setLaunchFailingSince(long elapsedRealtime) {
         boolean changed = (launchFailingSince == 0) != (elapsedRealtime == 0);
         launchFailingSince = elapsedRealtime;
-        if (changed && elapsedRealtime == 0) sendStatus();
+        if (changed && elapsedRealtime == 0) exec.execute(this::sendStatus); // called on the main thread: no network here
     }
 
     String statusJson() {

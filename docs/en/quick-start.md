@@ -1,41 +1,57 @@
 # Quick Start
 
-## Goal
-
-By the end of this guide, you will have one control panel device connected to one or more Meta Quest headsets and ready to start a lesson video.
+By the end of this guide one control panel runs a lesson video on every headset in the class.
 
 ## What You Need
 
-- one Meta Quest headset for each student
-- one instructor device:
-  - Windows PC with `VRClassroomControlPanel-Windows.exe`, or
-  - Android phone/tablet with `VRClassroomControlPanel-Android.apk`
-- `VRClassroomPlayer-Quest.apk` for every headset
-- a shared local Wi-Fi or LAN
-- lesson videos copied to every headset
+- one Meta Quest headset per student (Quest 3 / 3S tested)
+- a Windows PC for the first setup over USB, with a USB-C cable
+- one instructor device for the lessons: the same Windows PC, or an Android phone or tablet
+- a Wi-Fi network that the PC and all headsets join; internet is not needed
+- the files from [GitHub Releases](https://github.com/Chikanut/VR-Group-Videoplayer/releases/latest):
+  `VRClassroomPlayer-Quest.apk`, `QuestDeployManager.exe` and one control panel
+  (`VRClassroomControlPanel-Windows.exe` or `VRClassroomControlPanel-Android.apk`)
 
-## Fastest Setup Path
+## 1. Prepare each headset once (about 2 minutes per headset)
 
-1. Install the Quest player on each headset.
-2. Install the control panel on the instructor device.
-3. Copy the lesson video files to `/sdcard/Movies/` on every headset.
-4. Connect all devices to the same local network.
-5. Open the player app on each headset.
-6. Open the control panel.
-7. Wait for headsets to appear in the device list.
-8. Add the required video filenames in Settings.
-9. Start playback from the dashboard.
+1. Turn on **Developer mode** for the headset in the Meta Horizon phone app.
+2. Run `QuestDeployManager.exe` on the PC. It opens its own window.
+3. In **Додатки (APK)** (Apps) add `VRClassroomPlayer-Quest.apk`.
+4. In **Wi-Fi** add the classroom network.
+5. Connect a headset by USB, put it on once and allow USB debugging (tick *Always allow*).
+6. In **Окуляри** (Headsets) press **Розгорнути** (Deploy).
 
-## Expected Result
+Deploy installs the player, sets it up to start by itself and to update silently, and connects the headset to Wi-Fi. Repeat for every headset; you can connect several at once through a USB hub.
 
-You should now be able to:
+Details: [Deploy Manager](deploy-manager.md).
 
-- see each headset as online
-- select a configured video
-- start, pause, stop, and recenter playback
+## 2. Start the control panel
+
+- **Windows:** run `VRClassroomControlPanel-Windows.exe`. The dashboard opens in the browser at `http://localhost:8000`. Allow it in the Windows firewall for *private* networks when Windows asks.
+- **Android:** install and open `VRClassroomControlPanel-Android.apk`.
+
+The headsets find the control panel on their own within a few seconds and appear as tiles.
+
+Details: [Set Up the Control Panel](setup-control-panel.md).
+
+## 3. Add the lesson videos
+
+1. Open **Settings → Lesson videos** and press **+ Add Video** for every video. Enter the file name only, for example `lesson01.mp4`, and choose `360` or `2D`.
+2. Put the video files in one folder on the PC and enter it as **Settings → System → Video library folder**.
+3. Press **Save changes**, go back to the dashboard and press **Sync content**. The headsets download the videos over Wi-Fi.
+
+You can also copy the videos over USB with Deploy Manager. Details: [Prepare Videos](prepare-videos.md).
+
+## 4. Run the lesson
+
+When the tiles say **Requirements met**, choose the video and press **Play All**.
+
+![Dashboard with a class of 14 headsets](../assets/screenshots/dashboard.png)
+
+Details: [Daily Use](daily-use.md).
 
 ## If Something Fails
 
-- devices do not appear: read [Networking and Troubleshooting](networking-troubleshooting.md)
-- videos are missing: read [Prepare Videos](prepare-videos.md)
-- you have not installed the apps yet: read [Set Up the Control Panel](setup-control-panel.md) and [Set Up the Quest Player](setup-player.md)
+- headsets do not appear: [Networking and Troubleshooting](networking-troubleshooting.md)
+- the tile says **Player will not open**: [Deploy Manager → Recover](deploy-manager.md#recover-a-stuck-headset)
+- a video is missing: [Prepare Videos](prepare-videos.md)

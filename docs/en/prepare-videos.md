@@ -1,54 +1,46 @@
 # Prepare Videos
 
-## Goal
+The player opens videos from `/sdcard/Movies/` on the headset. The control panel refers to a video by its file name only.
 
-Make sure lesson videos are stored correctly so the Quest player can find and open them.
+## Name the Files
 
-## Required Storage Location
+- use the file name only in the control panel: `lesson01.mp4`, not `/sdcard/Movies/lesson01.mp4`;
+- keep the names short and do not rename files after adding them;
+- every headset needs the same files.
 
-Copy every lesson video to:
+Supported types: `360` (equirectangular 360°) and `2D` (a flat screen). MP4 with H.264 or H.265 works best; Quest 3 / 3S play 8K 360° video.
 
-`/sdcard/Movies/`
+## Add Them to the Lesson
 
-This path is important. The control panel sends only the filename, and the player looks for that file inside `/sdcard/Movies/`.
+**Settings → Lesson videos → + Add Video**: a name you choose, the exact file name and the type. Press **Save changes**.
 
-## File Naming Rule
+![Settings → Lesson videos](../assets/screenshots/settings-videos.png)
 
-Use the filename only in the control panel.
+## Copy Them to the Headsets
 
-Examples:
+### Over Wi-Fi (player 1.9.0+)
 
-- correct: `lesson01.mp4`
-- correct: `history_360.mp4`
-- not correct: `/sdcard/Movies/lesson01.mp4`
+1. Put all videos in one folder on the PC running the control panel.
+2. Enter it as **Settings → System → Video library folder** and save.
+3. Press **Sync content** on the dashboard.
 
-## Supported Viewing Modes
+Each headset downloads the lesson videos it does not have yet:
 
-- `2D` or flat mode for normal video on a virtual screen
-- `360` mode for equirectangular 360 video
+- files with the same name and size are skipped;
+- a file of another size is replaced;
+- downloads pause while a video plays and continue after a dropped connection.
 
-## Recommended Preparation Workflow
+The tiles show the progress (`Content: lesson01.mp4 40%`).
 
-1. Decide on the final filenames before copying files.
-2. Copy the same filenames to every headset.
-3. Open the control panel settings.
-4. Add each lesson as a required video using that filename.
-5. Select the correct video type for each lesson.
+### Over USB
 
-## Good Practice
+Add the files in Deploy Manager → **Файли** (Files) with the destination `/sdcard/Movies/` and deploy with **Контент: Лише файли / відео** (files only). This is faster for the first copy of large files.
 
-- keep names short and clear
-- avoid renaming files after you configure the lesson
-- make sure every headset has the same content set
-- test one video before class
+## Check
 
-## Expected Result
-
-When the control panel checks devices, the configured filename should be reported as available on each headset.
+When every headset has every video, the tiles say **Requirements met** and the **Content** counter shows all headsets ready. A tile with a red frame says which video is missing; the device window lists them.
 
 ## Related Guides
 
-- [Quick Start](quick-start.md)
 - [Settings & Video Tuning](settings-and-video-tuning.md)
 - [Daily Use](daily-use.md)
-- [Networking and Troubleshooting](networking-troubleshooting.md)

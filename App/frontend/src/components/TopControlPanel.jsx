@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import useDeviceStore from '../store/deviceStore';
 import {
   getGlobalVolume,
@@ -11,9 +10,10 @@ import {
   syncContent,
 } from '../api';
 import { useI18n } from '../i18n';
+import AppHeader from './AppHeader';
+import Icon from './Icons';
 
 export default function TopControlPanel({ onPlayAll, panelRef }) {
-  const navigate = useNavigate();
   const { t } = useI18n();
   const config = useDeviceStore((state) => state.config);
   const devices = useDeviceStore((state) => state.getDeviceList());
@@ -122,178 +122,136 @@ export default function TopControlPanel({ onPlayAll, panelRef }) {
     }
   }, [seekCurrent, seeking]);
 
+  const btn = (key, { icon, all, one, onClick, disabled, title, cls = '' }) => (
+    <button
+      key={key}
+      className={`btn btn-lg ${cls}`}
+      disabled={disabled}
+      title={title ? t(title) : undefined}
+      onClick={() => debounce(key, onClick)}
+    >
+      {icon && <Icon name={icon} />}
+      {label(all, one || all)}
+    </button>
+  );
+
   return (
     <header className="top-panel" ref={panelRef}>
-      <div className="top-panel-left">
-        <h1 className="top-panel-title">VR Classroom</h1>
-        <span className="device-count">
-          {t('{online}/{total} online', { online: onlineDevices.length, total: devices.length })}
-        </span>
+      <AppHeader>
         <span className="runtime-badge" title={t('Runtime mode detected by backend config')}>
-          {t('Mode')}: {isAndroidRuntime ? t('Android') : t('Desktop')}
+          {isAndroidRuntime ? t('Android') : t('Desktop')}
         </span>
-      </div>
+      </AppHeader>
 
-      <div className="top-panel-controls">
-        <button
-          className="btn btn-success"
-          disabled={!hasCommandTargets}
-          onClick={() => debounce('playAll', () => onPlayAll(scopeIds))}
-        >
-          {label('Play All', 'Play')}
-        </button>
-        <button
-          className="btn"
-          disabled={!hasCommandTargets}
-          onClick={() => debounce('pauseAll', () => playbackCommand('pause', scopeIds))}
-        >
-          {label('Pause All', 'Pause')}
-        </button>
-        <button
-          className="btn"
-          disabled={!hasCommandTargets}
-          onClick={() => debounce('resumeAll', () => playbackCommand('play', scopeIds))}
-        >
-          {label('Resume All', 'Resume')}
-        </button>
-        <button
-          className="btn"
-          disabled={!hasCommandTargets}
-          onClick={() => debounce('stopAll', () => playbackCommand('stop', scopeIds))}
-        >
-          {label('Stop All', 'Stop')}
-        </button>
-        <button
-          className="btn"
-          disabled={!hasCommandTargets}
-          onClick={() => debounce('recenterAll', () => playbackCommand('recenter', scopeIds))}
-        >
-          {label('Recenter All', 'Recenter')}
-        </button>
-        <button
-          className="btn"
-          disabled={!hasCommandTargets && !hasAgentTargets}
-          title={t('Sleep hint')}
-          onClick={() => debounce('sleepAll', () => playbackCommand('sleep', scopeIds))}
-        >
-          {label('Sleep All', 'Sleep')}
-        </button>
-        <button
-          className="btn"
-          title={t('Wake hint')}
-          onClick={() => debounce('wakeAll', () => playbackCommand('wake', scopeIds))}
-        >
-          {label('Wake All', 'Wake')}
-        </button>
-
-        <button
-          className="btn"
-          title={t('Autostart hint')}
-          onClick={() => debounce('autostartOn', () => switchAutostart(true))}
-        >
-          {label('Enable autostart', 'Enable autostart')}
-        </button>
-        <button
-          className="btn"
-          title={t('Autostart hint')}
-          onClick={() => debounce('autostartOff', () => switchAutostart(false))}
-        >
-          {label('Disable autostart', 'Disable autostart')}
-        </button>
-        {autostartResult && <span className="device-count">{autostartResult}</span>}
-
-        <button
-          className="btn"
-          disabled={!hasAgentTargets}
-          title={t('Open player hint')}
-          onClick={() => debounce('launchPlayer', () => runPlayerAction('launch', 'Open sent'))}
-        >
-          {label('Open player', 'Open player')}
-        </button>
-        <button
-          className="btn"
-          disabled={!hasAgentTargets}
-          title={t('Restart player hint')}
-          onClick={() => debounce('restartPlayer', () => runPlayerAction('restart', 'Restart sent'))}
-        >
-          {label('Restart player', 'Restart player')}
-        </button>
-        <button
-          className="btn"
-          disabled={!hasAgentTargets}
-          title={t('Close player hint')}
-          onClick={() => debounce('closePlayer', () => runPlayerAction('close', 'Close sent'))}
-        >
-          {label('Close player', 'Close player')}
-        </button>
-        <button
-          className="btn"
-          disabled={!hasAgentTargets}
-          title={t('Sync content hint')}
-          onClick={() => debounce('syncContent', runSync)}
-        >
-          {label('Sync content', 'Sync content')}
-        </button>
-        {agentResult && <span className="device-count">{agentResult}</span>}
-        {scoped && (
-          <button className="btn btn-dim" onClick={clearSelection} title={t('Commands go to the ticked headsets only')}>
-            {t('Selected: {count}', { count: selectedDevices.length })} ✕
-          </button>
-        )}
-
-        <div className="volume-control global-volume-control">
-          <label htmlFor="global-volume-slider">{t('Global volume')}</label>
-          <input
-            id="global-volume-slider"
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={globalVolume}
-            onChange={(event) => {
-              const value = Number(event.target.value);
-              setGlobalVolumeValue(value);
-              if (volumeDebounceRef.current) {
-                clearTimeout(volumeDebounceRef.current);
-              }
-              volumeDebounceRef.current = setTimeout(() => setGlobalVolume(value), 150);
-            }}
-          />
-          <span>{Math.round(globalVolume * 100)}%</span>
+      <div className="command-bar">
+        <div className="command-scope">
+          <span className="command-scope-title">{t('Commands')}</span>
+          {scoped ? (
+            <>
+              <span className="chip chip-scope">{t('For selected: {count}', { count: selectedDevices.length })}</span>
+              <button className="btn btn-dim" onClick={clearSelection} title={t('Commands go to the ticked headsets only')}>
+                {t('Clear selection')}
+              </button>
+            </>
+          ) : (
+            <span className="chip chip-offline">
+              {t('Whole class')} · {t('{online}/{total} online', { online: onlineDevices.length, total: devices.length })}
+            </span>
+          )}
+          {autostartResult && <span className="command-result">{autostartResult}</span>}
+          {agentResult && <span className="command-result">{agentResult}</span>}
         </div>
 
-        <div className="seek-control global-seek-control">
-          <label htmlFor="global-seek-slider">{t('Seek')}</label>
-          <input
-            id="global-seek-slider"
-            type="range"
-            min="0"
-            max={seekDuration || 1}
-            step="0.1"
-            value={seekValue}
-            disabled={!canSeek}
-            onChange={(event) => {
-              const value = Number(event.target.value);
-              setSeeking(true);
-              setSeekValue(value);
-              if (seekDebounceRef.current) {
-                clearTimeout(seekDebounceRef.current);
-              }
-              seekDebounceRef.current = setTimeout(async () => {
-                try {
-                  await playbackSeek(value, scopeIds);
-                } catch {}
+        <div className="command-groups">
+          <div className="cmd-group">
+            <span className="group-label">{t('Playback')}</span>
+            <div className="cmd-group-buttons">
+              {btn('playAll', { icon: 'play', all: 'Play All', one: 'Play', cls: 'btn-primary', disabled: !hasCommandTargets, onClick: () => onPlayAll(scopeIds) })}
+              {btn('pauseAll', { icon: 'pause', all: 'Pause All', one: 'Pause', disabled: !hasCommandTargets, onClick: () => playbackCommand('pause', scopeIds) })}
+              {btn('resumeAll', { icon: 'resume', all: 'Resume All', one: 'Resume', disabled: !hasCommandTargets, onClick: () => playbackCommand('play', scopeIds) })}
+              {btn('stopAll', { icon: 'stop', all: 'Stop All', one: 'Stop', cls: 'btn-danger', disabled: !hasCommandTargets, onClick: () => playbackCommand('stop', scopeIds) })}
+              {btn('recenterAll', { icon: 'recenter', all: 'Recenter All', one: 'Recenter', disabled: !hasCommandTargets, onClick: () => playbackCommand('recenter', scopeIds) })}
+            </div>
+          </div>
+          <div className="cmd-group">
+            <span className="group-label">{t('Headsets')}</span>
+            <div className="cmd-group-buttons">
+              {btn('sleepAll', { icon: 'sleep', all: 'Sleep All', one: 'Sleep', title: 'Sleep hint', disabled: !hasCommandTargets && !hasAgentTargets, onClick: () => playbackCommand('sleep', scopeIds) })}
+              {btn('wakeAll', { icon: 'wake', all: 'Wake All', one: 'Wake', title: 'Wake hint', onClick: () => playbackCommand('wake', scopeIds) })}
+            </div>
+          </div>
+          <div className="cmd-group">
+            <span className="group-label">{t('Player')}</span>
+            <div className="cmd-group-buttons">
+              {btn('launchPlayer', { all: 'Open player', title: 'Open player hint', disabled: !hasAgentTargets, onClick: () => runPlayerAction('launch', 'Open sent') })}
+              {btn('restartPlayer', { all: 'Restart player', title: 'Restart player hint', disabled: !hasAgentTargets, onClick: () => runPlayerAction('restart', 'Restart sent') })}
+              {btn('closePlayer', { all: 'Close player', title: 'Close player hint', disabled: !hasAgentTargets, onClick: () => runPlayerAction('close', 'Close sent') })}
+            </div>
+          </div>
+          <div className="cmd-group">
+            <span className="group-label">{t('Autostart · content')}</span>
+            <div className="cmd-group-buttons">
+              {btn('autostartOn', { icon: 'power', all: 'Enable autostart', title: 'Autostart hint', onClick: () => switchAutostart(true) })}
+              {btn('autostartOff', { all: 'Disable autostart', title: 'Autostart hint', onClick: () => switchAutostart(false) })}
+              {btn('syncContent', { icon: 'sync', all: 'Sync content', title: 'Sync content hint', disabled: !hasAgentTargets, onClick: runSync })}
+            </div>
+          </div>
+        </div>
+
+        <div className="command-sliders">
+          <div className="slider-field">
+            <div className="slider-head">
+              <label htmlFor="global-volume-slider" className="group-label">{t('Global volume')}</label>
+              <span className="slider-value">{Math.round(globalVolume * 100)}%</span>
+            </div>
+            <input
+              id="global-volume-slider"
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={globalVolume}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                setGlobalVolumeValue(value);
+                if (volumeDebounceRef.current) {
+                  clearTimeout(volumeDebounceRef.current);
+                }
+                volumeDebounceRef.current = setTimeout(() => setGlobalVolume(value), 150);
+              }}
+            />
+          </div>
+          <div className="slider-field">
+            <div className="slider-head">
+              <label htmlFor="global-seek-slider" className="group-label">{t('Seek')}</label>
+              <span className="slider-value">{formatTime(seekValue)} / {formatTime(seekDuration)}</span>
+            </div>
+            <input
+              id="global-seek-slider"
+              type="range"
+              min="0"
+              max={seekDuration || 1}
+              step="0.1"
+              value={seekValue}
+              disabled={!canSeek}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                setSeeking(true);
                 setSeekValue(value);
-                setSeeking(false);
-              }, 200);
-            }}
-          />
-          <span>{formatTime(seekValue)} / {formatTime(seekDuration)}</span>
+                if (seekDebounceRef.current) {
+                  clearTimeout(seekDebounceRef.current);
+                }
+                seekDebounceRef.current = setTimeout(async () => {
+                  try {
+                    await playbackSeek(value, scopeIds);
+                  } catch {}
+                  setSeekValue(value);
+                  setSeeking(false);
+                }, 200);
+              }}
+            />
+          </div>
         </div>
-
-        <button className="btn btn-secondary" onClick={() => navigate('/settings')}>
-          {t('Settings')}
-        </button>
       </div>
     </header>
   );

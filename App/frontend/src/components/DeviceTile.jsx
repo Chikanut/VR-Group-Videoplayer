@@ -3,76 +3,94 @@ import { pingDevice } from '../api';
 import { contentText, updateText } from './DeviceDialog';
 import { useI18n } from '../i18n';
 import useDeviceStore from '../store/deviceStore';
+import Icon from './Icons';
 
-function getBorderClass(device) {
-  if (!device.online) {
-    return 'tile-offline';
-  }
-  if (device.requirementsMet === false) {
-    return 'tile-error';
-  }
-  const config = useDeviceStore.getState().config;
-  const threshold = config?.batteryThreshold || 20;
-  if (device.battery >= 0 && device.battery <= threshold) {
-    return 'tile-warning';
-  }
-  return 'tile-ok';
+function batteryThreshold() {
+  return useDeviceStore.getState().config?.batteryThreshold || 20;
 }
 
-function BatteryIcon({ level, charging }) {
-  if (level <= 0) {
-    return null;
-  }
-  let icon = '🔋';
-  if (charging) {
-    icon = '⚡';
-  } else if (level <= 10) {
-    icon = '🪫';
-  }
-  return <span className="battery-icon">{icon} {level}%</span>;
+export function isLowBattery(device) {
+  return device.battery > 0 && device.battery <= batteryThreshold();
 }
 
-function ConnectionBadge({ device, t }) {
-  if (!device.online) {
-    return <span className="badge badge-offline">{t('Offline')}</span>;
+// Headset problems the instructor should look at; used by the tile and the "Problems" filter.
+export function needsAttention(device) {
+  if (!device.online) return false;
+  return device.requirementsMet === false
+    || device.launchBlockedSec > 0
+    || isLowBattery(device)
+    || device.content?.state === 'error'
+    || (device.updateStatus || '').startsWith('failed');
+}
+
+// One status chip per headset: [i18n key, chip variant, tooltip key].
+export function deviceStatus(device) {
+  if (!device.online) return ['Offline', 'offline'];
+  if (device.playbackState === 'playing') return ['Playing', 'ok'];
+  if (device.playbackState === 'paused') return ['Paused', 'info'];
+  if (device.playbackState === 'loading') return ['Loading', 'info'];
+  if (device.agentConnected && !device.playerConnected) {
+    // Player 1.9.0+: the headset agent answers with the player closed.
+    return ['Player closed', 'warn', 'Headset is on, the player app is closed'];
   }
-  if (device.agentConnected) {
-    // Player 1.9.0+: one link through the headset agent, up whether or not the player runs.
-    return device.playerConnected
-      ? <span className="badge badge-ok" title={t('Connected via the headset agent')}>{t('Online')}</span>
-      : <span className="badge badge-warn" title={t('Headset is on, the player app is closed')}>{t('Player closed')}</span>;
-  }
-  if (device.playerConnected && device.wsConnected) {
-    return <span className="badge badge-ok" title={t('Connected via WebSocket')}>WS</span>;
-  }
-  if (device.playerConnected) {
-    return <span className="badge badge-ok" title={t('Connected via HTTP')}>HTTP</span>;
-  }
-  return <span className="badge badge-offline">{t('Player offline')}</span>;
+  if (!device.playerConnected) return ['Player offline', 'offline'];
+  const via = device.agentConnected ? 'Connected via the headset agent'
+    : device.wsConnected ? 'Connected via WebSocket' : 'Connected via HTTP';
+  return ['Ready', 'info', via];
+}
+
+function Battery({ device, t }) {
+  if (device.battery <= 0) return null;
+  const low = isLowBattery(device);
+  return (
+    <span className={`battery${low ? ' low' : ''}`} title={low ? t('Low battery') : t('Battery')}>
+      <span className="battery-shape"><span style={{ width: `${device.battery}%` }} /></span>
+      {device.batteryCharging && <span aria-label={t('Charging')}>⚡</span>}
+      {device.battery}%
+    </span>
+  );
 }
 
 export default function DeviceTile({ device, onClick }) {
   const { t } = useI18n();
-  const config = useDeviceStore((state) => state.config);
-  const threshold = config?.batteryThreshold || 20;
-  const isLowBattery = device.battery > 0 && device.battery <= threshold;
-  const isPlaying = device.playbackState === 'playing' || device.playbackState === 'paused';
   const selected = useDeviceStore((state) => !!state.selectedIds[device.deviceId]);
   const toggleSelected = useDeviceStore((state) => state.toggleSelected);
+  const isPlaying = device.playbackState === 'playing' || device.playbackState === 'paused';
+  const [statusKey, statusKind, statusTitle] = deviceStatus(device);
 
   const handlePing = (event) => {
     event.stopPropagation();
     pingDevice(device.deviceId);
   };
 
+  const notes = [];
+  if (device.online) {
+    if (device.launchBlockedSec > 0) {
+      notes.push(['error', t('Player will not open: {minutes} min', { minutes: Math.max(1, Math.round(device.launchBlockedSec / 60)) }), t('Launch blocked hint')]);
+    }
+    if (device.content?.state && device.content.state !== 'idle') {
+      notes.push([device.content.state === 'error' ? 'error' : 'info', `${t('Content')}: ${contentText(device.content, t)}`]);
+    }
+    if (device.updateStatus && device.updateStatus !== 'up to date') {
+      notes.push([device.updateStatus.startsWith('failed') ? 'error' : 'info', `${t('Player update')}: ${updateText(device.updateStatus, t)}`]);
+    }
+    if (isLowBattery(device) && !device.batteryCharging) {
+      notes.push(['warn', t('Low battery')]);
+    }
+  }
+
   return (
-    <div className={`device-tile ${getBorderClass(device)}${selected ? ' tile-selected' : ''}`} onClick={onClick}>
+    <div
+      className={`device-tile${device.online ? '' : ' tile-offline'}${device.online && device.requirementsMet === false ? ' tile-error' : ''}${selected ? ' tile-selected' : ''}`}
+      onClick={onClick}
+    >
       <div className="tile-header">
         <input
           type="checkbox"
           className="tile-select"
           checked={selected}
           title={t('Select for commands')}
+          aria-label={t('Select for commands')}
           onClick={(event) => event.stopPropagation()}
           onChange={() => toggleSelected(device.deviceId)}
         />
@@ -85,7 +103,9 @@ export default function DeviceTile({ device, onClick }) {
             <span className="tile-name-pending" title={t('Name stored only on the server (older player build)')}> *</span>
           )}
         </span>
-        <span className={`tile-status-dot ${device.online ? 'dot-online' : 'dot-offline'}`} />
+        <span className={`chip chip-${statusKind}`} title={statusTitle ? t(statusTitle) : undefined}>
+          <span className="chip-dot" />{t(statusKey)}
+        </span>
       </div>
 
       <div className="tile-info">
@@ -95,44 +115,17 @@ export default function DeviceTile({ device, onClick }) {
             <span className="tile-version"> · v{device.playerVersion || device.agentVersion}</span>
           )}
         </span>
-        <BatteryIcon level={device.battery} charging={device.batteryCharging} />
+        <Battery device={device} t={t} />
       </div>
-
-      <div className="tile-status-row">
-        <ConnectionBadge device={device} t={t} />
-      </div>
-
-      {device.online && (
-        <div className="tile-requirements">
-          {device.requirementsMet === null && <span className="req-checking">{t('Checking...')}</span>}
-          {device.requirementsMet === true && <span className="req-ok">{t('Requirements met')}</span>}
-          {device.requirementsMet === false && <span className="req-fail">{t('Requirements missing')}</span>}
-        </div>
-      )}
-
-      {device.online && device.content?.state && device.content.state !== 'idle' && (
-        <div className={`tile-content ${device.content.state === 'error' ? 'req-fail' : ''}`} title={contentText(device.content, t)}>
-          ⬇ {contentText(device.content, t)}
-        </div>
-      )}
-
-      {device.online && device.launchBlockedSec > 0 && (
-        <div className="tile-content req-fail" title={t('Launch blocked hint')}>
-          ⚠ {t('Player will not open: {minutes} min', { minutes: Math.max(1, Math.round(device.launchBlockedSec / 60)) })}
-        </div>
-      )}
-
-      {device.online && device.updateStatus && device.updateStatus !== 'up to date' && (
-        <div className={`tile-content ${device.updateStatus.startsWith('failed') ? 'req-fail' : ''}`} title={updateText(device.updateStatus, t)}>
-          ⟳ {t('Player update')}: {updateText(device.updateStatus, t)}
-        </div>
-      )}
 
       {isPlaying && (
         <div className="tile-playback">
-          <span className="playback-file" title={device.currentVideo}>
-            {device.playbackState === 'playing' ? '▶' : '⏸'} {device.currentVideo || ''}
-          </span>
+          <div className="tile-playback-head">
+            <span className="playback-file" title={device.currentVideo}>{device.currentVideo || ''}</span>
+            {device.playbackDuration > 0 && (
+              <span className="mono">{formatTime(device.playbackTime)} / {formatTime(device.playbackDuration)}</span>
+            )}
+          </div>
           {device.playbackDuration > 0 && (
             <div className="progress-bar">
               <div
@@ -144,13 +137,31 @@ export default function DeviceTile({ device, onClick }) {
         </div>
       )}
 
-      <div className="tile-actions">
-        <button className="btn-small" disabled={!device.online || !device.playerConnected} onClick={handlePing}>
+      {notes.map(([kind, text, title]) => (
+        <div key={text} className={`tile-note tile-note-${kind}`} title={title || text}>{text}</div>
+      ))}
+
+      <div className="tile-footer">
+        <span className="tile-requirements" style={{ fontSize: 12 }}>
+          {device.online && device.requirementsMet === null && <span className="req-checking">{t('Checking...')}</span>}
+          {device.online && device.requirementsMet === true && <span className="req-ok">{t('Requirements met')}</span>}
+          {device.online && device.requirementsMet === false && <span className="req-fail">{t('Requirements missing')}</span>}
+        </span>
+        <button
+          className="btn-small"
+          disabled={!device.online || !device.playerConnected}
+          onClick={handlePing}
+          title={t('Ping')}
+        >
+          <Icon name="sound" size={14} />
           {t('Ping')}
         </button>
       </div>
-
-      {isLowBattery && <div className="low-battery-indicator" title={t('Low battery')} />}
     </div>
   );
+}
+
+function formatTime(seconds) {
+  const total = Math.max(0, Math.floor(seconds || 0));
+  return `${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, '0')}`;
 }

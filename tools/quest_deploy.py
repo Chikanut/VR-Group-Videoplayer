@@ -1,8 +1,9 @@
 """
-Quest Deploy Manager v1.0
-─────────────────────────
+Quest Deploy Manager
+────────────────────
 Масове розгортання додатків (APK) та файлів на підключені Oculus Quest
-через ADB. Зберігає конфігурацію в JSON.
+через ADB. Зберігає конфігурацію в JSON. Інтерфейс — локальна сторінка
+(tools/deploy_ui/index.html) в окремому вікні Edge/Chrome, у тому ж вигляді, що й панель керування.
 
 Можливості:
   • Автоматичне виявлення всіх підключених Quest
@@ -11,6 +12,8 @@ Quest Deploy Manager v1.0
   • Реальний прогрес копіювання (fallback на розрахунок по розміру)
   • JSON конфіг для списку файлів, APK, та налаштувань
   • Логування всіх операцій
+  • Відкат окулярів: видалити плеєр і повернути все, що змінювало налаштування
+  • Оновлення плеєра і самого менеджера з GitHub Releases
 
 Вимоги:
   1. ADB (platform-tools): https://developer.android.com/tools/releases/platform-tools
@@ -26,10 +29,12 @@ import re
 import subprocess
 import sys
 import time
+import shutil
+import tempfile
 import urllib.request
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk, scrolledtext
-from threading import Thread, Event
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Event, Lock, Thread, Timer
 from datetime import datetime
 from pathlib import Path
 
@@ -45,9 +50,19 @@ PLAYER_PACKAGE = "com.vrclass.player"
 # (logcat: "Launch is blocked because: a Reprojected OS dialog is currently showing").
 # Окуляри вже налаштовані, тож її можна вимкнути; повернути: adb shell pm enable com.oculus.firsttimenux
 META_FIRST_TIME_SETUP = "com.oculus.firsttimenux"
+# Підказки Meta (JITEBillboardActivity): без інтернету чекають токен Meta і так само блокують
+# запуск (бачили 2026-11-26). Повернути: adb shell pm enable com.oculus.guidebook
+META_GUIDE = "com.oculus.guidebook"
+# Системні вікна Meta, які вимикаємо: закрити їх може лише adb, не сам плеєр.
+META_BLOCKING_DIALOGS = (META_FIRST_TIME_SETUP, META_GUIDE)
 # Що робити з автозапуском плеєра під час налаштування (значення лежать у конфігу як є).
 AUTOSTART_KEEP, AUTOSTART_ON, AUTOSTART_OFF = "не змінювати", "увімкнути", "вимкнути"
 LOG_FILE = SCRIPT_DIR / "quest_deploy.log"
+DEPLOY_VERSION = "2.0.0"  # тег релізу GitHub, з яким іде цей exe
+PORT = 8765               # сторінка UI: http://127.0.0.1:8765/
+GITHUB_LATEST_URL = "https://api.github.com/repos/Chikanut/VR-Group-Videoplayer/releases/latest"
+PLAYER_ASSET = "VRClassroomPlayer-Quest.apk"
+DEPLOY_ASSET = "QuestDeployManager.exe"
 
 DEFAULT_CONFIG = {
     "adb_path": "adb",
@@ -296,6 +311,30 @@ class ADB:
             code, out, err = self.run("install", "-r", "-g", "-i", package_name, apk_path, serial=serial, timeout=300)
             if code != 0 or "Success" not in out + err:
                 errors.append(f"install -i: {(err or out).strip()}")
+        errors += self.grant_player_permissions(serial, package_name)
+        # Роутер без інтернету, що перенаправляє перевірку зв'язку, Quest вважає мережею «з входом»
+        # (captive portal). Ставимо одразу по кабелю, щоб діяло ще до першого підключення до
+        # сервера (той самий рядок є в його профілі налаштувань). Скасувати:
+        # adb shell settings delete global captive_portal_mode
+        code, out, err = self.run("shell", "settings", "put", "global", "captive_portal_mode", "0",
+                                  serial=serial, timeout=20)
+        if code != 0 or (err or out).strip():
+            errors.append(f"captive_portal_mode: {(err or out).strip()[:200]}")
+        error = self.disable_meta_dialogs(serial)
+        if error:
+            errors.append(f"вікна Meta: {error}")
+        # Стартуємо сторожа: він відкриє плеєр, щойно окуляри вдягнуть (поки вони лежать,
+        # Quest не відкриває жодних додатків).
+        self.run("shell", "am", "broadcast", "-n", f"{package_name}/.BootReceiver", serial=serial, timeout=20)
+        if autostart is not None:
+            error = self.set_autostart(serial, autostart)
+            if error:
+                errors.append(f"автозапуск (потрібен плеєр 1.8.2+): {error}")
+        return errors
+
+    def grant_player_permissions(self, serial, package_name):
+        """Дозволи плеєра, які видаються лише по кабелю. Повертає список помилок."""
+        errors = []
         # MANAGE_EXTERNAL_STORAGE: агент сам завантажує відео з сервера в /sdcard/Movies і може
         # замінити файли, які колись скопіювали кабелем (плеєр 1.9.0+).
         # GET_USAGE_STATS: сторож бачить, що поверх плеєра відкрився магазин Meta, і повертає плеєр (1.9.2+).
@@ -307,37 +346,35 @@ class ADB:
                                   "android.permission.WRITE_SECURE_SETTINGS", serial=serial, timeout=20)
         if code != 0 or "Exception" in out + err:
             errors.append(f"grant WRITE_SECURE_SETTINGS (потрібен плеєр 1.8.3+): {(err or out).strip()[:200]}")
-        # Роутер без інтернету, що перенаправляє перевірку зв'язку, Quest вважає мережею «з входом»
-        # (captive portal). Ставимо одразу по кабелю, щоб діяло ще до першого підключення до
-        # сервера (той самий рядок є в його профілі налаштувань). Скасувати:
-        # adb shell settings delete global captive_portal_mode
-        code, out, err = self.run("shell", "settings", "put", "global", "captive_portal_mode", "0",
-                                  serial=serial, timeout=20)
-        if code != 0 or (err or out).strip():
-            errors.append(f"captive_portal_mode: {(err or out).strip()[:200]}")
-        error = self.disable_first_time_setup(serial)
-        if error:
-            errors.append(f"перша настройка Meta: {error}")
-        # Стартуємо сторожа: він відкриє плеєр, щойно окуляри вдягнуть (поки вони лежать,
-        # Quest не відкриває жодних додатків).
-        self.run("shell", "am", "broadcast", "-n", f"{package_name}/.BootReceiver", serial=serial, timeout=20)
-        if autostart is not None:
-            error = self.set_autostart(serial, autostart)
-            if error:
-                errors.append(f"автозапуск (потрібен плеєр 1.8.2+): {error}")
         return errors
 
-    def disable_first_time_setup(self, serial):
-        """Вимикає першу настройку Meta (див. META_FIRST_TIME_SETUP). Повертає помилку або None.
+    def has_stale_data(self, serial, package_name):
+        """True, якщо в /sdcard/Android/data/<пакет> є папки іншого uid (лишились від видаленої копії).
 
-        Перевірено на Quest 3S, Horizon OS v209: вимикається, лишається вимкненою після
+        Плеєр не може в них писати, і Unity зависає на старті ("VRPlayer isn't responding").
+        """
+        _, out, _ = self.run("shell", "dumpsys", "package", package_name, serial=serial, timeout=20)
+        m = re.search(r"userId=(\d+)", out)
+        if not m:
+            return False
+        base = f"/sdcard/Android/data/{package_name}"
+        _, out, _ = self.run("shell", f"stat -c %u {base} {base}/* {base}/files/* 2>/dev/null",
+                             serial=serial, timeout=20)
+        return any(uid != m.group(1) for uid in out.split())
+
+    def disable_meta_dialogs(self, serial):
+        """Вимикає першу настройку й підказки Meta (META_BLOCKING_DIALOGS). Повертає помилку або None.
+
+        Перевірено на Quest 3S, Horizon OS v209: вимикаються, лишаються вимкненими після
         перезавантаження, сон / пробудження й головний екран працюють.
         """
-        code, out, err = self.run("shell", "pm", "disable-user", "--user", "0", META_FIRST_TIME_SETUP,
-                                  serial=serial, timeout=20)
-        if code != 0 or "disabled" not in out + err:
-            return (err or out).strip()[:200] or "pm disable-user не вдався"
-        return None
+        errors = []
+        for package in META_BLOCKING_DIALOGS:
+            code, out, err = self.run("shell", "pm", "disable-user", "--user", "0", package,
+                                      serial=serial, timeout=20)
+            if code != 0 or "disabled" not in out + err:
+                errors.append(f"{package}: {(err or out).strip()[:200] or 'pm disable-user не вдався'}")
+        return "; ".join(errors) or None
 
     def recover(self, serial, package_name):
         """Знімає зависле системне вікно, яке не дає відкрити плеєр, і знову запускає сторожа.
@@ -345,11 +382,19 @@ class ADB:
         Повертає список (ок, текст) для журналу.
         """
         steps = []
-        code, out, err = self.run("shell", "am", "force-stop", META_FIRST_TIME_SETUP, serial=serial, timeout=20)
-        steps.append((code == 0, "закрито першу настройку Meta" if code == 0 else f"force-stop: {(err or out).strip()}"))
-        self.run("shell", "am", "force-stop", "com.oculus.store", serial=serial, timeout=20)
-        error = self.disable_first_time_setup(serial)
-        steps.append((error is None, "першу настройку Meta вимкнено" if error is None else f"вимкнення: {error}"))
+        for package in META_BLOCKING_DIALOGS + ("com.oculus.store",):
+            code, out, err = self.run("shell", "am", "force-stop", package, serial=serial, timeout=20)
+            if code != 0:
+                steps.append((False, f"force-stop {package}: {(err or out).strip()}"))
+        steps.append((True, "закрито вікна Meta (перша настройка, підказки, магазин)"))
+        if self.has_stale_data(serial, package_name):
+            # Очищає дані плеєра (адресу сервера та ім'я він знову отримає від сервера); відео не чіпає.
+            code, out, err = self.run("shell", "pm", "clear", package_name, serial=serial, timeout=60)
+            errors = self.grant_player_permissions(serial, package_name) if code == 0 else [(err or out).strip()]
+            steps.append((not errors, "прибрано старі дані плеєра після перевстановлення" if not errors
+                          else f"очищення даних плеєра: {'; '.join(errors)}"))
+        error = self.disable_meta_dialogs(serial)
+        steps.append((error is None, "першу настройку й підказки Meta вимкнено" if error is None else f"вимкнення: {error}"))
         self.run("shell", "am", "broadcast", "-n", f"{package_name}/.BootReceiver", serial=serial, timeout=20)
         code, out, err = self.run("shell", "monkey", "-p", package_name, "-c", "android.intent.category.LAUNCHER", "1",
                                   serial=serial, timeout=20)
@@ -386,7 +431,12 @@ class ADB:
             self.run("forward", "--remove", f"tcp:{port}", serial=serial, timeout=10)
 
     def uninstall_package(self, serial, package_name):
-        """adb uninstall. Видаляє застосунок разом з його даними."""
+        """adb uninstall. Видаляє застосунок разом з його даними.
+
+        Спершу pm clear: Quest при видаленні лишає частину /sdcard/Android/data/<пакет> зі старим
+        uid; новий застосунок не може туди писати, і Unity зависає на старті ("isn't responding").
+        """
+        self.run("shell", "pm", "clear", package_name, serial=serial, timeout=60)
         return self.run("uninstall", package_name, serial=serial, timeout=60)
 
     def trigger_media_scan(self, serial, file_path):
@@ -445,6 +495,73 @@ class ADB:
         return self.run("tcpip", str(port), serial=serial, timeout=10)
 
 
+    def get_player_version(self, serial):
+        _, out, _ = self.run("shell", "dumpsys", "package", PLAYER_PACKAGE, serial=serial, timeout=20)
+        m = re.search(r"versionName=(\S+)", out)
+        return m.group(1) if m else ""
+
+    def rollback(self, serial, package_name, remove_player=True, enable_meta=True, restore_settings=True,
+                 video_paths=(), wifi_ssids=()):
+        """Повертає окуляри до стану до VR Classroom: все, що зробили setup_player() і плеєр.
+
+        Видалення плеєра забирає й усе, що видавалось саме йому (appops, WRITE_SECURE_SETTINGS,
+        інсталятор, сторож автозапуску, ім'я окулярів). Рядки профілю системних налаштувань сервера,
+        крім captive_portal_mode, плеєр повертає сам, коли профіль на сервері порожній; після
+        видалення він цього вже не зробить. Повертає список (ок, текст) для журналу.
+        """
+        steps = []
+
+        def step(ok, text):
+            steps.append((ok, text))
+
+        if remove_player:
+            # Плеєр тримав окуляри «вдягнутими» (prox_close): повертаємо звичайний датчик.
+            self.run("shell", "am", "broadcast", "-a", "com.oculus.vrpowermanager.automation_disable",
+                     serial=serial, timeout=20)
+            if self.is_package_installed(serial, package_name):
+                code, out, err = self.uninstall_package(serial, package_name)
+                ok = code == 0 and "Success" in out + err
+                step(ok, "плеєр видалено разом з даними і дозволами" if ok
+                     else f"видалення плеєра: {(err or out).strip()[:200]}")
+            else:
+                step(True, "плеєр не встановлено")
+            self.run("shell", "rm", "-rf", f"/sdcard/Android/data/{package_name}", serial=serial, timeout=30)
+        if enable_meta:
+            errors = []
+            for package in META_BLOCKING_DIALOGS:
+                code, out, err = self.run("shell", "pm", "enable", package, serial=serial, timeout=20)
+                if code != 0 or "enabled" not in out + err:
+                    errors.append(f"{package}: {(err or out).strip()[:200] or 'pm enable не вдався'}")
+            step(not errors, "першу настройку й підказки Meta знову увімкнено" if not errors else "; ".join(errors))
+        if restore_settings:
+            code, out, err = self.run("shell", "settings", "delete", "global", "captive_portal_mode",
+                                      serial=serial, timeout=20)
+            step(code == 0, "captive_portal_mode повернуто до стандартного" if code == 0
+                 else f"captive_portal_mode: {(err or out).strip()[:200]}")
+        if video_paths:
+            removed = 0
+            for path in video_paths:
+                code, _, _ = self.run("shell", "rm", "-f", path, serial=serial, timeout=30)
+                removed += code == 0
+            # Недокачані відео агента (ContentSync.java).
+            self.run("shell", "rm -f /sdcard/Movies/.partial-*", serial=serial, timeout=30)
+            self.run("shell", "content", "call", "--uri", "content://media", "--method", "scan_volume",
+                     "--arg", "external_primary", serial=serial, timeout=15)
+            step(removed == len(video_paths), f"видалено відео: {removed} з {len(video_paths)}")
+        if wifi_ssids:
+            _, out, _ = self.run("shell", "cmd", "wifi", "list-networks", serial=serial, timeout=15)
+            forgotten = []
+            for line in out.splitlines()[1:]:
+                # "Network Id  SSID  Security type": SSID may hold single spaces, columns are 2+ apart.
+                m = re.match(r"\s*(\d+)\s+(.+?)(?:\s{2,}\S.*)?$", line)
+                if m and m.group(2).strip() in wifi_ssids:
+                    code, _, _ = self.run("shell", "cmd", "wifi", "forget-network", m.group(1), serial=serial, timeout=15)
+                    if code == 0:
+                        forgotten.append(m.group(2).strip())
+            step(True, f"забуто мережі: {', '.join(forgotten) or 'немає таких на окулярах'}")
+        return steps
+
+
 # ═══════════════════════════════════════════════════════════
 #  Конфіг
 # ═══════════════════════════════════════════════════════════
@@ -470,804 +587,354 @@ def save_config(cfg):
 
 
 # ═══════════════════════════════════════════════════════════
-#  GUI
+#  Оновлення з GitHub Releases
 # ═══════════════════════════════════════════════════════════
 
-class QuestDeployApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Quest Deploy Manager")
-        self.root.geometry("820x720")
-        self.root.minsize(780, 650)
+def parse_version(text):
+    return tuple(int(part) for part in re.findall(r"\d+", text or "")[:3])
 
+
+def fetch_latest_release():
+    """Останній реліз з GitHub: {version, notes, url, assets: {name: {url, size}}}. Кидає виняток без інтернету."""
+    req = urllib.request.Request(GITHUB_LATEST_URL, headers={
+        "Accept": "application/vnd.github+json", "User-Agent": "QuestDeployManager"})
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        data = json.load(resp)
+    return {
+        "version": (data.get("tag_name") or "").lstrip("v"),
+        "notes": data.get("body") or "",
+        "url": data.get("html_url") or "",
+        "assets": {a["name"]: {"url": a["browser_download_url"], "size": a.get("size", 0)}
+                   for a in data.get("assets") or [] if a.get("browser_download_url")},
+    }
+
+
+def download_file(url, dest, progress):
+    """Завантажує у dest через .part (обрив не лишає битий файл). progress(done, total)."""
+    dest = Path(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    part = dest.with_name(dest.name + ".part")
+    req = urllib.request.Request(url, headers={"User-Agent": "QuestDeployManager"})
+    with urllib.request.urlopen(req, timeout=30) as resp, open(part, "wb") as out:
+        total = int(resp.headers.get("Content-Length") or 0)
+        done = 0
+        while True:
+            chunk = resp.read(1 << 20)
+            if not chunk:
+                break
+            out.write(chunk)
+            done += len(chunk)
+            progress(done, total)
+    if total and done != total:
+        raise RuntimeError("завантаження обірвалось")
+    os.replace(part, dest)
+
+
+def swap_script(new_exe, exe):
+    """.bat, який чекає, поки exe звільниться, підміняє його новим і запускає."""
+    return (
+        "@echo off\r\nset n=0\r\n:retry\r\n"
+        f'move /y "{new_exe}" "{exe}" >nul 2>&1 && goto run\r\n'
+        "set /a n+=1\r\nif %n% geq 60 goto end\r\ntimeout /t 1 /nobreak >nul\r\ngoto retry\r\n"
+        f':run\r\nstart "" "{exe}"\r\n:end\r\ndel "%~f0"\r\n'
+    )
+
+
+# ═══════════════════════════════════════════════════════════
+#  Сервіс: стан і дії (UI — tools/deploy_ui/index.html)
+# ═══════════════════════════════════════════════════════════
+
+_dialog_lock = Lock()
+
+
+def native_dialog(kind, **kwargs):
+    """Системний діалог вибору файлу/папки. tkinter лише для цього: окремий Tk на кожен виклик."""
+    import tkinter as tk
+    from tkinter import filedialog
+    with _dialog_lock:
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        try:
+            return getattr(filedialog, kind)(parent=root, **kwargs)
+        finally:
+            root.destroy()
+
+
+def human_size(size):
+    return f"{size / 1024 / 1024:.1f} МБ" if size > 1024 * 1024 else f"{size / 1024:.0f} КБ"
+
+
+class DeployService:
+    def __init__(self):
+        self.lock = Lock()
         self.config = load_config()
         self.adb = ADB(self.config.get("adb_path", "adb"))
+        self.devices = []        # [{serial, model, android, player, status}]
+        self.log_lines = []      # [(seq, text)]
+        self.log_seq = 0
         self.deploying = False
+        self.busy = ""           # назва довгої дії, що зараз іде (кнопки вимикаються)
         self.deploy_cancel = Event()
+        self.overall = {"done": 0, "total": 0, "label": "Готово"}
+        self.current = {"text": "", "pct": 0}
+        self.release = None
+        self.release_error = ""
+        self.update_job = None
+        self.apk_packages = {}   # шлях → package name (aapt повільний, рахуємо раз)
 
-        self._build_ui()
-        self.refresh_devices()
-        self.refresh_lists()
-
-    # ── UI ────────────────────────────────────────────────
-
-    def _build_ui(self):
-        style = ttk.Style()
-        style.configure("Header.TLabel", font=("Segoe UI", 11, "bold"))
-        style.configure("Log.TLabel", font=("Consolas", 9))
-
-        notebook = ttk.Notebook(self.root)
-        notebook.pack(fill="both", expand=True, padx=6, pady=6)
-
-        # ── Вкладка: Пристрої ────────────────────────────
-        tab_devices = ttk.Frame(notebook, padding=8)
-        notebook.add(tab_devices, text="  Пристрої  ")
-
-        ttk.Label(tab_devices, text="Підключені Quest", style="Header.TLabel").pack(anchor="w")
-
-        frame_dev = ttk.Frame(tab_devices)
-        frame_dev.pack(fill="both", expand=True, pady=5)
-
-        cols = ("serial", "model", "android", "status")
-        self.dev_tree = ttk.Treeview(frame_dev, columns=cols, show="headings", height=6)
-        self.dev_tree.heading("serial", text="Serial")
-        self.dev_tree.heading("model", text="Модель")
-        self.dev_tree.heading("android", text="Android")
-        self.dev_tree.heading("status", text="Статус")
-        self.dev_tree.column("serial", width=200)
-        self.dev_tree.column("model", width=180)
-        self.dev_tree.column("android", width=80)
-        self.dev_tree.column("status", width=200)
-        self.dev_tree.pack(side="left", fill="both", expand=True)
-
-        sb = ttk.Scrollbar(frame_dev, orient="vertical", command=self.dev_tree.yview)
-        sb.pack(side="right", fill="y")
-        self.dev_tree.configure(yscrollcommand=sb.set)
-
-        frame_dev_btn = ttk.Frame(tab_devices)
-        frame_dev_btn.pack(fill="x", pady=5)
-        ttk.Button(frame_dev_btn, text="Оновити", command=self.refresh_devices).pack(side="left", padx=3)
-        ttk.Button(frame_dev_btn, text="Вибрати всі", command=self.select_all_devices).pack(side="left", padx=3)
-        ttk.Button(frame_dev_btn, text="🛠  Відновити (немає інтерфейсу / плеєр не відкривається)",
-                   command=self.recover_devices).pack(side="left", padx=3)
-        ttk.Button(frame_dev_btn, text="⟳  Перезавантажити", command=self.reboot_devices).pack(side="left", padx=3)
-
-        # ── Вкладка: Файли ───────────────────────────────
-        tab_files = ttk.Frame(notebook, padding=8)
-        notebook.add(tab_files, text="  Файли  ")
-
-        ttk.Label(tab_files, text="Файли для копіювання на Quest", style="Header.TLabel").pack(anchor="w")
-
-        frame_files = ttk.Frame(tab_files)
-        frame_files.pack(fill="both", expand=True, pady=5)
-
-        cols_f = ("src", "dst", "size")
-        self.file_tree = ttk.Treeview(frame_files, columns=cols_f, show="headings", height=8)
-        self.file_tree.heading("src", text="Файл на ПК")
-        self.file_tree.heading("dst", text="Папка на Quest")
-        self.file_tree.heading("size", text="Розмір")
-        self.file_tree.column("src", width=350)
-        self.file_tree.column("dst", width=250)
-        self.file_tree.column("size", width=80)
-        self.file_tree.pack(side="left", fill="both", expand=True)
-
-        sb_f = ttk.Scrollbar(frame_files, orient="vertical", command=self.file_tree.yview)
-        sb_f.pack(side="right", fill="y")
-        self.file_tree.configure(yscrollcommand=sb_f.set)
-
-        frame_file_btn = ttk.Frame(tab_files)
-        frame_file_btn.pack(fill="x", pady=5)
-        ttk.Button(frame_file_btn, text="Додати файл…", command=self.add_file).pack(side="left", padx=3)
-        ttk.Button(frame_file_btn, text="Додати папку…", command=self.add_folder).pack(side="left", padx=3)
-        ttk.Button(frame_file_btn, text="Видалити вибране", command=self.remove_file).pack(side="left", padx=3)
-
-        # ── Вкладка: Додатки (APK) ──────────────────────
-        tab_apks = ttk.Frame(notebook, padding=8)
-        notebook.add(tab_apks, text="  Додатки (APK)  ")
-
-        ttk.Label(tab_apks, text="APK для встановлення", style="Header.TLabel").pack(anchor="w")
-
-        frame_apks = ttk.Frame(tab_apks)
-        frame_apks.pack(fill="both", expand=True, pady=5)
-
-        cols_a = ("path", "package", "size")
-        self.apk_tree = ttk.Treeview(frame_apks, columns=cols_a, show="headings", height=8)
-        self.apk_tree.heading("path", text="APK файл")
-        self.apk_tree.heading("package", text="Package name")
-        self.apk_tree.heading("size", text="Розмір")
-        self.apk_tree.column("path", width=350)
-        self.apk_tree.column("package", width=250)
-        self.apk_tree.column("size", width=80)
-        self.apk_tree.pack(side="left", fill="both", expand=True)
-
-        sb_a = ttk.Scrollbar(frame_apks, orient="vertical", command=self.apk_tree.yview)
-        sb_a.pack(side="right", fill="y")
-        self.apk_tree.configure(yscrollcommand=sb_a.set)
-
-        frame_apk_btn = ttk.Frame(tab_apks)
-        frame_apk_btn.pack(fill="x", pady=5)
-        ttk.Button(frame_apk_btn, text="Додати APK…", command=self.add_apk).pack(side="left", padx=3)
-        ttk.Button(frame_apk_btn, text="Видалити вибране", command=self.remove_apk).pack(side="left", padx=3)
-
-        # ── Вкладка: Налаштування ────────────────────────
-        tab_settings = ttk.Frame(notebook, padding=8)
-        notebook.add(tab_settings, text="  Налаштування  ")
-
-        ttk.Label(tab_settings, text="Шлях до ADB:", style="Header.TLabel").pack(anchor="w", pady=(0, 5))
-        frame_adb = ttk.Frame(tab_settings)
-        frame_adb.pack(fill="x", pady=5)
-        self.adb_path_var = tk.StringVar(value=self.config.get("adb_path", "adb"))
-        ttk.Entry(frame_adb, textvariable=self.adb_path_var, width=60).pack(side="left", padx=(0, 5))
-        ttk.Button(frame_adb, text="Огляд…", command=self.browse_adb).pack(side="left")
-        ttk.Button(frame_adb, text="Зберегти", command=self.save_adb_path).pack(side="left", padx=5)
-
-        ttk.Separator(tab_settings, orient="horizontal").pack(fill="x", pady=15)
-
-        ttk.Label(tab_settings, text="Конфіг:", style="Header.TLabel").pack(anchor="w")
-        ttk.Label(tab_settings, text=str(CONFIG_FILE)).pack(anchor="w", pady=3)
-        frame_cfg_btn = ttk.Frame(tab_settings)
-        frame_cfg_btn.pack(anchor="w", pady=5)
-        ttk.Button(frame_cfg_btn, text="Відкрити конфіг", command=self.open_config).pack(side="left", padx=3)
-        ttk.Button(frame_cfg_btn, text="Перезавантажити конфіг", command=self.reload_config).pack(side="left", padx=3)
-
-        ttk.Separator(tab_settings, orient="horizontal").pack(fill="x", pady=15)
-
-        # ── Wi-Fi мережі ─────────────────────────────────
-        ttk.Label(tab_settings, text="Wi-Fi мережі для пристроїв:", style="Header.TLabel").pack(anchor="w")
-        ttk.Label(tab_settings,
-                  text="Збережені мережі — застосовуються кнопкою «Застосувати Wi-Fi на девайси»",
-                  foreground="gray").pack(anchor="w", pady=(0, 5))
-
-        frame_wifi = ttk.Frame(tab_settings)
-        frame_wifi.pack(fill="both", expand=True, pady=5)
-
-        cols_w = ("ssid", "security", "password")
-        self.wifi_tree = ttk.Treeview(frame_wifi, columns=cols_w, show="headings", height=5)
-        self.wifi_tree.heading("ssid", text="Назва мережі (SSID)")
-        self.wifi_tree.heading("security", text="Безпека")
-        self.wifi_tree.heading("password", text="Пароль")
-        self.wifi_tree.column("ssid", width=220)
-        self.wifi_tree.column("security", width=100)
-        self.wifi_tree.column("password", width=200)
-        self.wifi_tree.pack(side="left", fill="both", expand=True)
-
-        sb_w = ttk.Scrollbar(frame_wifi, orient="vertical", command=self.wifi_tree.yview)
-        sb_w.pack(side="right", fill="y")
-        self.wifi_tree.configure(yscrollcommand=sb_w.set)
-
-        frame_wifi_btn = ttk.Frame(tab_settings)
-        frame_wifi_btn.pack(fill="x", pady=5)
-        ttk.Button(frame_wifi_btn, text="Додати мережу…",
-                   command=self.add_wifi_network).pack(side="left", padx=3)
-        ttk.Button(frame_wifi_btn, text="Видалити вибрану",
-                   command=self.remove_wifi_network).pack(side="left", padx=3)
-        ttk.Separator(frame_wifi_btn, orient="vertical").pack(side="left", fill="y", padx=8)
-        ttk.Button(frame_wifi_btn, text="📶  Застосувати Wi-Fi на девайси",
-                   command=self.apply_wifi_to_devices).pack(side="left", padx=3)
-        ttk.Button(frame_wifi_btn, text="🔗  Увімкнути Wireless ADB (tcpip)",
-                   command=self.enable_wireless_adb).pack(side="left", padx=3)
-
-        frame_wifi_auto = ttk.Frame(tab_settings)
-        frame_wifi_auto.pack(anchor="w", pady=(4, 0))
-        self.wifi_auto_var = tk.BooleanVar(value=self.config.get("wifi_auto_deploy", False))
-        ttk.Checkbutton(
-            frame_wifi_auto,
-            text="Застосовувати Wi-Fi перед кожним деплоєм",
-            variable=self.wifi_auto_var,
-            command=self.save_wifi_auto_setting
-        ).pack(side="left")
-
-        # ── Нижня панель: прогрес і лог ──────────────────
-        frame_bottom = ttk.Frame(self.root, padding=6)
-        frame_bottom.pack(fill="x", side="bottom")
-
-        # Прогрес
-        frame_prog = ttk.Frame(frame_bottom)
-        frame_prog.pack(fill="x", pady=(0, 5))
-
-        self.overall_label = tk.StringVar(value="Готово")
-        ttk.Label(frame_prog, textvariable=self.overall_label).pack(anchor="w")
-
-        self.overall_progress = ttk.Progressbar(frame_prog, mode="determinate", maximum=100)
-        self.overall_progress.pack(fill="x", pady=2)
-
-        self.current_label = tk.StringVar(value="")
-        ttk.Label(frame_prog, textvariable=self.current_label).pack(anchor="w")
-
-        self.current_progress = ttk.Progressbar(frame_prog, mode="determinate", maximum=100)
-        self.current_progress.pack(fill="x", pady=2)
-
-        # Кнопки Deploy
-        frame_deploy = ttk.Frame(frame_bottom)
-        frame_deploy.pack(fill="x", pady=5)
-
-        self.deploy_btn = ttk.Button(frame_deploy, text="▶  Розгорнути на вибрані Quest",
-                                     command=self.start_deploy)
-        self.deploy_btn.pack(side="left", padx=3)
-
-        self.cancel_btn = ttk.Button(frame_deploy, text="Скасувати", command=self.cancel_deploy,
-                                     state="disabled")
-        self.cancel_btn.pack(side="left", padx=3)
-
-        ttk.Separator(frame_deploy, orient="vertical").pack(side="left", fill="y", padx=8)
-        ttk.Label(frame_deploy, text="Контент:").pack(side="left", padx=(0, 3))
-        self.deploy_content_var = tk.StringVar(value=self.config.get("deploy_content", "all"))
-        for value, text in (("all", "Все"), ("files", "Тільки файли/відео"), ("apks", "Тільки APK")):
-            ttk.Radiobutton(frame_deploy, text=text, value=value,
-                            variable=self.deploy_content_var,
-                            command=self.save_deploy_options).pack(side="left", padx=2)
-
-        ttk.Separator(frame_deploy, orient="vertical").pack(side="left", fill="y", padx=8)
-        self.force_reinstall_var = tk.BooleanVar(value=self.config.get("force_reinstall", False))
-        ttk.Checkbutton(frame_deploy, text="Force reinstall APK (видалити і встановити заново)",
-                        variable=self.force_reinstall_var,
-                        command=self.save_deploy_options).pack(side="left", padx=2)
-
-        ttk.Separator(frame_deploy, orient="vertical").pack(side="left", fill="y", padx=8)
-        ttk.Label(frame_deploy, text="Автозапуск плеєра:").pack(side="left", padx=(0, 3))
-        self.autostart_var = tk.StringVar(value=self.config.get("autostart", AUTOSTART_KEEP))
-        autostart_box = ttk.Combobox(frame_deploy, textvariable=self.autostart_var, state="readonly", width=14,
-                                     values=(AUTOSTART_KEEP, AUTOSTART_ON, AUTOSTART_OFF))
-        autostart_box.pack(side="left", padx=2)
-        autostart_box.bind("<<ComboboxSelected>>", lambda _event: self.save_deploy_options())
-
-        # Лог
-        self.log_text = scrolledtext.ScrolledText(frame_bottom, height=8, font=("Consolas", 9),
-                                                   state="disabled", wrap="word")
-        self.log_text.pack(fill="x", pady=3)
-
-    # ── Лог ───────────────────────────────────────────────
-
-    def log(self, msg, tag=None):
-        ts = datetime.now().strftime("%H:%M:%S")
-        full = f"[{ts}] {msg}"
-
-        def _append():
-            self.log_text.config(state="normal")
-            self.log_text.insert("end", full + "\n")
-            self.log_text.see("end")
-            self.log_text.config(state="disabled")
-
-        self.root.after(0, _append)
-
-        # Також у файл
+    # ── журнал ─────────────────────────────────────────
+    def log(self, msg):
+        line = f"[{datetime.now().strftime('%H:%M:%S')}] {msg}"
+        with self.lock:
+            self.log_seq += 1
+            self.log_lines.append((self.log_seq, line))
+            del self.log_lines[:-500]
         try:
             with open(LOG_FILE, "a", encoding="utf-8") as f:
-                f.write(full + "\n")
+                f.write(line + "\n")
         except Exception:
             pass
 
-    # ── Пристрої ──────────────────────────────────────────
+    def model(self, serial):
+        return self.config.get("devices", {}).get(serial, {}).get("name", serial)
 
+    def set_status(self, serial, status):
+        for dev in self.devices:
+            if dev["serial"] == serial:
+                dev["status"] = status
+
+    def background(self, name, fn, *args):
+        """Запуск довгої дії в потоці; поки вона йде, інші довгі дії не стартують."""
+        with self.lock:
+            if self.busy or self.deploying:
+                return {"ok": False, "error": f"Зачекайте: {self.busy or 'розгортання'}"}
+            self.busy = name
+
+        def run():
+            try:
+                fn(*args)
+            except Exception as exc:
+                self.log(f"✗ {name}: {exc}")
+            finally:
+                self.busy = ""
+        Thread(target=run, daemon=True).start()
+        return {"ok": True}
+
+    # ── стан для UI ────────────────────────────────────
+    def state(self, since=0):
+        cfg = self.config
+        files = []
+        for f in cfg.get("files", []):
+            size = human_size(os.path.getsize(f["src"])) if os.path.exists(f["src"]) else "немає файлу"
+            files.append({"src": f["src"], "dst": f["dst"], "size": size})
+        apks = []
+        for path in cfg.get("apks", []):
+            exists = os.path.exists(path)
+            if exists and path not in self.apk_packages:
+                self.apk_packages[path] = self.adb.get_package_name_from_apk(path) or "?"
+            apks.append({"path": path, "package": self.apk_packages.get(path, "") if exists else "",
+                         "size": human_size(os.path.getsize(path)) if exists else "немає файлу"})
+        with self.lock:
+            log = [line for seq, line in self.log_lines if seq > since]
+            seq = self.log_seq
+        return {
+            "version": DEPLOY_VERSION,
+            "devices": self.devices,
+            "files": files,
+            "apks": apks,
+            "wifi": [{"ssid": n["ssid"], "security": n.get("security", "wpa2")} for n in cfg.get("wifi_networks", [])],
+            "options": {
+                "deploy_content": cfg.get("deploy_content", "all"),
+                "force_reinstall": cfg.get("force_reinstall", False),
+                "autostart": cfg.get("autostart", AUTOSTART_KEEP),
+                "wifi_auto_deploy": cfg.get("wifi_auto_deploy", False),
+            },
+            "autostart_choices": [AUTOSTART_KEEP, AUTOSTART_ON, AUTOSTART_OFF],
+            "adb_path": cfg.get("adb_path", "adb"),
+            "config_path": str(CONFIG_FILE),
+            "deploying": self.deploying,
+            "busy": self.busy,
+            "overall": self.overall,
+            "current": self.current,
+            "log": log,
+            "log_seq": seq,
+            "update": self.update_state(),
+        }
+
+    def update_state(self):
+        rel = self.release
+        return {
+            "current": DEPLOY_VERSION,
+            "latest": {k: rel[k] for k in ("version", "notes", "url")} if rel else None,
+            "has_player": bool(rel and PLAYER_ASSET in rel["assets"]),
+            "self_available": bool(rel and DEPLOY_ASSET in rel["assets"]
+                                   and parse_version(rel["version"]) > parse_version(DEPLOY_VERSION)),
+            "can_self_update": bool(getattr(sys, "frozen", False)) and os.name == "nt",
+            "error": self.release_error,
+            "job": self.update_job,
+        }
+
+    # ── пристрої ───────────────────────────────────────
     def refresh_devices(self):
-        def _refresh():
-            self.log("Пошук підключених пристроїв…")
-            serials = self.adb.get_devices()
-
-            devices_info = []
-            for s in serials:
-                model = self.adb.get_model(s)
-                android = self.adb.get_android_version(s)
-                devices_info.append((s, model, android))
-
-                # Зберігаємо в конфіг
-                self.config.setdefault("devices", {})[s] = {
-                    "name": model,
-                    "last_seen": datetime.now().isoformat()
-                }
-
-            save_config(self.config)
-
-            def _update():
-                for item in self.dev_tree.get_children():
-                    self.dev_tree.delete(item)
-                for s, model, android in devices_info:
-                    self.dev_tree.insert("", "end", iid=s,
-                                        values=(s, model, android, "Готовий"))
-                self.log(f"Знайдено пристроїв: {len(devices_info)}")
-
-            self.root.after(0, _update)
-
-        Thread(target=_refresh, daemon=True).start()
-
-    def select_all_devices(self):
-        for item in self.dev_tree.get_children():
-            self.dev_tree.selection_add(item)
-
-    def get_selected_devices(self):
-        return list(self.dev_tree.selection())
-
-    # ── Файли ─────────────────────────────────────────────
-
-    def add_file(self):
-        paths = filedialog.askopenfilenames(title="Оберіть файли")
-        if not paths:
-            return
-
-        for p in paths:
-            dst = self._ask_quest_path()
-            if not dst:
-                return
-            self.config["files"].append({"src": p, "dst": dst})
-
+        self.log("Пошук підключених пристроїв…")
+        devices = []
+        for serial in self.adb.get_devices():
+            model = self.adb.get_model(serial)
+            devices.append({"serial": serial, "model": model,
+                            "android": self.adb.get_android_version(serial),
+                            "player": self.adb.get_player_version(serial), "status": "Готовий"})
+            self.config.setdefault("devices", {})[serial] = {"name": model, "last_seen": datetime.now().isoformat()}
         save_config(self.config)
-        self.refresh_lists()
+        self.devices = devices
+        self.log(f"Знайдено пристроїв: {len(devices)}")
 
-    def add_folder(self):
-        """Додати всі файли з папки."""
-        folder = filedialog.askdirectory(title="Оберіть папку з файлами")
-        if not folder:
-            return
-        dst = self._ask_quest_path()
-        if not dst:
-            return
+    def targets(self, serials):
+        known = [d["serial"] for d in self.devices]
+        chosen = [s for s in serials or [] if s in known]
+        return chosen or known
 
-        for f in os.listdir(folder):
-            fp = os.path.join(folder, f)
-            if os.path.isfile(fp):
-                self.config["files"].append({"src": fp, "dst": dst})
+    def recover(self, serials):
+        self.log("═══ Відновлення окулярів ═══")
+        for serial in serials:
+            for ok, text in self.adb.recover(serial, PLAYER_PACKAGE):
+                self.log(f"  {'✓' if ok else '✗'} {self.model(serial)} ({serial}): {text}")
+        self.log("Якщо інтерфейс не повернувся за хвилину — «Перезавантажити».")
 
-        save_config(self.config)
-        self.refresh_lists()
+    def reboot(self, serials):
+        for serial in serials:
+            code, out, err = self.adb.reboot(serial)
+            self.log(f"  {'✓' if code == 0 else '✗'} {self.model(serial)} ({serial}): "
+                     f"{'перезавантажуються' if code == 0 else (err or out).strip()}")
 
-    def _ask_quest_path(self):
-        """Діалог введення шляху на Quest."""
-        win = tk.Toplevel(self.root)
-        win.title("Папка на Quest")
-        win.geometry("450x200")
-        win.grab_set()
+    def rollback(self, serials, opts):
+        self.log(f"═══ Відкат окулярів: {len(serials)} ═══")
+        videos = []
+        if opts.get("videos"):
+            videos = [f["dst"].rstrip("/") + "/" + os.path.basename(f["src"]) for f in self.config.get("files", [])]
+        ssids = [n["ssid"] for n in self.config.get("wifi_networks", [])] if opts.get("wifi") else []
+        for serial in serials:
+            self.set_status(serial, "Відкат…")
+            steps = self.adb.rollback(serial, PLAYER_PACKAGE,
+                                      remove_player=opts.get("player", True),
+                                      enable_meta=opts.get("meta", True),
+                                      restore_settings=opts.get("settings", True),
+                                      video_paths=videos, wifi_ssids=ssids)
+            for ok, text in steps:
+                self.log(f"  {'✓' if ok else '✗'} {self.model(serial)} ({serial}): {text}")
+            self.set_status(serial, "Відкочено" if all(ok for ok, _ in steps) else "Відкат з помилками")
+        self.log("═══ Відкат завершено ═══")
+        self.refresh_devices()
 
-        ttk.Label(win, text="Вкажіть папку призначення на Quest:").pack(pady=10)
-
-        var = tk.StringVar(value="/sdcard/Download/")
-        ttk.Entry(win, textvariable=var, width=50).pack(padx=20)
-
-        # Пресети
-        frame_p = ttk.Frame(win)
-        frame_p.pack(pady=10)
-        for name, path in [("Download", "/sdcard/Download/"), ("Movies", "/sdcard/Movies/"),
-                           ("Music", "/sdcard/Music/"), ("Pictures", "/sdcard/Pictures/"),
-                           ("Oculus", "/sdcard/Oculus/")]:
-            ttk.Button(frame_p, text=name, command=lambda p=path: var.set(p)).pack(side="left", padx=2)
-
-        result = [None]
-
-        def ok():
-            result[0] = var.get().strip()
-            win.destroy()
-
-        ttk.Button(win, text="OK", command=ok).pack(pady=10)
-        win.wait_window()
-        return result[0]
-
-    def remove_file(self):
-        sel = self.file_tree.selection()
-        if not sel:
-            return
-        indices = sorted([int(s) for s in sel], reverse=True)
-        for i in indices:
-            if 0 <= i < len(self.config["files"]):
-                self.config["files"].pop(i)
-        save_config(self.config)
-        self.refresh_lists()
-
-    # ── APK ───────────────────────────────────────────────
-
-    def add_apk(self):
-        paths = filedialog.askopenfilenames(
-            title="Оберіть APK файли",
-            filetypes=[("APK файли", "*.apk"), ("Всі файли", "*.*")]
-        )
-        if not paths:
-            return
-        for p in paths:
-            if p not in self.config["apks"]:
-                self.config["apks"].append(p)
-        save_config(self.config)
-        self.refresh_lists()
-
-    def remove_apk(self):
-        sel = self.apk_tree.selection()
-        if not sel:
-            return
-        indices = sorted([int(s) for s in sel], reverse=True)
-        for i in indices:
-            if 0 <= i < len(self.config["apks"]):
-                self.config["apks"].pop(i)
-        save_config(self.config)
-        self.refresh_lists()
-
-    # ── Оновлення списків ─────────────────────────────────
-
-    def refresh_lists(self):
-        # Файли
-        for item in self.file_tree.get_children():
-            self.file_tree.delete(item)
-        for i, f in enumerate(self.config.get("files", [])):
-            src = f["src"]
-            dst = f["dst"]
-            size = ""
-            if os.path.exists(src):
-                sz = os.path.getsize(src)
-                size = f"{sz / 1024 / 1024:.1f} МБ" if sz > 1024 * 1024 else f"{sz / 1024:.0f} КБ"
-            self.file_tree.insert("", "end", iid=str(i), values=(src, dst, size))
-
-        # APK
-        for item in self.apk_tree.get_children():
-            self.apk_tree.delete(item)
-        for i, apk_path in enumerate(self.config.get("apks", [])):
-            pkg = ""
-            size = ""
-            if os.path.exists(apk_path):
-                sz = os.path.getsize(apk_path)
-                size = f"{sz / 1024 / 1024:.1f} МБ"
-                pkg = self.adb.get_package_name_from_apk(apk_path) or "?"
-            self.apk_tree.insert("", "end", iid=str(i), values=(apk_path, pkg, size))
-
-        # Wi-Fi
-        self.refresh_wifi_list()
-
-    # ── Налаштування ──────────────────────────────────────
-
-    def browse_adb(self):
-        path = filedialog.askopenfilename(
-            title="Знайти adb.exe",
-            filetypes=[("ADB", "adb.exe"), ("Всі", "*.*")]
-        )
-        if path:
-            self.adb_path_var.set(path)
-
-    def save_adb_path(self):
-        self.config["adb_path"] = self.adb_path_var.get().strip()
-        self.adb = ADB(self.config["adb_path"])
-        save_config(self.config)
-        self.log(f"ADB шлях збережено: {self.config['adb_path']}")
-        messagebox.showinfo("Збережено", "Шлях до ADB оновлено.")
-
-    def open_config(self):
-        if os.name == "nt":
-            os.startfile(str(CONFIG_FILE))
-        else:
-            subprocess.Popen(["xdg-open", str(CONFIG_FILE)])
-
-    def reload_config(self):
-        self.config = load_config()
-        self.adb = ADB(self.config.get("adb_path", "adb"))
-        self.adb_path_var.set(self.config.get("adb_path", "adb"))
-        self.wifi_auto_var.set(self.config.get("wifi_auto_deploy", False))
-        self.deploy_content_var.set(self.config.get("deploy_content", "all"))
-        self.force_reinstall_var.set(self.config.get("force_reinstall", False))
-        self.refresh_lists()
-        self.log("Конфіг перезавантажено")
-
-    def save_wifi_auto_setting(self):
-        self.config["wifi_auto_deploy"] = self.wifi_auto_var.get()
-        save_config(self.config)
-        state = "увімкнено" if self.wifi_auto_var.get() else "вимкнено"
-        self.log(f"Wi-Fi перед деплоєм: {state}")
-
-    def save_deploy_options(self):
-        self.config["deploy_content"] = self.deploy_content_var.get()
-        self.config["force_reinstall"] = self.force_reinstall_var.get()
-        self.config["autostart"] = self.autostart_var.get()
-        save_config(self.config)
-
-    # ── Wi-Fi ─────────────────────────────────────────────
-
-    def refresh_wifi_list(self):
-        for item in self.wifi_tree.get_children():
-            self.wifi_tree.delete(item)
-        for i, net in enumerate(self.config.get("wifi_networks", [])):
-            masked = "*" * len(net.get("password", "")) or "(без пароля)"
-            self.wifi_tree.insert("", "end", iid=str(i),
-                                  values=(net["ssid"], net.get("security", "wpa2"), masked))
-
-    def add_wifi_network(self):
-        """Діалог додавання Wi-Fi мережі."""
-        win = tk.Toplevel(self.root)
-        win.title("Додати Wi-Fi мережу")
-        win.geometry("420x250")
-        win.resizable(False, False)
-        win.grab_set()
-
-        ttk.Label(win, text="SSID (назва мережі):").grid(row=0, column=0, sticky="w", padx=15, pady=10)
-        ssid_var = tk.StringVar()
-        ttk.Entry(win, textvariable=ssid_var, width=30).grid(row=0, column=1, padx=10, pady=10)
-
-        ttk.Label(win, text="Тип безпеки:").grid(row=1, column=0, sticky="w", padx=15, pady=5)
-        sec_var = tk.StringVar(value="wpa2")
-        sec_cb = ttk.Combobox(win, textvariable=sec_var,
-                              values=["wpa2", "wpa3", "open"], state="readonly", width=28)
-        sec_cb.grid(row=1, column=1, padx=10, pady=5)
-
-        ttk.Label(win, text="Пароль:").grid(row=2, column=0, sticky="w", padx=15, pady=5)
-        pass_var = tk.StringVar()
-        pass_entry = ttk.Entry(win, textvariable=pass_var, show="●", width=30)
-        pass_entry.grid(row=2, column=1, padx=10, pady=5)
-
-        show_var = tk.BooleanVar(value=False)
-        def toggle_show():
-            pass_entry.config(show="" if show_var.get() else "●")
-        ttk.Checkbutton(win, text="Показати пароль", variable=show_var,
-                        command=toggle_show).grid(row=3, column=1, sticky="w", padx=10)
-
-        def on_sec_change(event=None):
-            if sec_var.get() == "open":
-                pass_entry.config(state="disabled")
-                pass_var.set("")
+    def enable_tcpip(self, serials):
+        self.log("═══ Увімкнення Wireless ADB (порт 5555) ═══")
+        for serial in serials:
+            code, out, err = self.adb.enable_tcpip(serial, 5555)
+            if code == 0:
+                _, ip_out, _ = self.adb.run("shell", "ip", "route", "get", "8.8.8.8", serial=serial, timeout=10)
+                m = re.search(r"src\s+([\d.]+)", ip_out)
+                hint = f"  → adb connect {m.group(1)}:5555" if m else ""
+                self.log(f"  ✓ {self.model(serial)} ({serial}): tcpip:5555 увімкнено{hint}")
             else:
-                pass_entry.config(state="normal")
-        sec_cb.bind("<<ComboboxSelected>>", on_sec_change)
+                self.log(f"  ✗ {self.model(serial)} ({serial}): {err or out}")
 
-        result = [None]
-
-        def ok():
-            ssid = ssid_var.get().strip()
-            if not ssid:
-                messagebox.showwarning("Увага", "Введіть SSID!", parent=win)
-                return
-            if sec_var.get() != "open" and not pass_var.get().strip():
-                messagebox.showwarning("Увага", "Введіть пароль або оберіть тип 'open'!", parent=win)
-                return
-            result[0] = {
-                "ssid": ssid,
-                "security": sec_var.get(),
-                "password": pass_var.get()
-            }
-            win.destroy()
-
-        btn_frame = ttk.Frame(win)
-        btn_frame.grid(row=4, column=0, columnspan=2, pady=15)
-        ttk.Button(btn_frame, text="Додати", command=ok).pack(side="left", padx=10)
-        ttk.Button(btn_frame, text="Скасувати", command=win.destroy).pack(side="left")
-
-        win.wait_window()
-
-        if result[0]:
-            self.config.setdefault("wifi_networks", []).append(result[0])
-            save_config(self.config)
-            self.refresh_wifi_list()
-            self.log(f"Wi-Fi мережу додано: {result[0]['ssid']}")
-
-    def remove_wifi_network(self):
-        sel = self.wifi_tree.selection()
-        if not sel:
-            return
-        indices = sorted([int(s) for s in sel], reverse=True)
+    # ── Wi-Fi ──────────────────────────────────────────
+    def apply_wifi(self, serials):
         networks = self.config.get("wifi_networks", [])
-        for i in indices:
-            if 0 <= i < len(networks):
-                removed = networks.pop(i)
-                self.log(f"Wi-Fi мережу видалено: {removed['ssid']}")
-        save_config(self.config)
-        self.refresh_wifi_list()
+        self.log(f"═══ Застосування Wi-Fi: {len(networks)} мереж на {len(serials)} пристроїв ═══")
+        for serial in serials:
+            self.log(f"── Пристрій: {self.model(serial)} ({serial}) ──")
+            self._connect_wifi(serial, networks)
+        self.log("═══ Застосування Wi-Fi завершено ═══")
 
-    def apply_wifi_to_devices(self):
-        """Застосувати всі збережені Wi-Fi мережі на вибрані пристрої."""
-        networks = self.config.get("wifi_networks", [])
-        if not networks:
-            messagebox.showwarning("Увага", "Немає збережених Wi-Fi мереж.\nДодайте мережу у вкладці Налаштування.")
-            return
+    def _connect_wifi(self, serial, networks):
+        self.adb.enable_wifi(serial)
+        for net in networks:
+            ssid = net["ssid"]
+            code, out, err = self.adb.connect_wifi(serial, ssid, net.get("password", ""), net.get("security", "wpa2"))
+            combined = (out + err).lower()
+            if code == 0 and any(x in combined for x in ["success", "connected", "saving", "initiated"]):
+                self.log(f"  ✓ Wi-Fi: {ssid}")
+            elif "already" in combined:
+                self.log(f"  ⏭ Wi-Fi вже: {ssid}")
+            else:
+                self.log(f"  ✗ Wi-Fi помилка ({ssid}): {err or out or '?'}")
 
-        devices = self.get_selected_devices()
-        if not devices:
-            devices = list(self.dev_tree.get_children())
-        if not devices:
-            messagebox.showwarning("Увага", "Немає підключених пристроїв.")
-            return
-
-        def _apply():
-            self.log(f"═══ Застосування Wi-Fi: {len(networks)} мереж на {len(devices)} пристроїв ═══")
-            for serial in devices:
-                model = self.config.get("devices", {}).get(serial, {}).get("name", serial)
-                self.log(f"── Пристрій: {model} ({serial}) ──")
-
-                # Увімкнути Wi-Fi
-                self.adb.enable_wifi(serial)
-
-                for net in networks:
-                    ssid = net["ssid"]
-                    pwd = net.get("password", "")
-                    sec = net.get("security", "wpa2")
-                    self.log(f"  ⏳ Підключаю до: {ssid} ({sec})…")
-                    code, out, err = self.adb.connect_wifi(serial, ssid, pwd, sec)
-                    combined = (out + err).lower()
-                    if code == 0 and any(x in combined for x in ["success", "connected", "saving", "initiated"]):
-                        self.log(f"  ✓ Підключено: {ssid}")
-                    elif "already" in combined:
-                        self.log(f"  ⏭ Вже підключено: {ssid}")
-                    else:
-                        self.log(f"  ✗ Помилка ({ssid}): {err or out or 'невідома'}")
-
-            self.log("═══ Застосування Wi-Fi завершено ═══")
-
-        Thread(target=_apply, daemon=True).start()
-
-    def _target_devices(self):
-        devices = self.get_selected_devices() or list(self.dev_tree.get_children())
-        if not devices:
-            messagebox.showwarning("Увага", "Немає підключених пристроїв.")
-        return devices
-
-    def recover_devices(self):
-        """Окуляри працюють, але без інтерфейсу Quest і плеєр не відкривається (на панелі:
-        «Плеєр не відкривається»): закриває зависле системне вікно і запускає плеєр."""
-        devices = self._target_devices()
-        if not devices:
-            return
-
-        def _recover():
-            self.log("═══ Відновлення окулярів ═══")
-            for serial in devices:
-                model = self.config.get("devices", {}).get(serial, {}).get("name", serial)
-                for ok, text in self.adb.recover(serial, PLAYER_PACKAGE):
-                    self.log(f"  {'✓' if ok else '✗'} {model} ({serial}): {text}")
-            self.log("Якщо інтерфейс не повернувся за хвилину — «Перезавантажити».")
-
-        Thread(target=_recover, daemon=True).start()
-
-    def reboot_devices(self):
-        devices = self._target_devices()
-        if not devices or not messagebox.askyesno("Перезавантаження", f"Перезавантажити {len(devices)} окулярів?"):
-            return
-
-        def _reboot():
-            for serial in devices:
-                model = self.config.get("devices", {}).get(serial, {}).get("name", serial)
-                code, out, err = self.adb.reboot(serial)
-                self.log(f"  {'✓' if code == 0 else '✗'} {model} ({serial}): "
-                         f"{'перезавантажуються' if code == 0 else (err or out).strip()}")
-
-        Thread(target=_reboot, daemon=True).start()
-
-    def enable_wireless_adb(self):
-        """Перевести всі підключені пристрої в tcpip режим для wireless ADB."""
-        devices = self.get_selected_devices()
-        if not devices:
-            devices = list(self.dev_tree.get_children())
-        if not devices:
-            messagebox.showwarning("Увага", "Немає підключених пристроїв.")
-            return
-
-        def _enable():
-            self.log("═══ Увімкнення Wireless ADB (порт 5555) ═══")
-            for serial in devices:
-                model = self.config.get("devices", {}).get(serial, {}).get("name", serial)
-                code, out, err = self.adb.enable_tcpip(serial, 5555)
-                if code == 0:
-                    # Отримати IP пристрою
-                    _, ip_out, _ = self.adb.run(
-                        "shell", "ip", "route", "get", "8.8.8.8",
-                        serial=serial, timeout=10
-                    )
-                    ip = ""
-                    m = re.search(r'src\s+([\d.]+)', ip_out)
-                    if m:
-                        ip = m.group(1)
-                    hint = f"  → adb connect {ip}:5555" if ip else ""
-                    self.log(f"  ✓ {model} ({serial}): tcpip:5555 увімкнено{hint}")
-                else:
-                    self.log(f"  ✗ {model} ({serial}): {err or out}")
-            self.log("Тепер можна від'єднати USB і підключитись через Wi-Fi.")
-
-        Thread(target=_enable, daemon=True).start()
-
-    # ═══════════════════════════════════════════════════════
-    #  Deploy
-    # ═══════════════════════════════════════════════════════
-
-    def start_deploy(self):
-        if self.deploying:
-            return
-
-        devices = self.get_selected_devices()
-        if not devices:
-            # Якщо нічого не вибрано — беремо всі
-            devices = list(self.dev_tree.get_children())
-        if not devices:
-            messagebox.showwarning("Увага", "Немає підключених пристроїв.")
-            return
-
-        content = self.deploy_content_var.get()
-        files = self.config.get("files", []) if content in ("all", "files") else []
-        apks = self.config.get("apks", []) if content in ("all", "apks") else []
-
-        if not files and not apks:
-            what = {"files": "файли", "apks": "APK"}.get(content, "файли або APK")
-            messagebox.showwarning("Увага", f"Додайте {what} для розгортання.")
-            return
-
-        force_reinstall = self.force_reinstall_var.get()
-        if apks and force_reinstall and not messagebox.askyesno(
-                "Force reinstall",
-                "Застосунки буде видалено з шоломів разом з їхніми даними "
-                "(налаштування, назва шолома) і встановлено заново.\n\nПродовжити?"):
-            return
-
-        self.deploying = True
+    # ── розгортання ────────────────────────────────────
+    def start_deploy(self, serials):
+        with self.lock:
+            if self.deploying or self.busy:
+                return {"ok": False, "error": "Вже йде інша дія"}
+            content = self.config.get("deploy_content", "all")
+            files = self.config.get("files", []) if content in ("all", "files") else []
+            apks = self.config.get("apks", []) if content in ("all", "apks") else []
+            if not files and not apks:
+                what = {"files": "файли", "apks": "APK"}.get(content, "файли або APK")
+                return {"ok": False, "error": f"Додайте {what} для розгортання."}
+            self.deploying = True
         self.deploy_cancel.clear()
-        self.deploy_btn.config(state="disabled")
-        self.cancel_btn.config(state="normal")
-
-        Thread(target=self.do_deploy, args=(devices, files, apks, force_reinstall),
+        Thread(target=self.do_deploy, args=(serials, files, apks, self.config.get("force_reinstall", False)),
                daemon=True).start()
-
-    def cancel_deploy(self):
-        self.deploy_cancel.set()
-        self.log("Скасування…")
+        return {"ok": True}
 
     def do_deploy(self, devices, files, apks, force_reinstall=False):
+        try:
+            self._deploy(devices, files, apks, force_reinstall)
+        except Exception as exc:
+            self.log(f"✗ Розгортання зупинилось: {exc}")
+        finally:
+            self.deploying = False
+            self.current = {"text": "", "pct": 0}
+
+    def _deploy(self, devices, files, apks, force_reinstall):
         total_tasks = len(devices) * (len(files) + len(apks))
         done_tasks = 0
-
-        self.log(f"═══ Початок розгортання: {len(devices)} пристроїв, "
-                 f"{len(files)} файлів, {len(apks)} APK"
+        self.overall = {"done": 0, "total": total_tasks, "label": "Розгортання…"}
+        self.log(f"═══ Початок розгортання: {len(devices)} пристроїв, {len(files)} файлів, {len(apks)} APK"
                  f"{' (force reinstall)' if apks and force_reinstall else ''} ═══")
-        apk_packages = {p: self.adb.get_package_name_from_apk(p)
-                        for p in apks if os.path.exists(p)}
+        apk_packages = {p: self.adb.get_package_name_from_apk(p) for p in apks if os.path.exists(p)}
+
+        def advance():
+            nonlocal done_tasks
+            done_tasks += 1
+            self.overall = {"done": done_tasks, "total": total_tasks, "label": "Розгортання…"}
 
         for serial in devices:
             if self.deploy_cancel.is_set():
                 break
+            self.log(f"── Пристрій: {self.model(serial)} ({serial}) ──")
+            self.set_status(serial, "Розгортання…")
 
-            model = self.config.get("devices", {}).get(serial, {}).get("name", serial)
-            self.log(f"── Пристрій: {model} ({serial}) ──")
-            self.update_device_status(serial, "Розгортання…")
+            if self.config.get("wifi_auto_deploy", False) and self.config.get("wifi_networks"):
+                self.log(f"  📶 Застосування Wi-Fi ({len(self.config['wifi_networks'])} мереж)…")
+                self._connect_wifi(serial, self.config["wifi_networks"])
 
-            # ── Wi-Fi (якщо увімкнено автозастосування) ──
-            if self.config.get("wifi_auto_deploy", False):
-                networks = self.config.get("wifi_networks", [])
-                if networks:
-                    self.log(f"  📶 Застосування Wi-Fi ({len(networks)} мереж)…")
-                    self.adb.enable_wifi(serial)
-                    for net in networks:
-                        ssid = net["ssid"]
-                        code, out, err = self.adb.connect_wifi(
-                            serial, ssid, net.get("password", ""), net.get("security", "wpa2")
-                        )
-                        combined = (out + err).lower()
-                        if code == 0 and any(x in combined for x in ["success", "connected", "saving", "initiated"]):
-                            self.log(f"  ✓ Wi-Fi: {ssid}")
-                        elif "already" in combined:
-                            self.log(f"  ⏭ Wi-Fi вже: {ssid}")
-                        else:
-                            self.log(f"  ✗ Wi-Fi помилка ({ssid}): {err or out or '?'}")
-
-            # ── Встановлення APK ──
             for apk_path in apks:
                 if self.deploy_cancel.is_set():
                     break
-
                 apk_name = os.path.basename(apk_path)
-
                 if not os.path.exists(apk_path):
                     self.log(f"  ✗ APK не знайдено: {apk_path}")
-                    done_tasks += 1
+                    advance()
                     continue
-
                 pkg = apk_packages.get(apk_path)
                 installed = bool(pkg) and self.adb.is_package_installed(serial, pkg)
-
                 if installed and not force_reinstall:
                     self.log(f"  ⏭ APK вже встановлено: {pkg}")
                     if pkg == PLAYER_PACKAGE:
                         self._setup_player(serial, apk_path)
-                    done_tasks += 1
-                    self.update_overall(done_tasks, total_tasks)
+                    advance()
                     continue
-
                 if installed and force_reinstall:
-                    self.update_current(f"Видаляю {pkg}…", -1)
+                    self.current = {"text": f"Видаляю {pkg}…", "pct": -1}
                     self.log(f"  🗑 Видаляю встановлений: {pkg}…")
                     self._uninstall(serial, pkg)
-
-                self.update_current(f"Встановлюю {apk_name}…", -1)
+                self.current = {"text": f"Встановлюю {apk_name}…", "pct": -1}
+                self.set_status(serial, f"Встановлення {apk_name}…")
                 self.log(f"  ⏳ Встановлюю: {apk_name} ({pkg or '?'})…")
-
                 code, out, err = self.adb.install_apk(serial, apk_path)
                 result = out + err
-                # Package name міг бути невідомий (немає aapt) — беремо його з помилки
-                # несумісного підпису і пробуємо ще раз після видалення.
+                # Package name міг бути невідомий (немає aapt) — беремо його з помилки несумісного підпису.
                 if force_reinstall and "INSTALL_FAILED_UPDATE_INCOMPATIBLE" in result:
                     m = re.search(r"Existing package (\S+)", result)
                     if m:
@@ -1275,85 +942,54 @@ class QuestDeployApp:
                         self._uninstall(serial, m.group(1))
                         code, out, err = self.adb.install_apk(serial, apk_path)
                         result = out + err
-
                 if code == 0 and "Success" in result:
                     self.log(f"  ✓ Встановлено: {apk_name}")
                     if pkg == PLAYER_PACKAGE:
                         self._setup_player(serial, apk_path)
                 else:
                     self.log(f"  ✗ Помилка встановлення {apk_name}: {err or out}")
+                advance()
 
-                done_tasks += 1
-                self.update_overall(done_tasks, total_tasks)
-
-            # ── Копіювання файлів ──
             for file_entry in files:
                 if self.deploy_cancel.is_set():
                     break
-
-                src = file_entry["src"]
-                dst = file_entry["dst"]
+                src, dst = file_entry["src"], file_entry["dst"]
                 filename = os.path.basename(src)
-
                 if not os.path.exists(src):
                     self.log(f"  ✗ Файл не знайдено: {src}")
-                    done_tasks += 1
+                    advance()
                     continue
-
                 local_size = os.path.getsize(src)
                 remote_path = dst.rstrip("/") + "/" + filename
-
-                # Перевірити чи вже існує з таким розміром
-                remote_size = self.adb.remote_file_size(serial, remote_path)
-                if remote_size == local_size:
+                if self.adb.remote_file_size(serial, remote_path) == local_size:
                     self.log(f"  ⏭ Файл вже є: {filename} ({local_size / 1024 / 1024:.1f} МБ)")
-                    done_tasks += 1
-                    self.update_overall(done_tasks, total_tasks)
+                    advance()
                     continue
+                self.log(f"  ⏳ Копіюю: {filename} ({local_size / 1024 / 1024:.1f} МБ) → {dst}")
+                self.set_status(serial, f"Копіювання {filename}")
 
-                size_mb = local_size / 1024 / 1024
-                self.log(f"  ⏳ Копіюю: {filename} ({size_mb:.1f} МБ) → {dst}")
-
-                def progress_cb(pct, speed, status, fn=filename):
+                def progress_cb(pct, speed, status, fn=filename, ser=serial):
+                    self.current = {"text": f"{fn} → {ser}  {speed}".strip(), "pct": pct}
                     if pct >= 0:
-                        self.update_current(f"{fn}: {pct}%  {speed}", pct)
-                    else:
-                        self.update_current(f"{fn}: очікування…", -1)
+                        self.set_status(ser, f"Копіювання {pct}%")
 
-                code, out, err_line = self.adb.push_with_progress(
-                    serial, src, remote_path, callback=progress_cb
-                )
-
+                code, out, err_line = self.adb.push_with_progress(serial, src, remote_path, callback=progress_cb)
                 if code == 0:
                     self.log(f"  ✓ Скопійовано: {filename}")
-                    # Медіа-скан
                     self.adb.trigger_media_scan(serial, remote_path)
                 else:
                     self.log(f"  ✗ Помилка копіювання {filename}: {err_line or out}")
+                advance()
 
-                done_tasks += 1
-                self.update_overall(done_tasks, total_tasks)
-
-            if not self.deploy_cancel.is_set():
-                self.update_device_status(serial, "✓ Готово")
-            else:
-                self.update_device_status(serial, "Скасовано")
+            self.set_status(serial, "Скасовано" if self.deploy_cancel.is_set() else "✓ Готово")
 
         status = "Скасовано" if self.deploy_cancel.is_set() else "Завершено"
+        self.overall = {"done": done_tasks, "total": total_tasks, "label": status}
         self.log(f"═══ {status}: {done_tasks}/{total_tasks} задач ═══")
 
-        self.root.after(0, lambda: (
-            self.deploy_btn.config(state="normal"),
-            self.cancel_btn.config(state="disabled"),
-            self.overall_label.set(status),
-            self.current_label.set(""),
-            self.current_progress.config(mode="determinate", value=0),
-        ))
-        self.deploying = False
-
     def _setup_player(self, serial, apk_path):
-        self.update_current("Налаштовую автозапуск і самооновлення…", -1)
-        choice = self.autostart_var.get()
+        self.current = {"text": "Налаштовую автозапуск і самооновлення…", "pct": -1}
+        choice = self.config.get("autostart", AUTOSTART_KEEP)
         autostart = {AUTOSTART_ON: True, AUTOSTART_OFF: False}.get(choice)
         errors = self.adb.setup_player(serial, apk_path, PLAYER_PACKAGE, autostart=autostart)
         if errors:
@@ -1364,47 +1000,263 @@ class QuestDeployApp:
 
     def _uninstall(self, serial, pkg):
         code, out, err = self.adb.uninstall_package(serial, pkg)
-        if code == 0 and "Success" in (out + err):
-            self.log(f"  ✓ Видалено: {pkg}")
+        self.log(f"  ✓ Видалено: {pkg}" if code == 0 and "Success" in out + err
+                 else f"  ✗ Помилка видалення {pkg}: {err or out}")
+
+    # ── списки ─────────────────────────────────────────
+    def add_files(self, dst, folder=False):
+        if folder:
+            chosen = native_dialog("askdirectory", title="Оберіть папку з файлами")
+            paths = [os.path.join(chosen, f) for f in os.listdir(chosen)
+                     if os.path.isfile(os.path.join(chosen, f))] if chosen else []
         else:
-            self.log(f"  ✗ Помилка видалення {pkg}: {err or out}")
+            paths = list(native_dialog("askopenfilenames", title="Оберіть файли") or [])
+        for p in paths:
+            self.config["files"].append({"src": p, "dst": dst})
+        save_config(self.config)
+        return {"ok": True, "added": len(paths)}
 
-    # ── UI оновлення з потоку ─────────────────────────────
+    def add_apks(self):
+        paths = native_dialog("askopenfilenames", title="Оберіть APK файли",
+                              filetypes=[("APK файли", "*.apk"), ("Всі файли", "*.*")]) or []
+        for p in paths:
+            if p not in self.config["apks"]:
+                self.config["apks"].append(p)
+        save_config(self.config)
+        return {"ok": True, "added": len(paths)}
 
-    def update_overall(self, done, total):
-        pct = int(done * 100 / total) if total > 0 else 0
-        self.root.after(0, lambda: (
-            self.overall_progress.config(value=pct),
-            self.overall_label.set(f"Загальний прогрес: {done}/{total} ({pct}%)")
-        ))
+    def remove_items(self, key, indices):
+        items = self.config.get(key, [])
+        for i in sorted({int(i) for i in indices}, reverse=True):
+            if 0 <= i < len(items):
+                items.pop(i)
+        save_config(self.config)
+        return {"ok": True}
 
-    def update_current(self, text, pct):
-        def _upd():
-            self.current_label.set(text)
-            if pct < 0:
-                self.current_progress.config(mode="indeterminate")
-                self.current_progress.start(10)
-            else:
-                self.current_progress.stop()
-                self.current_progress.config(mode="determinate", value=pct)
-        self.root.after(0, _upd)
+    def add_wifi(self, ssid, security, password):
+        ssid = (ssid or "").strip()
+        if not ssid:
+            return {"ok": False, "error": "Введіть SSID"}
+        if security not in ("wpa2", "wpa3", "open"):
+            return {"ok": False, "error": "Невідомий тип безпеки"}
+        if security != "open" and not password:
+            return {"ok": False, "error": "Введіть пароль або оберіть тип open"}
+        self.config.setdefault("wifi_networks", []).append(
+            {"ssid": ssid, "security": security, "password": password if security != "open" else ""})
+        save_config(self.config)
+        self.log(f"Wi-Fi мережу додано: {ssid}")
+        return {"ok": True}
 
-    def update_device_status(self, serial, status):
-        def _upd():
-            try:
-                vals = self.dev_tree.item(serial, "values")
-                if vals:
-                    self.dev_tree.item(serial, values=(vals[0], vals[1], vals[2], status))
-            except Exception:
-                pass
-        self.root.after(0, _upd)
+    def set_options(self, opts):
+        for key in ("deploy_content", "force_reinstall", "autostart", "wifi_auto_deploy"):
+            if key in opts:
+                self.config[key] = opts[key]
+        save_config(self.config)
+        return {"ok": True}
+
+    def set_adb_path(self, path):
+        self.config["adb_path"] = path.strip() or "adb"
+        self.adb = ADB(self.config["adb_path"])
+        self.apk_packages.clear()
+        save_config(self.config)
+        self.log(f"ADB шлях збережено: {self.config['adb_path']}")
+        return {"ok": True}
+
+    def reload_config(self):
+        self.config = load_config()
+        self.adb = ADB(self.config.get("adb_path", "adb"))
+        self.apk_packages.clear()
+        self.log("Конфіг перезавантажено")
+        return {"ok": True}
+
+    # ── оновлення з GitHub ─────────────────────────────
+    def check_release(self):
+        try:
+            self.release = fetch_latest_release()
+            self.release_error = ""
+            self.log(f"GitHub: останній реліз {self.release['version']}")
+        except Exception as exc:
+            self.release_error = str(exc)
+            self.log(f"GitHub не відповів: {exc}")
+
+    def _download_job(self, kind, asset_name, dest):
+        asset = self.release["assets"][asset_name]
+        job = {"kind": kind, "stage": "downloading", "done": 0, "total": asset["size"], "error": ""}
+        self.update_job = job
+
+        def progress(done, total):
+            job.update(done=done, total=total or job["total"])
+        try:
+            download_file(asset["url"], dest, progress)
+            job["stage"] = "done"
+            return True
+        except Exception as exc:
+            job.update(stage="failed", error=str(exc))
+            self.log(f"✗ Завантаження {asset_name}: {exc}")
+            return False
+
+    def download_player(self):
+        version = self.release["version"]
+        dest = SCRIPT_DIR / "updates" / f"VRClassroomPlayer-Quest-{version}.apk"
+        if not self._download_job("player", PLAYER_ASSET, dest):
+            return
+        # Старі APK плеєра з цього ж менеджера замінюємо новим; свої APK користувача не чіпаємо.
+        apks = [p for p in self.config.get("apks", []) if not os.path.basename(p).startswith("VRClassroomPlayer-Quest")]
+        self.config["apks"] = apks + [str(dest)]
+        save_config(self.config)
+        self.log(f"✓ Плеєр {version} завантажено і додано в «Додатки»: розгорніть його на окуляри")
+
+    def update_self(self):
+        exe = Path(sys.executable).resolve()
+        new_exe = exe.with_name(exe.stem + ".new.exe")
+        if not self._download_job("self", DEPLOY_ASSET, new_exe):
+            return
+        script = Path(tempfile.gettempdir()) / "questdeploy-update.bat"
+        script.write_text(swap_script(new_exe, exe), encoding="utf-8")
+        subprocess.Popen(["cmd", "/c", str(script)], close_fds=True,
+                         creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+        self.update_job["stage"] = "restarting"
+        self.log("Deploy Manager оновлюється і перезапуститься…")
+        Timer(1.5, os._exit, args=(0,)).start()
 
 
 # ═══════════════════════════════════════════════════════════
-#  Main
+#  HTTP: сторінка UI + JSON API (лише 127.0.0.1)
 # ═══════════════════════════════════════════════════════════
+
+def ui_dir():
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base / "deploy_ui"
+
+
+class Handler(BaseHTTPRequestHandler):
+    service = None
+    last_seen = [time.time()]
+    STATIC = {".html": "text/html; charset=utf-8", ".woff2": "font/woff2", ".svg": "image/svg+xml"}
+
+    def log_message(self, *args):
+        pass
+
+    def _send(self, code, body, ctype="application/json; charset=utf-8"):
+        data = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        Handler.last_seen[0] = time.time()
+        path, _, query = self.path.partition("?")
+        if path == "/api/state":
+            since = int(re.search(r"since=(\d+)", query).group(1)) if "since=" in query else 0
+            return self._send(200, self.service.state(since))
+        name = "index.html" if path == "/" else path.lstrip("/")
+        file = (ui_dir() / name).resolve()
+        if ui_dir().resolve() not in file.parents or not file.is_file() or file.suffix not in self.STATIC:
+            return self._send(404, {"error": "not found"})
+        return self._send(200, file.read_bytes(), self.STATIC[file.suffix])
+
+    def do_POST(self):
+        Handler.last_seen[0] = time.time()
+        # Лише наша сторінка: інший сайт у браузері (чи DNS rebinding) не може смикати adb через цей порт.
+        origin = self.headers.get("Origin", "")
+        if (origin and origin != f"http://127.0.0.1:{PORT}") or self.headers.get("Host") != f"127.0.0.1:{PORT}":
+            return self._send(403, {"ok": False, "error": "forbidden"})
+        length = int(self.headers.get("Content-Length") or 0)
+        try:
+            body = json.loads(self.rfile.read(length) or b"{}")
+        except ValueError:
+            return self._send(400, {"ok": False, "error": "bad json"})
+        try:
+            result = self.route(self.path, body)
+        except Exception as exc:
+            result = {"ok": False, "error": str(exc)}
+        return self._send(200 if result.get("ok", True) else 400, result)
+
+    def route(self, path, body):
+        s = self.service
+        serials = s.targets(body.get("serials"))
+        need_devices = path in ("/api/deploy", "/api/recover", "/api/reboot", "/api/rollback",
+                                "/api/wifi/apply", "/api/tcpip")
+        if need_devices and not serials:
+            return {"ok": False, "error": "Немає підключених пристроїв."}
+        routes = {
+            "/api/devices/refresh": lambda: s.background("пошук пристроїв", s.refresh_devices),
+            "/api/deploy": lambda: s.start_deploy(serials),
+            "/api/cancel": lambda: (s.deploy_cancel.set(), s.log("Скасування…"), {"ok": True})[-1],
+            "/api/recover": lambda: s.background("відновлення", s.recover, serials),
+            "/api/reboot": lambda: s.background("перезавантаження", s.reboot, serials),
+            "/api/rollback": lambda: s.background("відкат", s.rollback, serials, body.get("options") or {}),
+            "/api/tcpip": lambda: s.background("wireless adb", s.enable_tcpip, serials),
+            "/api/wifi/apply": lambda: (s.background("Wi-Fi", s.apply_wifi, serials)
+                                        if s.config.get("wifi_networks") else
+                                        {"ok": False, "error": "Немає збережених Wi-Fi мереж."}),
+            "/api/wifi/add": lambda: s.add_wifi(body.get("ssid"), body.get("security", "wpa2"), body.get("password", "")),
+            "/api/wifi/remove": lambda: s.remove_items("wifi_networks", body.get("indices", [])),
+            "/api/files/add": lambda: s.add_files(body.get("dst") or "/sdcard/Movies/", folder=bool(body.get("folder"))),
+            "/api/files/remove": lambda: s.remove_items("files", body.get("indices", [])),
+            "/api/apks/add": lambda: s.add_apks(),
+            "/api/apks/remove": lambda: s.remove_items("apks", body.get("indices", [])),
+            "/api/options": lambda: s.set_options(body),
+            "/api/adb/browse": lambda: {"ok": True, "path": native_dialog(
+                "askopenfilename", title="Знайти adb.exe", filetypes=[("ADB", "adb.exe"), ("Всі", "*.*")]) or ""},
+            "/api/adb/save": lambda: s.set_adb_path(body.get("path", "")),
+            "/api/config/open": lambda: (os.startfile(str(CONFIG_FILE)) if os.name == "nt" else None, {"ok": True})[-1],
+            "/api/config/reload": lambda: s.reload_config(),
+            "/api/update/check": lambda: s.background("перевірка оновлень", s.check_release),
+            "/api/update/player": lambda: (s.background("завантаження плеєра", s.download_player)
+                                           if s.update_state()["has_player"] else
+                                           {"ok": False, "error": "Спершу перевірте оновлення"}),
+            "/api/update/self": lambda: (s.background("оновлення менеджера", s.update_self)
+                                         if s.update_state()["self_available"] and s.update_state()["can_self_update"] else
+                                         {"ok": False, "error": "Немає новішої версії"}),
+        }
+        if path not in routes:
+            return {"ok": False, "error": "unknown action"}
+        return routes[path]()
+
+
+def open_window(url):
+    """Окреме вікно без вкладок (Edge/Chrome --app); інакше — звичайний браузер."""
+    candidates = [shutil.which("msedge"), shutil.which("chrome")]
+    for env in ("ProgramFiles(x86)", "ProgramFiles", "LocalAppData"):
+        base = os.environ.get(env)
+        if base:
+            candidates += [os.path.join(base, "Microsoft", "Edge", "Application", "msedge.exe"),
+                           os.path.join(base, "Google", "Chrome", "Application", "chrome.exe")]
+    for exe in candidates:
+        if exe and os.path.isfile(exe):
+            subprocess.Popen([exe, f"--app={url}", "--window-size=1320,900"], close_fds=True)
+            return
+    webbrowser.open(url)
+
+
+def main():
+    url = f"http://127.0.0.1:{PORT}/"
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    except OSError:
+        open_window(url)  # менеджер уже запущено: просто показуємо його вікно
+        return
+    service = DeployService()
+    Handler.service = service
+    Thread(target=service.refresh_devices, daemon=True).start()
+    if service.config.get("check_updates", True):
+        Thread(target=service.check_release, daemon=True).start()
+    if "--no-window" not in sys.argv:  # --no-window: лише сервер (перевірка в браузері)
+        open_window(url)
+    # Вікно закрили (сторінка не питає стан 30 с) і нічого не йде — виходимо.
+    def watchdog():
+        while True:
+            time.sleep(5)
+            idle = time.time() - Handler.last_seen[0]
+            if idle > 30 and not service.deploying and not service.busy:
+                os._exit(0)
+    Thread(target=watchdog, daemon=True).start()
+    server.serve_forever()
+
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = QuestDeployApp(root)
-    root.mainloop()
+    main()

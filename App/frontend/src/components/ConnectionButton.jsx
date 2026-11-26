@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useI18n } from '../i18n';
+import Icon from './Icons';
 
 const RELEASES_URL = 'https://github.com/Chikanut/VR-Group-Videoplayer/releases';
 
@@ -38,6 +39,7 @@ export default function ConnectionButton() {
   return (
     <>
       <button className="connection-btn" onClick={handleOpen} title={t('Show connection QR codes')}>
+        <Icon name="qr" size={14} />
         {t('Connection')}
       </button>
 
@@ -46,7 +48,7 @@ export default function ConnectionButton() {
           <div className="modal connection-modal" onClick={(event) => event.stopPropagation()}>
             <div className="dialog-header">
               <h2 className="dialog-title" style={{ cursor: 'default' }}>{t('Connection Options')}</h2>
-              <button className="btn-close" onClick={() => setOpen(false)}>&times;</button>
+              <button className="btn-close" aria-label={t('Close')} onClick={() => setOpen(false)}><Icon name="close" /></button>
             </div>
 
             <div className="connection-qr-content">

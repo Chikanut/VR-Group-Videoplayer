@@ -51,6 +51,7 @@ from .playback_controller import (
 )
 from .headset_settings import push_headset_settings
 from . import environment as env_store
+from . import github_update
 from .player_update import get_player_apk_path, update_players
 from .requirements_manager import apply_agent_files, check_requirements, refresh_all_requirements
 from .websocket_manager import ws_manager
@@ -557,6 +558,22 @@ async def download_player_apk():
 @app.post("/api/player/update")
 async def update_players_endpoint():
     result = await update_players()
+    return result if result.get("success") else JSONResponse(result, status_code=400)
+
+
+@app.get("/api/updates")
+async def get_updates(refresh: bool = False):
+    return await github_update.get_status(refresh)
+
+
+@app.post("/api/updates/{kind}")
+async def start_update(kind: str):
+    if kind == "player":
+        result = await github_update.start_player_update()
+    elif kind == "panel":
+        result = await github_update.start_panel_update()
+    else:
+        return JSONResponse({"success": False, "error": "Unknown update"}, status_code=404)
     return result if result.get("success") else JSONResponse(result, status_code=400)
 
 

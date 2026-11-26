@@ -32,7 +32,7 @@ if exist "QuestDeployManager.spec" del /f /q "QuestDeployManager.spec"
 echo [..] Building EXE...
 echo.
 
-python -m PyInstaller --onefile --windowed --name "QuestDeployManager" quest_deploy.py
+python -m PyInstaller --onefile --windowed --name "QuestDeployManager" --add-data "deploy_ui;deploy_ui" quest_deploy.py
 
 echo.
 if exist "dist\QuestDeployManager.exe" (

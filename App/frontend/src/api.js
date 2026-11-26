@@ -74,6 +74,15 @@ export async function updatePlayers() {
   return request('/player/update', { method: 'POST' });
 }
 
+// GitHub Releases: what is installed, what is published, and the running download (if any).
+export async function getUpdates(refresh = false) {
+  return request(`/updates${refresh ? '?refresh=1' : ''}`);
+}
+
+export async function startUpdate(kind) {
+  return request(`/updates/${kind}`, { method: 'POST' });
+}
+
 export async function getAutostart(id) {
   return request(`/devices/${id}/autostart`);
 }

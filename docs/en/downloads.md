@@ -1,44 +1,27 @@
 # Downloads
 
-Download all public installers from [GitHub Releases](https://github.com/Chikanut/VR-Group-Videoplayer/releases/latest).
-
-## Which File You Need
+Download everything from [GitHub Releases](https://github.com/Chikanut/VR-Group-Videoplayer/releases/latest).
 
 | File | Platform | Purpose |
 |---|---|---|
-| `VRClassroomPlayer-Quest.apk` | Meta Quest | Player app for each headset |
-| `VRClassroomControlPanel-Android.apk` | Android | Instructor control panel for a phone or tablet |
-| `VRClassroomControlPanel-Windows.exe` | Windows | Instructor control panel for a PC or laptop |
+| `VRClassroomPlayer-Quest.apk` | Meta Quest | The player for every headset |
+| `QuestDeployManager.exe` | Windows | USB setup, recovery and roll back of headsets |
+| `VRClassroomControlPanel-Windows.exe` | Windows | The instructor control panel on a PC |
+| `VRClassroomControlPanel-Android.apk` | Android | The instructor control panel on a phone or tablet |
 
-## Recommended Download Combinations
+## What You Need
 
-### Small classroom setup
+- the player and Deploy Manager: always;
+- one control panel: Windows if the class is run from a PC, Android for a phone or tablet.
 
-- one Windows or Android control panel app
-- one Quest player APK for every headset
+The control panel can also be opened in a browser on any other device on the same network.
 
-### Mobile-only instructor setup
+## After the First Install
 
-- `VRClassroomControlPanel-Android.apk`
-- `VRClassroomPlayer-Quest.apk` for every headset
+You do not have to come back here for updates: the control panel and Deploy Manager download new versions themselves. See [Updates](updates.md).
 
-### Desktop instructor setup
-
-- `VRClassroomControlPanel-Windows.exe`
-- `VRClassroomPlayer-Quest.apk` for every headset
-
-## Before You Download
-
-Make sure you know:
-
-- how many headsets you will manage
-- whether the instructor will use Windows or Android
-- whether all devices can join the same local network
-
-## After You Download
-
-Continue with:
+## Continue With
 
 - [Quick Start](quick-start.md)
+- [Deploy Manager](deploy-manager.md)
 - [Set Up the Control Panel](setup-control-panel.md)
-- [Set Up the Quest Player](setup-player.md)

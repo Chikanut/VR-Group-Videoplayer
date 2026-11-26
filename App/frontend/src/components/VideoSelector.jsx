@@ -2,6 +2,7 @@ import React from 'react';
 import useDeviceStore from '../store/deviceStore';
 import { playbackOpen } from '../api';
 import { useI18n } from '../i18n';
+import Icon from './Icons';
 
 export default function VideoSelector({ targetDeviceIds, onClose }) {
   const { t } = useI18n();
@@ -19,7 +20,7 @@ export default function VideoSelector({ targetDeviceIds, onClose }) {
         <div className="modal video-selector" onClick={(event) => event.stopPropagation()}>
           <div className="dialog-header">
             <h2>{t('Select Video')}</h2>
-            <button className="btn-close" onClick={onClose}>x</button>
+            <button className="btn-close" aria-label={t('Close')} onClick={onClose}><Icon name="close" /></button>
           </div>
           <div className="empty-state">
             <p>{t('No videos configured. Go to Settings to add videos.')}</p>
@@ -64,7 +65,7 @@ export default function VideoSelector({ targetDeviceIds, onClose }) {
       <div className="modal video-selector" onClick={(event) => event.stopPropagation()}>
         <div className="dialog-header">
           <h2>{t('Select Video')}</h2>
-          <button className="btn-close" onClick={onClose}>x</button>
+          <button className="btn-close" aria-label={t('Close')} onClick={onClose}><Icon name="close" /></button>
         </div>
 
         <div className="video-list">

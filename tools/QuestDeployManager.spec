@@ -5,7 +5,7 @@ a = Analysis(
     ['quest_deploy.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[('deploy_ui', 'deploy_ui')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

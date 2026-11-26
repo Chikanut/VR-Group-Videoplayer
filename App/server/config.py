@@ -38,6 +38,8 @@ DEFAULT_CONFIG = {
     "videoLibraryPath": "",
     # Waiting-room look of the player: default or custom colour + PNG (environment.py).
     "environment": {},
+    # Ask GitHub Releases for a newer version when the dashboard opens (github_update.py).
+    "checkUpdates": True,
 }
 
 RUNTIME_ONLY_KEYS = {"isAndroidRuntime"}
@@ -164,6 +166,7 @@ def _normalize_config(data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     normalized["scanInterval"] = _normalize_int(raw.get("scanInterval"), 30, minimum=5, maximum=300)
     normalized["networkSubnet"] = _normalize_string(raw.get("networkSubnet"))
     normalized["serverPort"] = _normalize_int(raw.get("serverPort"), 8000, minimum=1, maximum=65535)
+    normalized["checkUpdates"] = raw.get("checkUpdates") is not False
     normalized["deviceOfflineTimeout"] = _normalize_int(raw.get("deviceOfflineTimeout"), 30, minimum=10, maximum=300)
 
     videos = raw.get("requirementVideos", [])

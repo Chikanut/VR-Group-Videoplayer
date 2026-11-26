@@ -1,54 +1,59 @@
 # Networking and Troubleshooting
 
-## Goal
+## Network Rules
 
-Fix the most common reasons why devices do not appear or videos do not start.
+- the control panel and all headsets must be on the same network and subnet;
+- the network must let devices reach each other: no guest Wi-Fi and no client isolation;
+- the panel uses port 8000; the headsets use 8080 (player) and 8081 (agent);
+- internet is not needed. A router without internet works; Deploy Manager sets `captive_portal_mode=0` so Quest does not treat it as a login page.
 
-## Basic Network Rules
+## Headsets Do Not Appear
 
-- the control panel and all headsets must be on the same local network
-- the network must allow devices to reach each other directly
-- guest Wi-Fi or client isolation can block discovery
+1. Check that the headset is on the classroom Wi-Fi.
+2. Windows: allow `VRClassroomControl` in Windows Defender Firewall for private networks, and make sure the network is marked *Private*.
+3. Make sure no other program uses port 8000.
+4. Check that the headset went through Deploy Manager once.
+5. When the PC is on several networks (Ethernet, VPN, hotspot), set **Settings → System → Network Subnet** to the classroom one.
 
-## If Headsets Are Not Discovered
+The headsets search for the panel themselves; after the PC changes its address they find it again within about a minute.
 
-Check these items in order:
+## A Headset Is Offline
 
-1. Confirm the player app is open on the headset.
-2. Confirm the headset and control panel are on the same Wi-Fi or LAN.
-3. Confirm the control panel subnet setting matches your network.
-4. Make sure the router is not isolating wireless clients.
-5. On Windows, check firewall rules if discovery is still failing.
+- it may be asleep for a long time: press **Wake All**;
+- it may be off or outside Wi-Fi range;
+- the panel keeps checking offline headsets every 15 seconds, so they come back by themselves.
 
-## If A Headset Appears Offline
+## The Tile Says "Player will not open", or the Headset Shows Only the Camera View
 
-- confirm the headset still has network access
-- keep the player app open in the foreground
-- verify the device has not gone to sleep
-- the panel re-checks quiet headsets every few seconds over HTTP, so a reachable headset comes back on its own without waiting for a full network scan
-- a tile badge shows how the headset is reached: **WS** (live WebSocket) or **HTTP** (WebSocket dropped, panel is polling the headset directly); commands work in both cases
+Quest sometimes keeps a system window in front of the player that waits for internet: the first-time setup, the tips window or the Store. The player cannot close it.
 
-## If Playback Does Not Start
+1. Connect the headset by USB and press **Відновити** (Recover) in Deploy Manager.
+2. If the Quest menu does not come back within a minute, press **Перезавантажити** (Reboot).
 
-Check:
+After a reboot with the headset lying on the table, Quest waits until it is worn once before opening apps. The control panel wakes it by itself while it is connected.
 
-1. the headset is online
-2. the lesson filename exists on that headset
-3. the video was copied to `/sdcard/Movies/`
-4. the selected mode matches the content type
+## The Player Does Not Start a Video
 
-## If A Video Looks Missing
+- the tile must be online and show **Requirements met** for that video;
+- the file name in Settings must match the file on the headset exactly;
+- check the type: `360` or `2D`.
 
-- compare the configured filename with the real file name exactly
-- avoid using folder paths in the control panel
-- make sure the same file exists on every headset
+## The Meta Store Opens Over the Player
 
-## If Windows Cannot Open the Control Panel
+The player (1.9.2+) notices this within 3 seconds and comes back to the front. It needs the one-time Deploy Manager setup.
 
-- try opening `http://localhost:8000` manually
-- restart the EXE
-- confirm no other app is already using port `8000`
+## A Player Update Fails
+
+- the APK must be signed with the same key as the installed player. The releases are;
+- the headset must have gone through Deploy Manager (silent install);
+- `failed: ...` on the tile says why. Installing over USB with **Перевстановити APK** (Reinstall APK) always works.
+
+## The Control Panel Does Not Open
+
+- open `http://localhost:8000` by hand;
+- restart the exe;
+- check that port 8000 is free.
 
 ## Advanced Reference
 
-For lower-level command and endpoint details, see the [Player API reference](../../PlayerAPI.md).
+Commands and endpoints: [Player API reference](../../PlayerAPI.md).

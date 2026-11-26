@@ -1,79 +1,43 @@
 # Overview
 
-## Purpose
+VR Group Videoplayer runs the same lesson video on a whole class of Meta Quest headsets from one instructor device. It is made for schools, labs, museums and training rooms, works on a local network without internet, and needs no programming.
 
-VR Group Videoplayer is a classroom system for running the same lesson video across multiple Meta Quest headsets from one instructor device.
+## Parts
 
-It is designed for schools, labs, museums, and training spaces where the operator needs a practical setup flow rather than custom development.
+| Part | Where it runs | What it does |
+|---|---|---|
+| **Player** (`VRClassroomPlayer-Quest.apk`) | every headset | plays the videos; its agent keeps the headset connected even while the player is closed or asleep |
+| **Control panel** (`VRClassroomControlPanel-Windows.exe` / `-Android.apk`) | the instructor's PC or tablet | dashboard: shows every headset, sends commands, sends videos and updates over Wi-Fi |
+| **Deploy Manager** (`QuestDeployManager.exe`) | a Windows PC, USB | first setup, recovery and roll back of headsets |
 
 ## What You Can Do
 
-- discover headset players on the local network
-- check which devices are online
-- prepare a lesson list by video filename
-- launch playback on one headset or the whole class
-- pause, stop, restart, recenter, and adjust volume
-- seek (jump to any moment) for all headsets or one, and tune each video's look
-- use flat 2D or 360 video content
+- see every headset with its status, battery, video and progress;
+- play, pause, resume, stop, seek and recenter for the class or for selected headsets;
+- set the volume for everyone or one headset;
+- put the class to sleep and wake it over Wi-Fi;
+- open, restart and close the player, and switch its autostart;
+- send the lesson videos and new player versions over Wi-Fi;
+- set the waiting-room look and Android system settings for every headset;
+- set up, fix and remove headsets over USB;
+- update everything from GitHub.
 
-## Main Components
+## A Typical Lesson
 
-### 1. Quest Player
+1. The headsets are set up once over USB with Deploy Manager.
+2. The instructor starts the control panel; the headsets appear by themselves.
+3. **Sync content** sends the lesson videos to every headset.
+4. **Play All** starts the video for the class; **Recenter All** turns it to where the students look.
+5. **Sleep All** at the end, **Wake All** next time.
 
-Installed on each Meta Quest headset.
+## Limits
 
-Responsibilities:
-
-- plays videos stored on the headset
-- reports device status back to the control panel
-- receives playback commands over the local network
-
-Public release file:
-
-- `VRClassroomPlayer-Quest.apk`
-
-### 2. Control Panel
-
-Installed on one instructor device.
-
-Responsibilities:
-
-- discovers available Quest players
-- shows current headset state
-- stores the list of required lesson videos
-- sends playback and volume commands
-
-Public release files:
-
-- `VRClassroomControlPanel-Windows.exe`
-- `VRClassroomControlPanel-Android.apk`
-
-## Typical Classroom Scenario
-
-1. Install the player on each headset.
-2. Copy lesson videos to each headset.
-3. Install the control panel on the teacher's Windows PC or Android tablet.
-4. Connect all devices to the same network.
-5. Open the control panel and wait for devices to appear.
-6. Choose the lesson video and start playback for the full group.
-
-## Supported Setup
-
-- Meta Quest headsets for playback
-- Windows PC for instructor control
-- Android phone or tablet for instructor control
-- local Wi-Fi or LAN where devices can reach each other directly
-
-## Important Limits
-
-- videos must already exist on each headset
-- the control panel references videos by filename only
-- headset videos should be stored in `/sdcard/Movies/`
-- the system is designed for local network use, not cloud streaming
+- the videos play from the headset storage (`/sdcard/Movies/`), not streamed;
+- the control panel refers to videos by file name;
+- 360° mono and flat 2D videos; stereo 3D is planned.
 
 ## Where To Go Next
 
-- [Downloads](downloads.md)
 - [Quick Start](quick-start.md)
-- [Set Up the Control Panel](setup-control-panel.md)
-- [Set Up the Quest Player](setup-player.md)
+- [Downloads](downloads.md)
+- [Deploy Manager](deploy-manager.md)

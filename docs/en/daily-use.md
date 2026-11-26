@@ -1,83 +1,68 @@
 # Daily Use
 
-## Goal
+How to run a lesson from the dashboard.
 
-Run a normal lesson session from the control panel.
+![Dashboard](../assets/screenshots/dashboard.png)
 
 ## Before Class
 
-1. Turn on all headsets.
-2. Open the player app on each headset.
-3. Make sure all devices are on the same network.
-4. Open the control panel.
-5. Confirm every device shows as online.
+1. Turn on the headsets. With autostart on, the player opens by itself.
+2. Start the control panel.
+3. Check the counters above the tiles: **Online**, **Playing**, **Need attention** and **Content ready**.
+
+Headsets that slept since the last lesson: press **Wake All**.
+
+## The Tiles
+
+Every headset has a tile with its number, status, IP address, player version and battery. While a video plays the tile also shows the file and the progress.
+
+| Status | Meaning |
+|---|---|
+| **Ready** | the player is open and waiting |
+| **Playing** / **Paused** / **Loading** | a video is open |
+| **Player closed** | the headset is connected, the player is not running; **Open player** starts it |
+| **Offline** | the headset is off, asleep for a long time, or out of Wi-Fi |
+
+A tile also warns about low battery, missing videos (red frame), downloads in progress, player updates, and **Player will not open** (see [Troubleshooting](networking-troubleshooting.md)).
+
+Use the filter above the tiles (**All**, **Online**, **Problems**, **Offline**) and the search by number or IP to find a headset quickly.
+
+## Whole Class or Selected Headsets
+
+Every command goes to the whole class until you tick tiles. With tiles ticked, the bar says **For selected: N** and every command goes only to them. **Clear selection** returns to the whole class. **Select all** ticks every visible tile.
+
+## Commands
+
+| Group | Buttons |
+|---|---|
+| **Playback** | **Play All** (choose the video), **Pause All**, **Resume All**, **Stop All**, **Recenter All** |
+| **Headsets** | **Sleep All**: stops the video and turns the displays off; **Wake All** wakes them over Wi-Fi |
+| **Player** | **Open player**, **Restart player**, **Close player** |
+| **Autostart · content** | **Enable autostart**, **Disable autostart**, **Sync content** |
+
+**Global volume** sets the volume for everyone. **Seek** moves every headset to the same moment of the video, for example to skip an intro.
+
+**Recenter** turns the video to where each student is looking. Use it after students turn around, especially for 360° videos.
+
+## One Headset
+
+Click a tile (not its checkbox) to open the device window:
+
+![Device window](../assets/screenshots/device-dialog.png)
+
+- **Rename:** set its number or name;
+- player and agent connection, **Restart** and **Close** the player;
+- free storage, player update, autostart on/off, headset system settings;
+- which lesson videos it has;
+- personal volume and seek for this headset only;
+- **Ping**: plays a sound in the headset, to find it on the table.
 
 ## Headset Numbers / Names
 
-Every headset can be given a number or a name (for example `1`, `2`, … or `Row 1 left`).
-Dashboard tiles are always sorted by this name (`2` comes before `10`) and the order does not
-change when a headset temporarily drops off the network.
-
-1. Click a headset tile, then click its title (or the **Rename** button).
-2. Type the number or name and press Enter.
-3. The name is **stored on the headset itself** and shown on its HUD in the top-left corner
-   while no video is playing, so a headset can be identified just by looking into it.
-4. Until the headset confirms the save, the tile shows ⏳ next to the name. If the headset is
-   offline, the name is sent automatically the next time it connects.
-
-Because the name lives on the headset, it survives a control panel reinstall or a device ID
-change. An asterisk `*` next to the name means the player build on that headset is outdated
-and the name is only stored on the server — update the player.
-
-## Start a Lesson
-
-1. Open the dashboard.
-2. Choose the lesson video you want to play.
-3. Check whether the filename is available on the connected headsets.
-4. Start playback for all devices or for one selected headset.
-
-## During Playback
-
-You can use the control panel to:
-
-- play
-- pause
-- stop
-- restart the current video
-- recenter the view
-- set a global volume
-- adjust one headset volume separately
-- **seek (jump to any moment in the video)** — new in 1.6.0
-
-## Seek / Scrub the Video (new in 1.6.0)
-
-You can now move playback to any point in the video — for example to skip an intro or replay a scene — without restarting.
-
-### For all headsets at once
-
-Use the **Seek** slider in the top control panel. Dragging it jumps every connected headset to the same moment, so the whole class stays together.
-
-![The Seek slider in the top control panel jumps all headsets to the same moment](../assets/top-panel-seek.svg)
-
-### For one headset only
-
-Open a single headset (click its tile) and use the **Seek** slider inside the device window. This scrubs only that headset and leaves the others untouched — handy if one student needs to catch up.
-
-![The per-headset Seek slider inside the device window scrubs only that headset](../assets/device-dialog-seek.svg)
-
-> The slider follows playback on its own and shows the current time and total length (for example `1:12 / 3:40`). It is greyed out until a video is open and its length is known.
-
-## Recenter
-
-Use recenter if students are no longer facing the main video direction. This is especially useful for 360 content or after headsets have been repositioned.
+The name is stored on the headset itself and shown in the top-left corner of its waiting room, so you can tell headsets apart by looking into them. It survives a reinstall of the control panel. Until the headset confirms a new name, the tile shows ⏳; an offline headset gets it when it connects. Tiles are sorted by name (`2` before `10`).
 
 ## After Class
 
-1. Stop playback.
-2. Close the session or leave the player ready for the next group.
-3. Recharge headsets if battery levels are low.
-4. Update videos only when filenames are still consistent with the control panel settings.
-
-## Expected Result
-
-A teacher or lab operator should be able to control the full lesson without touching each headset individually.
+1. **Stop All**.
+2. **Sleep All**, or leave the headsets on the chargers. Sleeping headsets keep their connection, and **Wake All** brings them back next lesson.
+3. Charge headsets with low battery.

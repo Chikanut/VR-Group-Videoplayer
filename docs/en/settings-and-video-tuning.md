@@ -5,36 +5,40 @@ How to use the control panel **Settings** page, and how to make a lesson video l
 ## Opening Settings
 
 1. Open the control panel in your browser (`http://localhost:8000`).
-2. Click **Settings** in the top control panel.
-3. Change what you need, then click **Save**.
+2. Click **Settings** in the top bar.
+3. Change what you need, then click **Save changes** (top right).
 
-> Nothing is applied to headsets until you press **Save**. After saving, the next time you open a video the new settings are sent to the player.
+> Nothing is applied to headsets until you press **Save changes**. Errors and confirmations appear in the bottom-right corner.
 
 ## Settings Sections
 
-The Settings page has four areas:
+The menu on the left jumps to each section:
 
 | Section | What it controls |
 |---|---|
-| **General** | Interface language, plus Save / Import / Export of your configuration |
-| **Requirement Videos** | The list of lesson videos, their type, placement, loop, and per-video tuning |
-| **System Settings** | Battery warning, network scan interval, subnet, offline timeout |
-| **Footer** | App version and author info |
+| **Updates** | Versions, the latest GitHub release and one-click updates — see [Updates](updates.md) |
+| **General** | Interface language |
+| **Import / export** | Backup and transfer of the configuration and headset names |
+| **Lesson videos** | The list of lesson videos, their type, placement, loop, and per-video tuning |
+| **System** | Battery warning, network, video library folder, player APK, headset system settings, autostart |
+| **Headset environment** | The waiting-room look in the headsets |
 
 ---
 
 ## General
 
-- **Language** — switch the interface between Ukrainian and English. Applies immediately.
-- **Save** — writes all current settings to `config.json` and pushes video definitions to players.
+- **Language** — switch the interface between Ukrainian and English. Applies immediately, on this browser only.
+
+## Import / export
+
 - **Export Config / Export Device Names** — download `config.json` / `device_names.json` as a backup.
 - **Import Config / Import Device Names** — load a previously exported file. Import **fully replaces** the current data, so export a backup first.
 
-> Use Export before every class as a quick backup, and Import to move your setup to another instructor PC.
+> Use Export before every class as a quick backup, and Import to move your setup to another instructor PC. Names reported by the headsets themselves always win over imported names.
 
 ---
 
-## Requirement Videos
+## Lesson videos
 
 Each lesson is one row. Click **+ Add Video** to create one, **Duplicate** to copy an existing setup, or **Remove** to delete.
 
@@ -140,14 +144,32 @@ For a subtle "zoom in past the borders" effect without cropping bands:
 
 ---
 
-## System Settings
+## System
 
 | Setting | Purpose |
 |---|---|
 | **Battery Warning Threshold (%)** | Highlights headsets below this battery level (default 20). |
-| **Network Scan Interval (seconds)** | How often the panel scans for devices (5–300, default 30). |
-| **Network Subnet** | Force a subnet like `192.168.1`. Leave empty to auto-detect. |
-| **Device Offline Timeout (seconds)** | How long a headset may stay silent before it is marked offline (10–300, default 30). A headset counts as alive while its WebSocket is open or while it still answers a direct HTTP status probe, so only a headset that is really unreachable goes offline. |
+| **Network Scan Interval (seconds)** | How often the panel scans the network for headsets (5–300). Headsets also find the panel by themselves. |
+| **Network Subnet** | Force a subnet like `192.168.1` (the first three numbers). Leave empty to auto-detect. |
+| **Device Offline Timeout (seconds)** | How long a headset may stay silent before it is marked offline (10–300, default 30). |
+| **Player APK path** | An APK on this PC for **Update players**. Headsets download it over Wi-Fi and install it silently; headsets that already have it skip it. **Settings → Updates** fills it in when it downloads a release. |
+| **Video library folder** | The folder on this PC with the lesson videos. **Sync content** sends the listed videos from it to the headsets over Wi-Fi (player 1.9.0+). |
+| **Headset system settings** | One Android setting per line: `global/<key>=<value>` or `secure/<key>=<value>`. Every headset applies them when it connects; a removed line restores the headset's own value. Default: `global/captive_portal_mode=0`. Needs the one-time Deploy Manager setup. |
+
+Buttons: **Update players**, **Disable autostart**, **Enable autostart** (whole class).
+
+![Settings → System](../assets/screenshots/settings-system.png)
+
+---
+
+## Headset environment
+
+What the headsets show while no video plays (player 1.9.1+):
+
+- **Default** — the logo model on a maroon sky.
+- **Use own environment** — a background colour and an optional PNG picture (up to 4096×4096) instead of the model, with its position, size and rotation in front of the viewer.
+
+The colour and placement are sent when you press **Save changes**; the picture as soon as it is uploaded. **Reset to default environment** returns to the default look on every headset.
 
 ---
 
@@ -156,4 +178,5 @@ For a subtle "zoom in past the borders" effect without cropping bands:
 - [Prepare Videos](prepare-videos.md)
 - [Daily Use](daily-use.md)
 - [Set Up the Control Panel](setup-control-panel.md)
+- [Updates](updates.md)
 - [Networking and Troubleshooting](networking-troubleshooting.md)

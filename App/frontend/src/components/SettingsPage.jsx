@@ -1,10 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   deleteEnvironmentLogo, getConfig, getDeviceNames, replaceDeviceNames, resetEnvironment, setAutostart,
   updateConfig, updatePlayers, uploadEnvironmentLogo,
 } from '../api';
 import { useI18n } from '../i18n';
+import AppHeader from './AppHeader';
+import UpdatesSection from './UpdatesSection';
+
+const SECTIONS = [
+  ['updates', 'Updates'],
+  ['general', 'General'],
+  ['backup', 'Import / export'],
+  ['videos', 'Requirement Videos'],
+  ['system', 'System Settings'],
+  ['environment', 'Headset environment'],
+];
 import packageJson from '../../package.json';
 
 function generateId() {
@@ -79,7 +89,6 @@ function createUniqueVideoName(videos, sourceName) {
 }
 
 export default function SettingsPage() {
-  const navigate = useNavigate();
   const { t, language, setLanguage } = useI18n();
   const [config, setConfig] = useState(null);
   const [deviceNames, setDeviceNames] = useState({});
@@ -92,6 +101,14 @@ export default function SettingsPage() {
   useEffect(() => {
     loadAll();
   }, []);
+
+  // "/settings#updates" from the dashboard banner: the sections exist only once the config is loaded.
+  const hasConfig = !!config;
+  useEffect(() => {
+    if (hasConfig && window.location.hash) {
+      document.getElementById(window.location.hash.slice(1))?.scrollIntoView();
+    }
+  }, [hasConfig]);
 
   const loadAll = async () => {
     setError('');
@@ -354,24 +371,37 @@ export default function SettingsPage() {
   if (!config) {
     return (
       <div className="settings-page">
-        <p>{t('Loading settings...')}</p>
+        <AppHeader sticky />
+        <div className="settings-layout"><p className="device-count">{t('Loading settings...')}</p></div>
       </div>
     );
   }
 
   return (
     <div className="settings-page">
-      <div className="settings-header">
-        <button className="btn" onClick={() => navigate('/')}>
-          {t('Back')}
+      <AppHeader sticky>
+        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+          {saving ? t('Saving...') : t('Save changes')}
         </button>
-        <h1>{t('Settings')}</h1>
+      </AppHeader>
+
+      <div className="toast-stack" aria-live="polite">
+        {error && <div className="alert alert-error">{error}</div>}
+        {success && <div className="alert alert-success">{success}</div>}
       </div>
 
-      {error && <div className="alert alert-error">{error}</div>}
-      {success && <div className="alert alert-success">{success}</div>}
+      <div className="settings-layout">
+      <nav className="settings-nav" aria-label={t('Settings sections')}>
+        {SECTIONS.map(([id, label]) => <a key={id} href={`#${id}`}>{t(label)}</a>)}
+      </nav>
+      <div className="settings-content">
 
-      <section className="settings-section">
+      <UpdatesSection
+        checkUpdates={config.checkUpdates !== false}
+        onToggleCheck={(value) => updateField('checkUpdates', value)}
+      />
+
+      <section id="general" className="settings-section">
         <h2>{t('General')}</h2>
                 <div className="settings-grid">
                   <div className="form-group">
@@ -383,10 +413,11 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
+      </section>
+
+      <section id="backup" className="settings-section">
+        <h2>{t('Import / export')}</h2>
         <div className="settings-action-row">
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-            {saving ? t('Saving...') : t('Save')}
-          </button>
           <button className="btn" onClick={() => downloadJson('config.json', stripRuntimeFields(config))}>
             {t('Export Config')}
           </button>
@@ -417,7 +448,7 @@ export default function SettingsPage() {
         />
       </section>
 
-      <section className="settings-section">
+      <section id="videos" className="settings-section">
         <h2>{t('Requirement Videos')}</h2>
         <p className="settings-note">
           {t('Save only the video filename. The app sends that filename to the player, and the player opens it from /sdcard/Movies/.')}
@@ -770,7 +801,7 @@ export default function SettingsPage() {
         </button>
       </section>
 
-      <section className="settings-section">
+      <section id="system" className="settings-section">
         <h2>{t('System Settings')}</h2>
         <div className="settings-grid">
           <div className="form-group">
@@ -864,7 +895,7 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      <section className="settings-section">
+      <section id="environment" className="settings-section">
         <h2>{t('Headset environment')}</h2>
         <span className="form-hint">{t('Environment hint')}</span>
         <div className="form-group">
@@ -955,6 +986,8 @@ export default function SettingsPage() {
           GitHub: https://github.com/Chikanut
         </a>
       </footer>
+      </div>
+      </div>
     </div>
   );
 }

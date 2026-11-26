@@ -1,62 +1,43 @@
 # Set Up the Control Panel
 
-## Goal
+The control panel is the instructor's dashboard. It runs on a Windows PC or on an Android phone or tablet, and it can be opened from any browser on the same network.
 
-Install and open the instructor control panel on either Windows or Android.
+## Windows
 
-## Choose Your Platform
+1. Download `VRClassroomControlPanel-Windows.exe` and put it in its own folder: it keeps `config.json` and `device_names.json` next to itself.
+2. Run it. A console window shows the server, and the dashboard opens in the browser at `http://localhost:8000`.
+3. When Windows Defender Firewall asks, allow access on **private** networks. Without it the headsets cannot reach the panel.
+4. If SmartScreen warns about an unknown publisher, choose *More info → Run anyway*.
 
-- use Windows if you want a larger screen and a standard desktop workflow
-- use Android if you want a portable phone or tablet setup
+Keep the console window open during the lesson; closing it stops the panel.
 
-## Option A: Windows
+## Android
 
-### Prerequisites
+1. Install `VRClassroomControlPanel-Android.apk` (allow installing from your file manager or browser).
+2. Open the app. The server runs inside it and the dashboard loads on its own.
+3. Keep the app open, or allow it to run in the background, during the lesson.
 
-- Windows PC or laptop
-- `VRClassroomControlPanel-Windows.exe` from [GitHub Releases](https://github.com/Chikanut/VR-Group-Videoplayer/releases/latest)
-- local network access to the same Wi-Fi or LAN as the headsets
+## Open the Panel from Another Device
 
-### Steps
+Press **Connection** in the bottom-right corner of the dashboard. It shows a QR code and the address, for example `http://192.168.1.10:8000`. Scan it with a phone or tablet on the same network to control the class from there.
 
-1. Download `VRClassroomControlPanel-Windows.exe`.
-2. Run the file on the instructor PC.
-3. If Windows shows a security prompt, allow the app to run if it matches your release source.
-4. Wait for the control panel window or browser page to open.
-5. Confirm the app is reachable at `http://localhost:8000` on that computer.
+## First Settings
 
-### Expected Result
+Open **Settings**:
 
-You should see the control panel dashboard and later be able to discover Quest players on the network.
+![Settings → System](../assets/screenshots/settings-system.png)
 
-## Option B: Android
+1. **Lesson videos:** add each video by file name and choose its type.
+2. **System → Video library folder:** the folder on this PC with the videos, for **Sync content**.
+3. **System → Network Subnet:** leave empty; set it only when the PC has several networks and the panel picks the wrong one.
+4. **Headset environment:** optional, your own waiting-room colour and picture.
+5. Press **Save changes**.
 
-### Prerequisites
+All settings: [Settings & Video Tuning](settings-and-video-tuning.md).
 
-- Android phone or tablet
-- `VRClassroomControlPanel-Android.apk` from [GitHub Releases](https://github.com/Chikanut/VR-Group-Videoplayer/releases/latest)
-- permission to install APK files on the device
+## Back Up the Setup
 
-### Steps
-
-1. Download `VRClassroomControlPanel-Android.apk`.
-2. Install the APK on the Android device.
-3. Allow installation from your chosen file source if Android asks.
-4. Open the app.
-5. Wait for the embedded control panel interface to load.
-
-### Expected Result
-
-You should see the same control dashboard used on Windows, but inside the Android app.
-
-## First Configuration Tasks
-
-After the control panel opens:
-
-1. Open Settings.
-2. Add your lesson videos by filename.
-3. Check battery threshold, scan interval, and network subnet if needed.
-4. Return to the dashboard and wait for devices to appear.
+**Settings → Import / export** downloads `config.json` and the headset names, and loads them on another PC.
 
 ## Next Step
 
